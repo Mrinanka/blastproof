@@ -187,6 +187,22 @@ def test_lint_covers_demo_company(ci: dict[Any, Any]) -> None:
     assert all("../demo_company" in run for run in runs)
 
 
+def test_migrations_run_after_postgres_and_before_pytest(ci: dict[Any, Any]) -> None:
+    # Step 4 (OPS-01). Checked here rather than in REQUIRED_RUN_ORDER, so the exact-message check
+    # below keeps its meaning.
+    runs = [s.get("run", "") for s in steps(ci)]
+    migrate = [i for i, run in enumerate(runs) if "uv run alembic upgrade head" in run]
+    assert len(migrate) == 1
+    compose = next(i for i, run in enumerate(runs) if "docker compose up" in run)
+    pytest_run = next(i for i, run in enumerate(runs) if "uv run pytest" in run)
+    assert compose < migrate[0] < pytest_run
+    (step,) = [s for s in steps(ci) if "uv run alembic upgrade head" in s.get("run", "")]
+    # The local dev owner on the Compose database: CI holds no real credential (TEST-01).
+    assert step["env"]["BLASTPROOF_MIGRATOR_URL"].startswith(
+        "postgresql://blastproof_owner:blastproof_owner@localhost:5432/"
+    )
+
+
 def test_order_check_catches_a_seed_before_postgres() -> None:
     bad = load_yaml(
         "jobs: {b: {steps: ["

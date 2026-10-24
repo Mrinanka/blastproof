@@ -6,6 +6,7 @@ import os
 import socket
 import subprocess
 import sys
+import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
@@ -14,6 +15,8 @@ from pathlib import Path
 import asyncpg
 import psycopg
 import pytest
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
 from psycopg.conninfo import conninfo_to_dict
 
@@ -29,6 +32,12 @@ BLASTPROOF_APP_URL = os.environ.get(
     "TEST_BLASTPROOF_APP_URL",
     "postgresql://blastproof_app:blastproof_app@localhost:5432/blastproof",
 )
+# The Compose superuser on blastproof-db. Test-only: it creates and drops scratch databases so
+# migration tests never touch the dev "blastproof" database.
+BLASTPROOF_ADMIN_URL = os.environ.get(
+    "TEST_BLASTPROOF_ADMIN_URL", "postgresql://blastproof:blastproof@localhost:5432/blastproof"
+)
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 
 # The Compose company-db (step 3). The superuser is test/dev only, like FAKE_NEON_ADMIN_URL.
@@ -66,6 +75,54 @@ def replit_impact() -> ExpectedImpact:
 def company_url(database: str) -> str:
     """The company-db superuser URL for another database on the same server."""
     return COMPANY_ADMIN_URL.rsplit("/", 1)[0] + f"/{database}"
+
+
+def on_database(url: str, database: str) -> str:
+    """The same login, connected to another database on the same server."""
+    return url.rsplit("/", 1)[0] + f"/{database}"
+
+
+def create_blastproof_scratch(*, with_vector: bool = True) -> str:
+    """A fresh database on blastproof-db, set up like "blastproof" is by the init scripts.
+
+    Repeats the per-database part of docker/blastproof-init/01-roles.sql (the roles themselves are
+    server-wide and already exist) and 02-extensions.sql (unless with_vector is False).
+    """
+    name = f"bp_scratch_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(BLASTPROOF_ADMIN_URL, autocommit=True) as admin:
+        admin.execute(f"CREATE DATABASE {name} OWNER blastproof_owner")
+        admin.execute(f"REVOKE ALL ON DATABASE {name} FROM PUBLIC")
+        admin.execute(f"GRANT CONNECT ON DATABASE {name} TO blastproof_app")
+    with psycopg.connect(on_database(BLASTPROOF_ADMIN_URL, name), autocommit=True) as admin:
+        admin.execute("ALTER SCHEMA public OWNER TO blastproof_owner")
+        admin.execute("REVOKE ALL ON SCHEMA public FROM PUBLIC")
+        admin.execute("GRANT USAGE ON SCHEMA public TO blastproof_app")
+        if with_vector:
+            admin.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    return name
+
+
+def drop_blastproof_scratch(name: str) -> None:
+    with psycopg.connect(BLASTPROOF_ADMIN_URL, autocommit=True) as admin:
+        admin.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+
+
+def alembic_config(url: str) -> AlembicConfig:
+    """Alembic's config for backend/alembic.ini, pointed at `url` instead of the settings."""
+    config = AlembicConfig(str(BACKEND_DIR / "alembic.ini"))
+    config.attributes["url"] = url
+    return config
+
+
+@pytest.fixture(scope="module")
+def migrated_db(blastproof_db_reachable: None) -> Iterator[str]:
+    """A scratch database migrated to head as blastproof_owner; dropped after the module."""
+    name = create_blastproof_scratch()
+    try:
+        alembic_command.upgrade(alembic_config(on_database(BLASTPROOF_OWNER_URL, name)), "head")
+        yield name
+    finally:
+        drop_blastproof_scratch(name)
 
 
 @pytest.fixture

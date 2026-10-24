@@ -65,3 +65,17 @@ def test_log_level_is_validated(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "verbose")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_migrator_url_is_optional_and_never_shown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BLASTPROOF_MIGRATOR_URL", raising=False)
+    assert Settings(_env_file=None).blastproof_migrator_url is None
+
+    url = "postgresql://blastproof_owner:s3cret-value@localhost:5432/blastproof"
+    monkeypatch.setenv("BLASTPROOF_MIGRATOR_URL", url)
+    s = Settings(_env_file=None)
+    assert s.blastproof_migrator_url is not None
+    assert s.blastproof_migrator_url.get_secret_value() == url
+    # A printed or logged Settings object never shows the password.
+    assert "s3cret-value" not in repr(s)
+    assert "s3cret-value" not in str(s.model_dump())

@@ -204,3 +204,73 @@ run, which doesn't exist until step 10. So step 10 must still reproduce these nu
 labeled set is 23 of the planned 50. Writing the scenarios exposed a gap in the plan's rules:
 nothing blocks `pg_terminate_backend`, a side-effect function. It's labeled `block` and flagged for
 steps 8 and 9, not quietly papered over.
+
+---
+
+## Step 4: Blastproof data model
+
+### 1. The audit log is append-only because the database says so, not because the code is careful
+
+**What I did.** `audit_events` is the record of what every agent did and who approved it, so
+nobody may rewrite it. Two layers in Postgres enforce that. First, privileges: the running app's
+role, `blastproof_app`, can only `SELECT` and `INSERT` on that table, so an `UPDATE`, `DELETE` or
+`TRUNCATE` from the app gets "permission denied". Second, a trigger: the owner role,
+`blastproof_owner`, owns the table and so has every privilege, and a trigger stops it anyway with
+"audit_events is append-only". The plan asked for a `BEFORE UPDATE OR DELETE` trigger. While
+building it I noticed that `TRUNCATE` skips row-level delete triggers entirely, so the owner could
+still have emptied the table in one statement. I made the trigger statement-level and added
+`TRUNCATE` to it. That also means it fires even when an `UPDATE` matches no rows. Tests cover every
+combination: both roles, all three operations, plus a check of the app's exact privilege on every
+table. To prove the tests weren't just passing by luck, I removed the trigger and widened the
+grant, and watched them fail.
+
+**Why.** An audit trail you can quietly edit isn't evidence of anything. If the rule lived only in
+application code, a single bug or a successful SQL injection in Blastproof would be enough to
+rewrite history. Putting it in the database means the code *can't* do it, whatever goes wrong
+above. It's the same principle Blastproof applies to agents: limit what the caller is able to
+do, instead of trusting it to behave.
+
+**What I rejected.** A single role with `REVOKE` (the owner of a table can always grant itself rights
+back). A row-level trigger only, which was the plan's wording and had the `TRUNCATE` hole.
+
+**Trade-off and limits.** The owner can still drop or disable the trigger. That is a deliberate
+schema change, done in a migration and visible in code review, not a quiet edit, and the app role
+can do neither (tested). Retention never deletes audit events, so this table only grows. That's
+fine at MVP scale, but it will eventually need partitioning or archiving.
+
+### 2. The schema is tested like code: throwaway databases, three cross-checks, one transaction
+
+**What I did.** The models (`app/db/models.py`) and the migration (`0001_initial_schema.py`) are
+two descriptions of the same schema, and two descriptions drift apart. So I check them against each
+other, and against reality. Alembic generated the first draft of the migration from the models.
+I then read it and fixed it: the generated file referenced the vector type without importing it,
+and it knew nothing about extensions, grants or triggers, which I added by hand. Three checks
+follow. `alembic check` compares the models with the migrated database and fails on any difference.
+Alembic doesn't compare CHECK constraints, though, so a second test reads the CHECKs straight out
+of Postgres and compares them with the models. A third compares the models' allowed values with the
+Python enums. Every migration test runs on a fresh, throwaway database, which the test creates and
+drops, so tests can freely upgrade, downgrade and break things without touching my dev data. The
+whole migration runs in one transaction. When the `vector` extension is missing, the run fails
+cleanly and leaves no half-built schema behind, and a test proves exactly that.
+
+**Why.** The schema is the foundation every later step stands on: auth, the workflow, commits.
+A mismatch between models and database doesn't fail loudly; it shows up weeks later as a wrong
+query or a missing permission. Cross-checking catches it on the next test run. The second check
+exists because of a gap I found reviewing my own work. I had written that the first and third
+checks covered the CHECK constraints, but they didn't: an enum value added without a migration
+passed every test. I added the second check and confirmed it catches exactly that case. That
+missing extension was a real surprise, too. The plan assumed the owner could install pgvector,
+but pgvector isn't marked "trusted" by Postgres, so only a superuser can. I found that out by
+checking the database before writing code, not after a failed deploy, and moved its creation into
+the container's init script.
+
+**What I rejected.** Hand-writing the whole migration with no comparison against the models.
+Running migration tests against the shared dev database (an upgrade/downgrade test would wipe it).
+Giving the owner role CREATEDB or superuser rights to make testing easier.
+
+**Trade-off and limits.** The test helper that builds a scratch database repeats the per-database
+part of the init script, so the two could drift. They're short, and a comment points at each.
+Enum-like columns are text with CHECK constraints rather than Postgres enum types. That's easier to
+extend, but every new value now needs a small migration, which is exactly what the new test
+enforces. Production on Neon has no init script, so the deploy step must create the extension and
+the database-level grants by hand.

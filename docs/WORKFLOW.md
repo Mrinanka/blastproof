@@ -164,15 +164,16 @@ When I approve, build it with these rules:
 
 ```text
 Verify this step:
-1. Run the test suite and lint for every part you touched (see file changes) (backend and/or
+1. Run the test suite and lint for every part you touched (backend and/or
    frontend). Paste the actual output summary, not a description of it.
 2. Run the step's "Done when" check. Paste the actual output.
 3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.
 4. Review your own diff against the step's plan text and the architecture rules in
-   CLAUDE.md. List every deviation, shortcut, TODO, skipped test or hard-coded value.
+   CLAUDE.md. List every deviation, shortcut, TODO, skipped test or hard-coded value, and evaluate if needs fixing.
 5. List anything that is not finished or not working. "Done" only means the check passed.
 6. Explain the two most important design choices in this step in plain language, as I
    would in an interview, write it in the design choise guide md file (create one if necessary).
+7. state clarely if any of you finding needs fixing and my input to be able to fix them
 ```
 
 If anything in steps 4-5 is a real problem, ask Claude to fix it (or use Prompt D),
@@ -189,7 +190,7 @@ I have run the Done-when check and read the diff. Wrap up this step:
 3. Add each real decision made in this step to docs/decisions.md (next D-number, with
    the reason and the alternative rejected). Skip it if there were none.
 4. Show me git status, then commit everything with a Conventional Commits message
-   (e.g. "feat(backend): step 8 classifier"). Do not push.
+   (e.g. "feat(backend): step 8 classifier"). create pr.
 ```
 
 ---

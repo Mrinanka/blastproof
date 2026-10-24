@@ -103,9 +103,9 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-10 | `seed.py --target local` (run from host or CI, not an init script) builds `company_template`, closes its connections, locks it (`ALLOW_CONNECTIONS false`) and clones `company_main` from it. | BE B3; D-019 | B3 | DW-B03 |
 | [ ] | BE-11 | Step 3 loads the seed into local `company-db` and Neon `blastproof-company-dev` (Claude asks before the dev load); the owner loads Neon `blastproof-company` at deploy time, after the command prints the target and asks for confirmation; Claude Code never runs that load. | BE B3, §15; D-003, D-054 | B3, Deploy | DW-B03; OPS-11 |
 | [ ] | BE-12 | `schema_docs.md` has one `## table: <name>` heading per table and a `## business rules` section (e.g. paying = pro or enterprise; enterprise must never be deleted). | BE B3 | B3 | DW-B11 (rules retrieved) |
-| [ ] | BE-13 | SQLAlchemy models for the eleven tables in BE §5 (`users`, `login_attempts`, `agents`, `systems`, `actions`, `audit_events`, `preview_rows`, `before_images`, `hook_events`, `knowledge_chunks`, `chunk_embeddings`) with the listed columns. | BE §5, B4 | B4 | DW-B04 |
-| [ ] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
-| [ ] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
+| [x] | BE-13 | SQLAlchemy models for the eleven tables in BE §5 (`users`, `login_attempts`, `agents`, `systems`, `actions`, `audit_events`, `preview_rows`, `before_images`, `hook_events`, `knowledge_chunks`, `chunk_embeddings`) with the listed columns. | BE §5, B4 | B4 | DW-B04 |
+| [x] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
+| [x] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
 | [ ] | BE-16 | Action statuses follow the canonical state machine in BE §5; "pending" is never stored; `expired` actions have `decided_by` null. | BE §5 | B6, B14-B16 | *unit test of allowed transitions* |
 | [ ] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is mounted in FastAPI so the public path is `/mcp`. | BE §3, B6 | B6 | DW-B06 |
 | [ ] | BE-18 | MCP tools `list_tables` (names with one-line descriptions), `describe_table` (columns and types; plus knowledge notes from B11), `query_database` (`sql`, `intent`, optional `retry_of`) and `get_action_status` (`action_id`, optional `wait_seconds` 0-50, default 30). | BE §6, B6 | B6, B11, B17 | DW-B06, DW-B17 |
@@ -240,7 +240,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-05 | Every request rejects inactive users and stale `token_version`s with 401. | BE B5 | B5 | DW-B05 |
 | [ ] | SEC-06 | Login is rate limited via `login_attempts`: 5 failures per 15 minutes per email+IP, and 20 failures per hour per email from any IP. | BE §5, B5 | B5 | DW-B05 |
 | [ ] | SEC-07 | `require_admin` rejects members with 403 on admin-only routes. | BE B5 | B5 | DW-B05 |
-| [ ] | SEC-08 | `blastproof_app` has only SELECT and INSERT on `audit_events`, and a `BEFORE UPDATE OR DELETE` trigger rejects changes even by the owner. | BE §5, B4; D-013 | B4 | DW-B04 |
+| [x] | SEC-08 | `blastproof_app` has only SELECT and INSERT on `audit_events`, and a `BEFORE UPDATE OR DELETE` trigger rejects changes even by the owner. | BE §5, B4; D-013 | B4 | DW-B04 |
 | [ ] | SEC-09 | `BLASTPROOF_MIGRATOR_URL` (owner role) is used only for migrations and checkpointer `setup()`, never by the running app. | BE §11; D-013 | B4, B14 | *code review* |
 | [ ] | SEC-10 | Agent SQL that touches the `blastproof` schema is blocked. | BE §5, B9 | B8, B9 | DW-B08 (`blastproof` schema case) |
 | [ ] | SEC-11 | All DDL from agents is blocked in the MVP. | SPEC §8; BE B9 | B9 | DW-B09; MVP-B05 |
@@ -380,7 +380,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B01 | `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`. | BE B1 | B1 | Manual + test |
 | [x] | DW-B02 | A pull request shows a green check. | BE B2 | B2 | CI |
 | [x] | DW-B03 | The seed runs; a count by plan returns sensible numbers on the local and dev databases; the scenario files load and validate against a Pydantic schema. | BE B3 | B3 | Manual + test |
-| [ ] | DW-B04 | `alembic upgrade head` creates all tables locally; a test as `blastproof_app` fails to update or delete an audit event, and so does one as `blastproof_owner` (trigger). | BE B4 | B4 | Integration test |
+| [x] | DW-B04 | `alembic upgrade head` creates all tables locally; a test as `blastproof_app` fails to update or delete an audit event, and so does one as `blastproof_owner` (trigger). | BE B4 | B4 | Integration test |
 | [ ] | DW-B05 | Tests prove: wrong key or token, or a deactivated agent's key → 401; inactive user or bumped `token_version` → 401; 6th failed login in 15 min from one IP refused; 21st failed login in an hour for one email refused across IPs; admin-only route rejects members with 403. | BE B5 | B5 | Unit/integration tests |
 | [ ] | DW-B06 | After `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>" --scope local`, Claude answers "how many pro users do we have?" through Blastproof and the call appears in `actions`. | BE B6 | B6 | Manual in Claude Code |
 | [ ] | DW-B07 | Searching the demo workspace and its environment for "postgres" finds nothing, and Claude's `Read` of the backend's `.env` path is denied. | BE B7 | B7 | Manual in Claude Code |
