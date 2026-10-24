@@ -274,3 +274,69 @@ Enum-like columns are text with CHECK constraints rather than Postgres enum type
 extend, but every new value now needs a small migration, which is exactly what the new test
 enforces. Production on Neon has no init script, so the deploy step must create the extension and
 the database-level grants by hand.
+
+---
+
+## Step 5: Auth
+
+### 1. Login rate limiting is counted in the database, one attempt at a time per email
+
+**What I did.** Every login attempt, failed or not, is written to a `login_attempts` table with
+the email and the IP it came from. Before checking a password, the server counts recent failures.
+At 5 failures for this email from this IP in 15 minutes, or 20 for this email from anywhere in an
+hour, it answers "too many attempts" (HTTP 429) and does not look at the password at all, so even
+the right one is refused. Each attempt runs inside one database transaction that first takes a
+Postgres advisory lock keyed on the email. Two attempts for the same email therefore wait for each
+other, and each one sees the count the previous one left behind. Unknown emails are recorded and
+limited exactly like real ones, and the "wrong password", "no such user" and "disabled account"
+answers are identical.
+
+**Why.** The two limits cover two attacks: one machine hammering one account, and a botnet
+rotating IPs against one account (the second limit ignores the IP). The lock matters more than it
+looks. Without it, ten requests fired at once all read "4 failures so far" before any of them
+writes, and all ten get a guess. I wrote a test that fires ten in parallel and expects exactly
+five recorded failures, and it fails when the lock is removed. Refused attempts are not recorded,
+so a lockout ends exactly 15 minutes (or an hour) after the last real guess. Counting in Postgres
+rather than in memory means it survives restarts and needs no Redis, which the MVP leaves out.
+
+**What I rejected.** An in-memory counter (lost on restart, wrong with two machines). Counting the
+refused attempts too (an attacker who keeps trying would keep the owner locked out for good).
+Trusting the `X-Forwarded-For` header to find the real IP (anyone can set it, so an attacker could
+pretend to be a new IP on every request).
+
+**Trade-off and limits.** Anyone who knows your email can lock you out for an hour by failing 20
+times. That comes with any per-account limit, and the MVP has no admin "unlock" button. In
+production, logins reach the backend through the dashboard's server and Fly's proxy, so every
+user appears to come from the same IP and the per-IP limit acts per email. That is stricter, so
+it's safe, but the real fix (the dashboard passes the browser's IP and the backend trusts it only
+from the proxy) belongs to the frontend login step. The lock serialises logins for one email only;
+different users never wait on each other.
+
+### 2. Tokens don't need a session table, but can still be revoked at once
+
+**What I did.** Logging in returns a signed token (a JWT) that lasts 8 hours. It holds only the
+user's ID and a number, `token_version`, copied from the user's row. On every request the server
+checks the signature, then reloads the user from the database. If the account is disabled, or its
+`token_version` no longer matches the one in the token, the request gets 401. Bumping that number
+by one logs the user out everywhere. The role is not in the token; it is read from the row each
+time, so a demoted admin loses admin rights on their very next request. Agent keys work
+differently: they are long random strings shown once, and only their SHA-256 hash is stored. An
+agent is refused if it is deactivated, and also if its owner is.
+
+**Why.** A plain JWT can't be taken back before it expires, which is a bad property for the
+dashboard of a safety tool: an offboarded admin would keep approving writes for up to 8 hours.
+Reloading the user costs one indexed query per request, and buys instant deactivation, instant
+demotion and a "log out everywhere" switch with no session table to clean up. Agent keys get a
+fast hash rather than argon2 because they are 256 random bits: there is nothing to brute-force, and
+the lookup by hash runs on every MCP call. Passwords are chosen by people, so they get argon2,
+which is slow on purpose.
+
+**What I rejected.** Putting the role in the token (a demotion would wait up to 8 hours). Server-side
+sessions in a table (more moving parts for the same result). Hashing agent keys with argon2 (slow on
+every call, and no gain for random keys). A key check that ignores the owner (an offboarded user's
+agent would keep writing actions under their name).
+
+**Trade-off and limits.** Every authenticated request costs one database read, so the database must
+be up for anything to work; that is fail-closed, which is what we want. Logout in the dashboard only
+deletes the cookie (D-041); the token itself stays valid until it expires unless `token_version` is
+bumped, and nothing bumps it automatically yet. There is no password change in the MVP.

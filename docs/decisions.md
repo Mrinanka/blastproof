@@ -781,3 +781,96 @@ deploy (`release_command`), so their logs should match the app's. The check must
 The scratch helper repeats part of the init scripts, and without the test the two could drift.
 **Rejected:** checking only "not a superuser" (the app role would still get halfway); keeping
 Alembic's plain-text logging.
+
+## D-088 · 2026-10-25 · Auth errors use the error envelope now, one generic message per kind
+**Decision:** `app/core/errors.py` adds `ApiError` and a handler that returns
+`{"error": {"code", "message"}}`. Auth uses the codes `invalid_credentials` (401; wrong password,
+unknown email and inactive user look the same), `not_authenticated` (401; any token problem),
+`invalid_agent_key` (401; wrong or deactivated key), `forbidden` (403), `too_many_attempts` (429)
+and `unavailable` (503; database or JWT secret not configured). Every 401 carries
+`WWW-Authenticate: Bearer`. The real reason goes to the logs only (`event=auth_failed reason=...`),
+which never hold a password, token, key or email. FastAPI's own 404 and 422 keep `{"detail"}` until
+step 19.
+**Why:** The dashboard is built against the envelope (CONV-04). One message per kind stops callers
+from learning which emails exist or why a token failed.
+**Rejected:** `HTTPException` with `detail` (wrong shape); replacing FastAPI's global handlers now
+(step 19's job).
+
+## D-089 · 2026-10-25 · Login rate limit details
+**Decision:** At most 5 failed logins per email+IP in 15 minutes, and 20 per email in an hour
+(SEC-06), counted with the database clock. Each attempt runs in one transaction holding
+`pg_advisory_xact_lock(LOGIN_LOCK_CLASS, <int4 from the email's SHA-256>)`, so parallel attempts are
+counted one at a time. Over a limit the answer is 429 with `Retry-After`, the password is not
+checked (even a correct one is refused), and the attempt is **not recorded**, so a lockout ends
+exactly when the window passes. Unknown emails are recorded like real ones. A success does not
+clear earlier failures. Emails are compared lower case. The IP is `request.client.host`; an
+address that is not an IP counts as `0.0.0.0`. Note that uvicorn by default trusts
+`X-Forwarded-For` from `127.0.0.1` and `::1` (`--proxy-headers`, `FORWARDED_ALLOW_IPS`), so locally
+any process on the machine can choose the IP it is counted under; on Fly the peer is the proxy, not
+loopback, so the header is ignored. Adds 429 to CONV-07.
+**Why:** Without the lock, 10 parallel guesses all saw "4 failures so far" (the concurrency test
+fails without it). Recording refusals would extend a lockout for as long as an attacker keeps
+trying. Trusting `X-Forwarded-For` from anyone would let an attacker rotate IPs for free.
+**Limits:** Behind the dashboard's login route and Fly's proxy, every user shares the proxy's IP,
+so the per-IP limit acts per email (stricter, so safe). Anyone can lock a known email out for an
+hour; the plan's per-email limit allows that by design, and there is no admin unlock in the MVP.
+**Rejected:** counting refusals; clearing failures on success; trusting forwarded headers from
+anyone.
+
+## D-090 · 2026-10-25 · Agent keys: shape checked first; a deactivated owner disables their agents
+**Decision:** `authenticate_agent_key` refuses anything that is not `bp_` plus 43 URL-safe
+characters before touching the database, then looks the key up by SHA-256 hash. The agent and its
+owner must both be active (D-030 covers the agent). It is a plain function, so step 6's `/mcp`
+middleware can call it; `get_current_agent` wraps it for routes.
+**Why:** Deactivating a user should stop their agents too; otherwise an offboarded user's agent
+keeps writing actions under their id. FastAPI dependencies do not run inside a mounted ASGI app.
+**Rejected:** checking the agent only.
+
+## D-091 · 2026-10-25 · The app refuses any database role but `blastproof_app`
+**Decision:** The app's engine (`app/db/session.py`, asyncpg, `pool_pre_ping`) checks
+`current_user` on every new connection and raises `WrongAppRoleError` (logged as
+`event=wrong_app_role`) unless it is `blastproof_app`. The CLI uses the same engine. The engine is
+built at startup but connects only on the first query (TEST-07). With `APP_ENV=production`,
+`create_app` refuses to start without `BLASTPROOF_DATABASE_URL` and `JWT_SECRET`; `JWT_SECRET` must
+be at least 32 bytes (the HS256 digest size) whenever it is set.
+**Why:** It mirrors D-087 for the running app (part of SEC-09): a URL pointing at the owner or a
+superuser would quietly bypass the append-only grants. The production check sits in `create_app`,
+not in `Settings`, because an existing test loads `Settings` with `APP_ENV=production` and no
+secrets.
+**Rejected:** a startup query (startup must stay offline); a `Settings` validator.
+
+## D-092 · 2026-10-25 · Dashboard token shape, and `/v1/auth/me` built in step 5
+**Decision:** HS256 only, with the claims `sub` (user id), `tv` (token_version), `iat`, `exp`
+(iat + 8 h), `iss=blastproof` and `aud=blastproof-dashboard`, all required. `exp`, `iat` and the
+claim types are checked in our code (exact expiry, 30 s leeway for `iat` in the future), so tests
+can pass a fixed `now`. Every request reloads the user, so role, `is_active` and `token_version`
+changes apply at once. `POST /v1/auth/login` returns `{access_token, token_type, expires_at, user}`.
+`GET /v1/auth/me` was pulled into step 5 (owner's choice); the Stage 3 pull-forward now covers only
+the two actions routes.
+**Why:** A token from another app sharing the secret cannot be replayed here. Returning the user
+saves the dashboard's login route a second call.
+**Rejected:** putting the role in the token (a demotion would wait up to 8 hours).
+
+## D-093 · 2026-10-25 · The admin CLI
+**Decision:** `uv run python -m app.cli create-user|create-agent` (stdlib `argparse`; no new
+dependency). It connects as `blastproof_app`. A password is never an argument: `getpass` twice, or
+one line from stdin with `--password-stdin` (non-interactive use and tests). Passwords are 12 to
+256 characters, emails are stored lower case and checked with a small pattern, names are 1 to 100
+characters. `create-agent` prints the key once on stdout; logs go to stderr. Errors are one line
+with no traceback, and unexpected ones print only the exception type (a message could hold a URL).
+**Why:** Shell history and process lists expose arguments. `email-validator` would be a new
+dependency for a check the database does not depend on.
+**Rejected:** Typer or Click (new dependency); `--password` as an argument.
+
+## D-094 · 2026-10-25 · Validation errors use the envelope and never repeat the input
+**Decision:** A `RequestValidationError` handler (`app/core/errors.py`) answers 422 with
+`{"error": {"code": "validation_error", "message": "Invalid request: body.password: String should
+have at most 256 characters."}}`: field locations and rule texts only, at most 5 errors and 400
+characters. `/openapi.json` describes every 422 as `ErrorResponse`, and the default
+`HTTPValidationError` schemas are removed, so the dashboard's generated types match. Brought forward
+from step 19 (CONV-04); the 404 envelope stays in step 19.
+**Why:** Found in the step 5 verify review: FastAPI's default 422 body includes each error's
+`input`, so an over-long login password was sent back in the response, where browser devtools and
+proxy error logs can keep it.
+**Rejected:** waiting for step 19; removing the length limits from `LoginRequest` (argon2 would then
+hash any size the client sends).

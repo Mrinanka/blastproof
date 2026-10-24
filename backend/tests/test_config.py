@@ -79,3 +79,41 @@ def test_migrator_url_is_optional_and_never_shown(monkeypatch: pytest.MonkeyPatc
     # A printed or logged Settings object never shows the password.
     assert "s3cret-value" not in repr(s)
     assert "s3cret-value" not in str(s.model_dump())
+
+
+def test_database_url_and_jwt_secret_are_optional_and_never_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BLASTPROOF_DATABASE_URL", raising=False)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    s = Settings(_env_file=None)
+    assert s.blastproof_database_url is None
+    assert s.jwt_secret is None
+
+    url = "postgresql+asyncpg://blastproof_app:db-pass-value@localhost:5432/blastproof"
+    secret = "jwt-secret-value-" + "x" * 32
+    monkeypatch.setenv("BLASTPROOF_DATABASE_URL", url)
+    monkeypatch.setenv("JWT_SECRET", secret)
+    s = Settings(_env_file=None)
+    assert s.blastproof_database_url is not None
+    assert s.blastproof_database_url.get_secret_value() == url
+    assert s.jwt_secret is not None
+    assert s.jwt_secret.get_secret_value() == secret
+    for hidden in ("db-pass-value", "jwt-secret-value"):
+        assert hidden not in repr(s)
+        assert hidden not in str(s.model_dump())
+
+
+def test_short_jwt_secret_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", "x" * 31)
+    with pytest.raises(ValidationError, match="32 bytes"):
+        Settings(_env_file=None)
+
+
+def test_empty_values_count_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # backend/.env holds empty placeholders until the owner fills them in.
+    monkeypatch.setenv("BLASTPROOF_DATABASE_URL", "")
+    monkeypatch.setenv("JWT_SECRET", "")
+    s = Settings(_env_file=None)
+    assert s.blastproof_database_url is None
+    assert s.jwt_secret is None

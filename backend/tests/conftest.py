@@ -9,18 +9,23 @@ import sys
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+from typing import Annotated
 
 import asyncpg
 import psycopg
 import pytest
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from psycopg.conninfo import conninfo_to_dict
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
+from app.core.auth import CurrentAgent, CurrentUser, get_current_agent, require_admin
+from app.core.security import generate_agent_key, hash_password
 from app.main import create_app
 from evals.schema import ExpectedImpact, SqlScenario, load_scenario_file
 
@@ -326,3 +331,149 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[NetworkGuard]:
     yield guard
     blocked, guard.blocked = guard.blocked, []
     assert not blocked, f"code tried to reach the network: {blocked}"
+
+
+# --- Step 5: auth fixtures ------------------------------------------------------------------
+
+TEST_JWT_SECRET = "test-only-jwt-secret-" + "x" * 32
+TEST_PASSWORD = "correct horse battery staple"
+# Requests may set this header to choose the client IP the app sees (test apps only).
+TEST_CLIENT_IP_HEADER = b"x-test-client-ip"
+
+
+def asyncpg_url(url: str) -> str:
+    """The same login as a SQLAlchemy asyncpg URL (what BLASTPROOF_DATABASE_URL holds)."""
+    return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
+def with_client_ip(app: ASGIApp) -> ASGIApp:
+    """Wrap an app so a request can pick its client IP with the X-Test-Client-IP header.
+
+    One TestClient (one event loop, one connection pool) can then act as many IPs.
+    """
+
+    async def wrapper(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            ip = dict(scope["headers"]).get(TEST_CLIENT_IP_HEADER)
+            if ip is not None:
+                scope = {**scope, "client": (ip.decode(), 50000)}
+        await app(scope, receive, send)
+
+    return wrapper
+
+
+@dataclass(frozen=True)
+class TestUser:
+    id: uuid.UUID
+    email: str
+    password: str
+
+
+@dataclass(frozen=True)
+class TestAgent:
+    id: uuid.UUID
+    key: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class AuthDb:
+    """A migrated scratch database, with helpers that act as blastproof_app (like the app)."""
+
+    name: str
+
+    @property
+    def app_url(self) -> str:
+        return on_database(BLASTPROOF_APP_URL, self.name)
+
+    def execute(self, sql: str, params: tuple = ()) -> list[tuple]:
+        with psycopg.connect(self.app_url, autocommit=True) as conn:
+            cur = conn.execute(sql, params)
+            return cur.fetchall() if cur.description else []
+
+    def make_user(
+        self,
+        *,
+        role: str = "member",
+        is_active: bool = True,
+        password: str = TEST_PASSWORD,
+        email: str | None = None,
+    ) -> TestUser:
+        email = email or f"user-{uuid.uuid4().hex[:12]}@example.com"
+        [(user_id,)] = self.execute(
+            "INSERT INTO users (email, display_name, password_hash, role, is_active)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (email, f"User {email[:10]}", hash_password(password), role, is_active),
+        )
+        return TestUser(id=user_id, email=email, password=password)
+
+    def make_agent(self, owner_id: uuid.UUID, *, is_active: bool = True) -> TestAgent:
+        new = generate_agent_key()
+        [(agent_id,)] = self.execute(
+            "INSERT INTO agents (owner_id, name, api_key_hash, key_prefix, is_active)"
+            " VALUES (%s, 'test agent', %s, %s, %s) RETURNING id",
+            (owner_id, new.key_hash, new.key_prefix, is_active),
+        )
+        return TestAgent(id=agent_id, key=new.key)
+
+    def failures(self, email: str) -> int:
+        [(count,)] = self.execute(
+            "SELECT count(*) FROM login_attempts WHERE email = %s AND NOT succeeded", (email,)
+        )
+        return count
+
+    def backdate_attempts(self, email: str, by: timedelta) -> None:
+        self.execute(
+            "UPDATE login_attempts SET created_at = created_at - %s WHERE email = %s", (by, email)
+        )
+
+
+@pytest.fixture(scope="module")
+def auth_db(migrated_db: str) -> AuthDb:
+    return AuthDb(migrated_db)
+
+
+@pytest.fixture
+def auth_settings(auth_db: AuthDb) -> Settings:
+    return Settings(
+        _env_file=None,
+        app_env="test",
+        blastproof_database_url=asyncpg_url(auth_db.app_url),
+        jwt_secret=TEST_JWT_SECRET,
+    )
+
+
+def build_auth_test_app(settings: Settings) -> FastAPI:
+    """The real app plus two test-only routes guarded by require_admin and get_current_agent."""
+    app = create_app(settings)
+
+    @app.get("/test/admin-only")
+    async def admin_only(user: Annotated[CurrentUser, Depends(require_admin)]) -> dict[str, str]:
+        return {"user_id": str(user.id)}
+
+    @app.get("/test/agent")
+    async def agent_only(
+        agent: Annotated[CurrentAgent, Depends(get_current_agent)],
+    ) -> dict[str, str]:
+        return {"agent_id": str(agent.agent_id), "owner_id": str(agent.owner_id)}
+
+    return app
+
+
+@pytest.fixture
+def auth_client(auth_settings: Settings) -> Iterator[TestClient]:
+    with TestClient(with_client_ip(build_auth_test_app(auth_settings))) as test_client:
+        yield test_client
+
+
+def login(
+    client: TestClient, email: str, password: str, ip: str = "203.0.113.1"
+):  # -> the TestClient's response (httpx2, not a direct dependency)
+    return client.post(
+        "/v1/auth/login",
+        json={"email": email, "password": password},
+        headers={TEST_CLIENT_IP_HEADER.decode(): ip},
+    )
+
+
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
