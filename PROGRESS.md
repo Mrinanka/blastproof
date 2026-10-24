@@ -1,15 +1,52 @@
 # Progress
 
 ## Current focus
-Next: step 5 (Auth). Read backend plan §8 step 5 and §5 (`users`, `agents`, `login_attempts`)
-first. Step 5 adds `BLASTPROOF_DATABASE_URL` (asyncpg, as `blastproof_app`) and the engine/session.
+Next: Spike: MCP mounting, then step 6 (MCP server). Step 6's `/mcp` middleware should call
+`app.core.auth.authenticate_agent_key` (D-090).
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
 Step 2 (CI) done 2026-10-24, decisions D-072 to D-075.
 Step 3 (demo company database and eval scenarios) done 2026-10-24, decisions D-076 to D-081.
-Step 4 (Blastproof data model) done 2026-10-24, committed on `feat/step-4` and pushed for a PR
-into `develop`, decisions D-082 to D-087.
+Step 4 (Blastproof data model) done 2026-10-24, merged into `develop` (PR #4), decisions D-082 to
+D-087.
+Step 5 (Auth) done 2026-10-25 on `feat/step-5`, PR #5 into `develop` (CI green), decisions D-088 to
+D-095.
+
+### Step 5, done 2026-10-25
+- `app/core/security.py` (agent keys, argon2 via pwdlib, HS256 tokens), `app/core/auth.py`
+  (`get_current_user`, `require_admin`, `get_current_agent`, plain `authenticate_agent_key` for
+  step 6), `app/core/errors.py` (`ApiError` and the error envelope), `app/db/session.py` (asyncpg
+  engine, refuses any role but `blastproof_app`, D-091), `app/db/{users,agents,login_attempts}.py`,
+  `app/services/auth.py` (login with rate limit, create user, create agent),
+  `app/api/auth.py` (`POST /v1/auth/login`, `GET /v1/auth/me`), `app/schemas/auth.py`, `app/cli.py`.
+- Config: `BLASTPROOF_DATABASE_URL` and `JWT_SECRET` (at least 32 bytes; both required when
+  `APP_ENV=production`). Added to `.env.example`; the owner has set both in `backend/.env`.
+- CLI: `uv run python -m app.cli create-user --email ... --display-name ... --role admin` (asks for
+  the password; `--password-stdin` for scripts) and `create-agent --owner-email ... --name ...`.
+- Tests: 331 in total (93 new): key, password and token unit tests (alg none, HS512, every
+  missing claim, expiry boundary), login, `/me`, agent auth, admin-only route, rate limits
+  (including 10 parallel failures counting exactly 5), logs never holding secrets or emails, the
+  owner-role refusal, offline startup with a database URL, production settings, the CLI as a
+  subprocess. Mutation checks: removing each of 10 guards (lock, token_version, inactive user,
+  inactive agent, inactive owner, both limits, admin check, role check, inactive login) turned a
+  test red.
+- Done-when checked by the `test_done_when_*` tests: wrong or missing key or token, a user token used
+  as a key, a deactivated agent → 401; inactive user and bumped `token_version` → 401; the sixth
+  attempt from one IP in 15 min → 429 even with the right password; the 21st across six IPs in an
+  hour → 429; a member on an admin-only route → 403. By hand on local `blastproof`: `create-user`
+  and `create-agent` worked, login and `/v1/auth/me` worked through uvicorn, a bad token and a
+  wrong password got the envelope, and the server log held no password or token. This left a
+  user `step5-check@example.com` (admin) and agent `step5-check` in the local dev database.
+- CI: PR #5's `backend` check passed on commit `af26ff7` (1 min 46 s), the first Linux run of the
+  auth tests and the CLI subprocess tests.
+- Fixed after the verify review: 422 responses use the envelope and never repeat the input (an
+  over-long login password was echoed back; D-094); D-089 corrected (uvicorn trusts
+  `X-Forwarded-For` from loopback by default); the tests no longer import `httpx2` directly.
+- Requirements ticked: SEC-01 to SEC-07, DW-B05. Done for step 5 but left open: SEC-33 (`/mcp` in
+  step 6, hook in step 18), BE-108 (verified by TEST-03 in step 19), SEC-09 (app side done, D-091;
+  checkpointer in step 14), CONV-07 (429 added; rest in step 19), CONV-04 (422 done, D-094; 404 in
+  step 19).
 
 ### Step 4, done 2026-10-24
 - `app/db/`: `base.py` (naming convention, `enum_check`), `enums.py`, `models.py` (the eleven
@@ -133,6 +170,20 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Account admin has no tools yet (D-095): no route or command bumps `token_version` (log out
+  everywhere), fixes a mistyped email, deactivates a user or resets a password. Today these take SQL
+  on the dev database. Step 19 adds user routes; decide then which of these it covers.
+- Accounts are admin-created only and emails are never verified (D-095). Self sign-up, email-based
+  password reset or Google sign-in would each need verification or SSO first.
+- Step 6 and step 18 must use `authenticate_agent_key` / `get_current_agent` to finish SEC-33.
+- Local dev database still holds the step 5 manual-check user `step5-check@example.com` and agent
+  `step5-check` (owner to decide whether to delete them).
+- Login rate limit uses `request.client.host` (D-089). Locally uvicorn trusts `X-Forwarded-For`
+  from loopback by default, so a local process can pick its IP. Behind the dashboard's login route
+  (Vercel) and Fly's proxy, every user shares one IP. F3/Deploy: have the login route forward the browser IP and
+  trust it only from the proxy (uvicorn `--forwarded-allow-ips` or a shared header secret).
+- Anyone can lock a known email out of login for up to an hour (per-email limit by design); there
+  is no admin unlock in the MVP.
 - Accepted dev limitation (D-002): on the dev machine, the agent could reach the dev `.env` by a
   route the hook and `permissions.deny` miss. It only unlocks the dev company project. Full
   isolation is verified on the deployed demo.
@@ -193,8 +244,9 @@ created at deploy time straight into Fly.io secrets (D-058).
   other version.
 - If anyone runs Compose on Linux without IPv6, check that publishing on `[::1]` still works (it
   does on GitHub's `ubuntu-24.04` runner).
-- 404 and 422 responses still use FastAPI's default `{"detail": ...}` body, not CLAUDE.md's
-  `{"error": {...}}` envelope. Only the crash 500 uses the envelope (D-068). Fixed in step 19.
+- 404 responses still use FastAPI's default `{"detail": ...}` body, not CLAUDE.md's
+  `{"error": {...}}` envelope (fixed in step 19). The crash 500 (D-068), auth errors (D-088) and
+  422 (D-094, brought forward in step 5) already use it.
 - The crash path logs the full exception text. Nothing handles sensitive data yet, but once
   database code exists, a Postgres error can contain raw values (`invalid input syntax ...:
   "<value>"`). The masking work must cover exception text in logs too.
@@ -245,7 +297,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 2. CI
 - [x] 3. Demo company database and eval scenarios
 - [x] 4. Blastproof data model
-- [ ] 5. Auth
+- [x] 5. Auth
 - [ ] Spike: MCP mounting
 - [ ] 6. MCP server
 - [ ] Spike: Claude Code hook
@@ -263,7 +315,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [ ] GATE AUDIT: exact diffs and correct retrieval
 
 ## Stage 3: the flow + dashboard start
-- [ ] Pull forward: /v1/auth/me, GET /v1/actions, GET /v1/actions/{id}
+- [ ] Pull forward: GET /v1/actions, GET /v1/actions/{id} (`/v1/auth/me` done in step 5, D-092)
 - [ ] Spike: LangGraph interrupt and resume
 - [ ] 14. LangGraph workflow
 - [ ] 15. Workflow runner

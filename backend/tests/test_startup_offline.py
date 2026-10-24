@@ -6,6 +6,7 @@ import socket
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.main import create_app
@@ -67,5 +68,21 @@ def test_guard_allows_loopback(no_network: NetworkGuard) -> None:
 def test_startup_and_shutdown_work_offline(no_network: NetworkGuard, settings: Settings) -> None:
     assert settings.app_env == "test"
     with TestClient(create_app(settings)) as client:
+        assert client.get("/health").json() == {"status": "ok"}
+    assert no_network.blocked == []
+
+
+def test_startup_with_a_database_url_stays_offline(
+    no_network: NetworkGuard, settings: Settings
+) -> None:
+    """The engine is built at startup but connects only on the first query (step 5)."""
+    online = settings.model_copy(
+        update={
+            "blastproof_database_url": SecretStr(
+                "postgresql+asyncpg://blastproof_app:x@203.0.113.10:5432/blastproof"
+            )
+        }
+    )
+    with TestClient(create_app(online)) as client:
         assert client.get("/health").json() == {"status": "ok"}
     assert no_network.blocked == []
