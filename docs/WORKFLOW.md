@@ -164,7 +164,7 @@ When I approve, build it with these rules:
 
 ```text
 Verify this step:
-1. Run the test suite and lint for every part i touched (see file changes) (backend and/or
+1. Run the test suite and lint for every part you touched (see file changes) (backend and/or
    frontend). Paste the actual output summary, not a description of it.
 2. Run the step's "Done when" check. Paste the actual output.
 3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.

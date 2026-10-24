@@ -594,3 +594,49 @@ Python sockets entirely. Without the fail-fast check, a stopped database cost ab
 integration test in timeouts.
 **Rejected:** skipping integration tests when Postgres is down (a missing database must never
 look like a pass); an OS-level network sandbox (not portable to Windows).
+
+## D-072 · 2026-10-24 · CI starts Postgres with `docker compose up --wait`, not a service container
+**Decision:** The CI job runs `docker compose up -d --wait` on the repo's `docker-compose.yml` after
+checkout, instead of the "Postgres service container" in backend plan §8 step 2 and §15. Step 3's
+`company-db` joins the same file, so CI needs no change for it. On failure the job prints
+`docker compose logs`.
+**Why:** GitHub starts `services:` containers before any step, so they cannot mount
+`docker/blastproof-init/` from the checkout. One Compose file keeps CI identical to dev: the same
+image digest, init scripts and healthcheck (D-067, D-070). `--wait` blocks until the TCP
+healthcheck passes, which happens only once the roles exist. The first run showed that publishing
+on `[::1]` works on the `ubuntu-24.04` runner.
+**Rejected:** a `services:` container plus a `psql` step that replays the init SQL (two copies of
+the setup that can drift).
+
+## D-073 · 2026-10-24 · uv is pinned once, via `required-version` in `backend/pyproject.toml`
+**Decision:** `[tool.uv] required-version = "==0.13.5"`. CI's `astral-sh/setup-uv` reads it through
+`version-file: backend/pyproject.toml`, and locally uv refuses to run at any other version.
+**Why:** PROGRESS asked for uv to be pinned in CI. Writing the pin once keeps dev and CI on the same
+uv, and a mismatch fails loudly instead of resolving differently. The green CI run proves setup-uv
+honoured it: `uv sync --locked` would have failed under any other version.
+**Rejected:** `version: "0.13.5"` in the workflow only (dev and CI could drift); no pin (setup-uv
+installs the latest uv).
+
+## D-074 · 2026-10-24 · Dependabot: alerts plus weekly grouped version PRs into `develop`
+**Decision:** `.github/dependabot.yml` sets weekly updates for `uv` (`/backend`), `github-actions`
+and `docker-compose` (the digest-pinned image). Each ecosystem gets one grouped PR, targets
+`develop`, has `open-pull-requests-limit: 3` and a 7-day cooldown. The owner also turns on alerts and
+security updates in the repo settings (SEC-21).
+**Why:** Exact pins (D-065, D-070, D-075) go stale and miss fixes unless something bumps them.
+Grouped weekly PRs that must pass CI keep updates reviewable. The cooldown skips releases that are
+pulled again within days.
+**Rejected:** alerts only, as the plan says (pins would be bumped by hand); daily or ungrouped
+updates (too many PRs for one person).
+
+## D-075 · 2026-10-24 · CI hardening: SHA-pinned actions, pinned runner, read-only token, no secrets
+**Decision:** Every action is pinned to a full commit SHA (checkout v7.0.1, setup-uv v10.3.2), the
+runner is `ubuntu-24.04`, `permissions` is `contents: read`, checkout uses
+`persist-credentials: false`, and the PR workflow uses no secrets. `backend/tests/test_ci_workflow.py`
+enforces all of this, plus the step order and that integration tests are not filtered out.
+**Why:** A tag can be moved to other code; a commit SHA cannot. PR code runs inside CI, so with no
+secrets and a read-only token it has nothing to leak and nothing to push (TEST-01). `ubuntu-latest`
+moves to 26.04 in November 2026, which would change the build under us. The tests catch a one-line
+edit that undoes any of this.
+**Rejected:** floating tags and `ubuntu-latest`; LLM evals with `GOOGLE_API_KEY` in the PR workflow
+(they belong to the nightly workflow, OPS-02). Known gap: the secret check matches `secrets.` as
+text, so bracket syntax (`secrets['X']`) would get past it.

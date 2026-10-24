@@ -69,3 +69,67 @@ generic 500 that still carries the header and never leaks the error text. If a s
 has already started, a clean 500 isn't possible any more, so it logs and lets the server close the
 connection. In development, uvicorn's file-watcher process logs JSON only when started with
 `--log-config log_config.json`, because that process never loads the app.
+
+---
+
+## Step 2: CI
+
+### 1. CI starts Postgres from the same Compose file I use every day
+
+**What I did.** The GitHub Actions job runs `docker compose up -d --wait` on the repo's own
+`docker-compose.yml`, then runs the whole test suite against it, integration tests included. It
+pulls the same digest-pinned image and runs the same role init script and healthcheck as my
+laptop. `--wait` blocks until the healthcheck passes, and that check passes only once the roles
+exist, so tests never race the database. If anything fails, the job prints the container logs.
+
+**Why.** The integration tests check security properties: the app role can't create tables,
+outsiders can't connect, neither role is a superuser. Those tests only mean something if CI's
+database is set up exactly like the real one. If CI had its own copy of the setup, the two could
+drift, and a green check would prove nothing about the setup I actually run. With one Compose file
+there is one source of truth. The plan's wording was "a Postgres service container". I changed it
+on purpose, because GitHub starts service containers before the repo is checked out, so they can't
+mount the init scripts at all. Integration tests also fail, never skip, when the database is
+missing. A broken CI database turns the check red instead of quietly running fewer tests.
+
+**What I rejected.** A `services:` container plus a step that replays the init SQL with `psql`. It
+matches the plan's wording, but the image, healthcheck and setup would then live in two places.
+Running only unit tests in CI is cheaper, but it would leave the role and permission checks
+untested on every pull request.
+
+**Trade-off and limits.** The job pulls the image from Docker Hub on every run (about 35 seconds for
+the whole job today), and it depends on Docker Hub being up. Compose on the runner is 2.38, while my
+machine runs v5. The file uses nothing version-specific, but a future Compose feature could work
+locally and fail in CI. The first Linux run also answered two open questions from step 1:
+publishing the port on `[::1]` works on GitHub's runner, and the `no_network` test guard passes on
+Linux's event loop.
+
+### 2. The CI pipeline is treated as an attack surface: no secrets, read-only, everything pinned
+
+**What I did.** The workflow uses no secrets at all, and its GitHub token can only read the repo.
+Checkout doesn't keep the token in the git config. Every third-party action is pinned to a full
+commit SHA, not a tag, and the runner image (`ubuntu-24.04`) and uv (0.13.5) are pinned too. uv's
+version is written once, as `required-version` in `pyproject.toml`: CI installs that version, and
+uv on my machine refuses to run with a different one. Dependabot opens a weekly grouped pull
+request for the Python packages, the actions and the Postgres image digest, and each of those PRs
+goes through the same CI. A small test file reads the workflow and fails if someone adds a secret,
+tag-pins an action, unpins the runner or drops the integration tests.
+
+**Why.** Blastproof holds database credentials, so its build pipeline is a way in. A tag like `v7`
+can be moved to different code by whoever controls the action's repo; a commit SHA can't. A PR's
+code runs inside CI, so a workflow with no secrets and a read-only token has nothing to leak and
+nothing to push. Pinning everything also means a red build is caused by my change, not by a new
+uv, Ubuntu or image appearing overnight. The catch with pinning is that pins go stale and miss
+security fixes. Dependabot fixes that: updates still arrive, but as reviewable PRs that have to pass
+CI, not as silent drift. The config tests exist because these rules are easy to break by accident
+in a one-line edit, and nobody re-reads a workflow file once it works.
+
+**What I rejected.** Floating tags (`@v7`, `ubuntu-latest`, "latest uv"), which are less work but
+let code change under me without a commit. Putting `GOOGLE_API_KEY` in the PR workflow to run LLM
+evals; those go in a separate nightly workflow later. Pinning uv in the workflow file only, which
+would let my machine and CI drift apart.
+
+**Trade-off and limits.** Pins need upkeep: Dependabot PRs to read and merge weekly, and a uv
+upgrade on my machine now means editing `pyproject.toml` first. The secret check is a text match on
+`secrets.`, so `secrets['X']` written with brackets would get past it. Code review is the backstop
+there. The workflow can't turn on Dependabot alerts by itself; that is a repo setting the owner
+switches on.

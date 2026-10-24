@@ -41,7 +41,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
 | [ ] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
 | [ ] | ARCH-20 | Knowledge text lives in Postgres (`knowledge_chunks`); vector stores hold only vectors. | CL; BE §5, B11 | B11 | TEST-12 |
-| [ ] | ARCH-21 | The backend never imports from `demo_company/`. | CL; BE B1; D-047 | B1 (config), All | Ruff TID251 (banned imports) in CI |
+| [x] | ARCH-21 | The backend never imports from `demo_company/`. | CL; BE B1; D-047 | B1 (config), All | Ruff TID251 (banned imports) in CI |
 | [ ] | ARCH-22 | The dashboard holds no business logic; the backend enforces every permission. | CL; FE §1, §11 | All F steps, B19 | TEST-03; MVP-F06 |
 
 ## CONV: conventions
@@ -378,7 +378,7 @@ D-055). Tick a box only when its verification has passed.
 | | ID | Done when | Source | Step | Verified by |
 |---|---|---|---|---|---|
 | [x] | DW-B01 | `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`. | BE B1 | B1 | Manual + test |
-| [ ] | DW-B02 | A pull request shows a green check. | BE B2 | B2 | CI |
+| [x] | DW-B02 | A pull request shows a green check. | BE B2 | B2 | CI |
 | [ ] | DW-B03 | The seed runs; a count by plan returns sensible numbers on the local and dev databases; the scenario files load and validate against a Pydantic schema. | BE B3 | B3 | Manual + test |
 | [ ] | DW-B04 | `alembic upgrade head` creates all tables locally; a test as `blastproof_app` fails to update or delete an audit event, and so does one as `blastproof_owner` (trigger). | BE B4 | B4 | Integration test |
 | [ ] | DW-B05 | Tests prove: wrong key or token, or a deactivated agent's key → 401; inactive user or bumped `token_version` → 401; 6th failed login in 15 min from one IP refused; 21st failed login in an hour for one email refused across IPs; admin-only route rejects members with 403. | BE B5 | B5 | Unit/integration tests |
