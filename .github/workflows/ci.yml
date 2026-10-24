@@ -57,6 +57,12 @@ jobs:
       - run: uv run --project backend python demo_company/seed.py --target local
         working-directory: ${{ github.workspace }}
 
+      # Blastproof's own schema (step 4), as blastproof_owner. The password is the throwaway local
+      # Compose value from docker/blastproof-init/01-roles.sql, not a secret.
+      - run: uv run alembic upgrade head
+        env:
+          BLASTPROOF_MIGRATOR_URL: postgresql://blastproof_owner:blastproof_owner@localhost:5432/blastproof
+
       # Unit and integration tests; integration tests fail (not skip) if Postgres is down.
       - run: uv run pytest
 

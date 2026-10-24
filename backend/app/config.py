@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -15,6 +15,10 @@ class Settings(BaseSettings):
 
     app_env: Literal["local", "test", "production"] = "local"
     log_level: LogLevel = "INFO"
+
+    # Migrations only (blastproof_owner, plain postgresql:// URL); never used by the running app.
+    # SecretStr keeps the password out of repr() and logs.
+    blastproof_migrator_url: SecretStr | None = None
 
     # Tunables from backend plan §11. URLs, secrets and providers come with the step that uses them.
     review_wait_seconds: int = 20

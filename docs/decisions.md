@@ -710,3 +710,74 @@ sequence past the loaded ids. `order_items.product_id` is not a foreign key. `or
 out of the demo. Agents leave `created_at` out of inserts. `list_tables` (step 6) can read the
 comments as its one-line descriptions.
 **Rejected:** `serial` columns; a RESTRICT foreign key to products.
+
+## D-082 · 2026-10-24 · The vector extension is created by the init script, not the owner
+**Decision:** `docker/blastproof-init/02-extensions.sql` runs `CREATE EXTENSION IF NOT EXISTS
+vector` as the Compose superuser. The first migration keeps `CREATE EXTENSION IF NOT EXISTS vector`
+(BE-14), which is then a no-op; without the extension the migration fails with "permission denied"
+and creates nothing (one transaction). On Neon `blastproof-app`, the Deploy step already creates it
+(backend plan §15). The existing dev volume got it with a one-off `psql -f` of the same file.
+**Why:** pgvector 0.8.7 is not a trusted extension (`pg_available_extension_versions`: superuser
+true, trusted false), so `blastproof_owner`, which is not a superuser, cannot create it.
+**Rejected:** making the owner a superuser; installing the extension into `template1` (every new
+database would get it, which hides the missing-extension failure in tests).
+
+## D-083 · 2026-10-24 · The append-only trigger is statement-level and also blocks TRUNCATE
+**Decision:** `audit_events_append_only` is `BEFORE UPDATE OR DELETE OR TRUNCATE ... FOR EACH
+STATEMENT` and raises `insufficient_privilege` with "audit_events is append-only: <op> is not
+allowed". The app has only SELECT and INSERT on the table (D-013).
+**Why:** `TRUNCATE` skips row-level DELETE triggers, so the planned `BEFORE UPDATE OR DELETE`
+trigger alone would let the owner empty the log. Statement level also fires for statements that
+match no rows. **Limit:** the owner can still drop or disable the trigger; that is deliberate DDL
+in a migration, not a quiet rewrite, and the app role can do neither (tested).
+**Rejected:** a row-level trigger only (the plan's wording).
+
+## D-084 · 2026-10-24 · Data model gaps filled in step 4
+**Decision:** Four additions to backend plan §5: `actions.pinned_values` (jsonb; `ActionDetail`
+returns it and the intercept time cannot be recomputed), `actions.failure_reason` (text; the
+`failed` message's `{reason_code}`, keeping `policy_reason` for rules), and `created_at` on
+`preview_rows` and `before_images` (retention needs an age). `preview_rows` has the primary key
+(action_id, table_name, primary_key), one row per affected row; a re-preview must delete the old rows
+first, or the insert fails. Emails are unique ignoring case (`lower(email)`).
+**Why:** Each was needed by a later step and missing from the column list.
+**Rejected:** keeping reason codes only in audit-event data; a surrogate id on `preview_rows`
+(would let a missed cleanup double-count silently).
+
+## D-085 · 2026-10-24 · Schema conventions: text plus named CHECKs, cosine HNSW, sync migrations
+**Decision:** Enum-like columns are `text` with a named CHECK built from a `StrEnum` in
+`app/db/enums.py`; the migration freezes the value lists, and `tests/test_models.py` checks them
+against the enums (Alembic does not compare CHECKs). All constraints are named by a naming
+convention; indexes are named by hand. ids are `uuid DEFAULT gen_random_uuid()`, timestamps
+`timestamptz`. The HNSW index uses `vector_cosine_ops`, so step 11 must search with `<=>`.
+Migrations use a plain `postgresql://` URL, which SQLAlchemy 2.1 runs on psycopg 3 (its new
+default), the same URL form the checkpointer needs in step 14. `alembic check` runs in the tests.
+**Why:** Adding a value to a CHECK is a small migration; Postgres enum types are harder to change.
+Cosine is right whether or not the embedder normalises its vectors.
+**Rejected:** Postgres enum types; inner-product ops (only correct for normalised vectors); an
+async (asyncpg) Alembic environment.
+
+## D-086 · 2026-10-24 · Migration tests use scratch databases; CI migrates before pytest
+**Decision:** Tests create `bp_scratch_*` databases with the Compose superuser
+(`TEST_BLASTPROOF_ADMIN_URL`, test-only), set up like the init scripts, migrate them as the owner and
+drop them afterwards; they never migrate the dev `blastproof` database. CI runs `uv run alembic
+upgrade head` after `docker compose up` with the local dev owner URL (not a secret). Its placement is
+checked by its own test instead of `REQUIRED_RUN_ORDER`.
+**Why:** Upgrade and downgrade tests would otherwise wipe dev data. Adding the step to
+`REQUIRED_RUN_ORDER` would have broken the exact-message check in
+`test_order_check_catches_a_seed_before_postgres`, an existing test that must not change.
+**Rejected:** granting CREATEDB to `blastproof_owner`; migrating the shared dev database in tests.
+
+## D-087 · 2026-10-24 · Migrations refuse any role but the owner, and log JSON
+**Decision:** `migrations/env.py` checks `current_user` inside the migration transaction and stops
+with `WrongMigratorRoleError` ("Nothing was changed") unless it is `blastproof_owner`. From the
+command line it sets up `app.logging` (JSON lines, SQLAlchemy's SQL logging kept at WARNING), so
+`alembic.ini` has no logging sections. With an explicit URL (tests), `env.py` never reads
+`backend/.env`. A test checks that scratch databases are set up exactly like the dev `blastproof`
+database (owners, access lists, the vector extension).
+**Why:** Found in the step 4 verify review. Run as a superuser, a migration would leave tables the
+owner can never migrate again; run as the app, it fails halfway. Migrations run on every Fly.io
+deploy (`release_command`), so their logs should match the app's. The check must sit inside
+`begin_transaction()`: a query before it opens a transaction that Alembic joins and never commits.
+The scratch helper repeats part of the init scripts, and without the test the two could drift.
+**Rejected:** checking only "not a superuser" (the app role would still get halfway); keeping
+Alembic's plain-text logging.
