@@ -1,8 +1,8 @@
 # Progress
 
 ## Current focus
-Next: Spike: MCP mounting, then step 6 (MCP server). Step 6's `/mcp` middleware should call
-`app.core.auth.authenticate_agent_key` (D-090).
+Next: step 6 (MCP server), as rewritten after the MCP spike (D-096 to D-101). Its `/mcp`
+middleware calls `app.core.auth.authenticate_agent_key` (D-090).
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
@@ -12,6 +12,24 @@ Step 4 (Blastproof data model) done 2026-10-24, merged into `develop` (PR #4), d
 D-087.
 Step 5 (Auth) done 2026-10-25 on `feat/step-5`, PR #5 into `develop` (CI green), decisions D-088 to
 D-095.
+Spike: MCP mounting done 2026-10-25 on `spike/mcp-mounting`, decisions D-096 to D-101.
+
+### Spike: MCP mounting, done 2026-10-25
+- Throwaway code and findings in `spikes/`: `mcp_mounting.py` (`probe` runs 10 questions in about
+  90 s; `serve --mode stateful|stateless|json` for Claude Code), `mcp_mounting.md` (answers and
+  real output), `mcp-spike.json` and `mcp-spike-wrong-key.json` (`--mcp-config` files, fake keys).
+  No `backend/app` change; 331 backend tests still pass.
+- Findings: add the SDK's `/mcp` route to FastAPI's router (both `app.mount` forms broke 404s or
+  redirected `POST /mcp`); one MCP server per `create_app()` (`session_manager.run()` is single-use);
+  Claude Code 2.1.310 speaks the session-less 2026-07-28 protocol; run stateless with SSE (15 s
+  pings; JSON mode is silent for a whole long poll); contextvar, request state and headers all
+  carried the right agent; a stateful session accepted another agent's key; DNS-rebinding
+  protection rejects `testserver` and unlisted hosts with 421; the SDK logs raw exception text.
+- Checked through Claude Code itself (`claude -p --mcp-config`, four modes): 25 s and 55 s tool
+  calls returned; a wrong key showed `AUTH_HEADER_REJECTED, HTTP 401` with our message.
+- Plan edits: backend plan step 6 rewritten, §6 `session_id` and the timeout note, the tech table
+  and layout. `docs/design-choices.md` gained the spike's two choices.
+- Requirements ticked: SPIKE-01.
 
 ### Step 5, done 2026-10-25
 - `app/core/security.py` (agent keys, argon2 via pwdlib, HS256 tokens), `app/core/auth.py`
@@ -170,6 +188,16 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Step 6: the MCP SDK's stdlib `mcp` logger writes raw exception text (seen in the spike: an email
+  and a URL with a password). Step 6 must silence or mask it and test that no raw value reaches
+  the logs (D-100).
+- Deploy: Fly's proxy is said to drop connections idle for about 60 s (community forum, not docs).
+  `/mcp` streams SSE pings every 15 s (D-097); measure a 50 s `get_action_status` long poll on the
+  real machine (D-101).
+- Step 6 tests: Starlette's TestClient host `testserver` gets 421 from the MCP DNS-rebinding check;
+  use the base URL `http://localhost:8000` (D-099).
+- The MCP route is taken from the SDK app's route list (D-096). If the SDK app ever gains more
+  routes or middleware (for example by turning on SDK auth), the step 6 route-count test fails.
 - Account admin has no tools yet (D-095): no route or command bumps `token_version` (log out
   everywhere), fixes a mistyped email, deactivates a user or resets a password. Today these take SQL
   on the dev database. Step 19 adds user routes; decide then which of these it covers.
@@ -214,7 +242,8 @@ created at deploy time straight into Fly.io secrets (D-058).
 - Adding a step to `REQUIRED_RUN_ORDER` breaks the exact-message check in
   `test_order_check_catches_a_seed_before_postgres`; step 4 checked its CI step in a separate test
   instead (D-086).
-- The MCP SDK is v2 and the plan describes v1 (D-063); the MCP spike must use the v2 API.
+- The MCP SDK is v2 (D-063); the MCP spike used the v2 API and step 6's text now does too
+  (D-096 to D-101).
 - Without `--log-config log_config.json`, uvicorn's reloader prints three plain-text lines
   before the app loads (the plan's Done-when command still works; CLAUDE.md uses the flag).
 - `mcp` v2 pulls in `httpx2` alongside the plan's `httpx`; harmless. The test client logs each
@@ -298,7 +327,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 3. Demo company database and eval scenarios
 - [x] 4. Blastproof data model
 - [x] 5. Auth
-- [ ] Spike: MCP mounting
+- [x] Spike: MCP mounting
 - [ ] 6. MCP server
 - [ ] Spike: Claude Code hook
 - [ ] 7. Remove direct access

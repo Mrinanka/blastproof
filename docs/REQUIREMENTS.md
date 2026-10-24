@@ -355,7 +355,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | SPIKE-01 | MCP spike: mount path (`streamable_http_app()` serves at `/mcp`), lifespan and `session_manager.run()`, stateless vs session mode, how a tool reads request data, and Claude Code's MCP tool timeout vs the 50 s long poll. | BE §6, B6; WF Part 3 | before B6 | Spike output pasted; decisions.md |
+| [x] | SPIKE-01 | MCP spike: mount path (`streamable_http_app()` serves at `/mcp`), lifespan and `session_manager.run()`, stateless vs session mode, how a tool reads request data, and Claude Code's MCP tool timeout vs the 50 s long poll. | BE §6, B6; WF Part 3 | before B6 | Spike output pasted; decisions.md |
 | [ ] | SPIKE-02 | Hook spike: matcher tool names (Read, Grep, Glob, MultiEdit, NotebookEdit), default hook timeout and whether a timeout fails open, `permissions.deny` path syntax, hook snapshot at startup, `disableAllHooks` and settings precedence, behaviour in bypass-permissions mode. | WF Part 3; BE B7, B18; SPEC §9 | before B7 | Spike output pasted |
 | [ ] | SPIKE-03 | Neon spike: create-branch payload, waiting on operations, non-owner role connection URIs, branch `expires_at`, free-plan caps, default Postgres version, pooled vs direct endpoint with asyncpg, project-scoped API keys, and measured create-to-first-query p50/p95. | BE §2, B10 | before B10 | Spike output; sets NFR-03 |
 | [ ] | SPIKE-04 | LangGraph spike: psycopg 3 setup (`autocommit=True`, `dict_row`, plain URL), `setup()` from an Alembic migration as `blastproof_owner`, and `interrupt()` re-running its node on resume. | BE B14 | before B14 | Spike output pasted |

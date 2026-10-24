@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "spike": {
+      "type": "http",
+      "url": "http://localhost:8765/mcp",
+      "headers": { "Authorization": "Bearer spike-key-a" }
+    }
+  }
+}
