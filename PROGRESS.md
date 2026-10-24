@@ -1,12 +1,46 @@
 # Progress
 
 ## Current focus
-Next: step 3 (demo company database and eval scenarios). Read backend plan §8 step 3, §5 (the
-`blastproof` schema and `applied_actions`), §14 (incident replays) and §15 (`company-db`) first.
+Next: step 4 (Blastproof data model). Read backend plan §8 step 4 and §5 (the eleven tables,
+roles and the audit trigger) first, and the known issue about `CREATE EXTENSION vector` as
+`blastproof_owner`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
 Step 2 (CI) done 2026-10-24, decisions D-072 to D-075.
+Step 3 (demo company database and eval scenarios) done 2026-10-24, decisions D-076 to D-081.
+
+### Step 3, done 2026-10-24
+- `company-db` in Compose (`postgres:18`, digest-pinned, loopback `:5433`, volume
+  `company-data`); `docker/company-init/01-roles.sql` creates `blastproof_reader` and
+  `blastproof_writer`.
+- `demo_company/schema.sql`: 11 tables with identity PKs, FKs per BE-05, no triggers, the
+  `blastproof` schema (`applied_actions`, `seed_info`), grants (writer gets TEMPORARY, D-076).
+- `demo_company/seed.py` (`--target local|neon`), `rebase_dates.py`, `_data.py` (deterministic
+  generator, D-078), `_targets.py` (URLs, `--confirm <host>` guard, password scrubbing, D-080),
+  `schema_docs.md`. Run from the repo root: `uv run --project backend python demo_company/seed.py
+  --target local` (about 16 s, 272,770 rows; byte-identical on every run).
+- `backend/evals/schema.py` and `backend/evals/scenarios/{incidents,labeled}.yaml`: 12 incident
+  replays covering all six MVP incidents, 23 labeled actions (5 allow, 8 review, 10 block); 16
+  scenarios carry expected counts measured on the seed (D-079).
+- CI lints `demo_company/` and runs the local seed before pytest; `REQUIRED_RUN_ORDER` extended.
+- Tests: 171 in total (107 new): scenario schema, company roles and privileges, schema shape,
+  exact counts, every scenario's measured impact, rebase, the Neon guard (pointed at a local
+  copy), errors never printing passwords, schema docs vs schema.
+- Done-when checked: the seed ran on local `company-db` and on Neon `blastproof-company-dev`
+  (`ep-patient-butterfly-...`, 35 s, roles created with SQL and in no group); count by plan as
+  `blastproof_reader` gave enterprise 153, free 49,388, pro 459 on both, and the inactive split
+  48,201 / 9 / 3 on both; both scenario files validate.
+- CI: the PR's `backend` check passed on commit `08fa5e9` (93 s, up from 35 s with the seed), the
+  first Linux run of the seed and the subprocess tests.
+- Requirements ticked: BE-02, BE-03, BE-04, BE-06, BE-07, BE-08, BE-09, BE-10, EVAL-01, EVAL-03,
+  EVAL-04, DW-B03. Left open: BE-05 (verified by step 10's cascade counts; FK test already
+  passes), BE-11 (the owner's `blastproof-company` load at deploy), BE-12 (verified by step 11's
+  retrieval), EVAL-02 (50 entries at the Evals stage), OPS-01 (Alembic and evals still to add),
+  OPS-07 (Deploy).
+- Fixed after the verify review: error messages scrub only the passwords of the target in use (the
+  local dev password `company` had blanked the word "company" in a Neon message); tests read the
+  anchor date and the demo's headline counts from `incidents.yaml` (D-052).
 
 ### Step 2, done 2026-10-24
 - `.github/workflows/ci.yml`: one `backend` job on every pull request and on pushes to `develop` and
@@ -91,14 +125,14 @@ created at deploy time straight into Fly.io secrets (D-058).
   when startup gains work (fastembed in step 11, Neon in step 10).
 - The Postgres port is published on `127.0.0.1` and `[::1]`. Publishing only IPv4 made every
   `localhost` connection on Windows wait about 2 s for the IPv6 attempt to fail.
-- Partial requirements from step 1, finished by later steps: BE-02 and BE-03 (`company-db`,
-  step 3), OBS-02 and CONV-09 (`action_id` binding and stage timings, steps 8-16), CONV-16
-  (`package-lock.json`, F1).
+- Partial requirements from step 1, finished by later steps: OBS-02 and CONV-09 (`action_id`
+  binding and stage timings, steps 8-16), CONV-16 (`package-lock.json`, F1). BE-02 and BE-03
+  were finished in step 3.
 - SEC-21 needs the owner to turn on Dependabot alerts and security updates (Settings → Advanced
   Security). Tick it once that is confirmed.
 - PR #1 merged into `develop` on 2026-10-24, so Dependabot now reads `dependabot.yml`. Its config
   is not yet checked: look for errors under Insights → Dependency graph → Dependabot.
-- CI is partial (OPS-01): add `company-db` to Compose and `seed.py --target local` (step 3),
+- CI is partial (OPS-01): `company-db` and the local seed were added in step 3; still to add:
   `alembic upgrade head` (step 4), and incident replays plus rule-only evals (Evals stage). Update
   `REQUIRED_RUN_ORDER` in `tests/test_ci_workflow.py` when steps are added.
 - CI cannot use `ubuntu-latest`. When 24.04 nears end of life, move the pin and its test together.
@@ -122,6 +156,32 @@ created at deploy time straight into Fly.io secrets (D-058).
 - Test helpers (`NetworkGuard`, database URLs) live in `tests/conftest.py` and are imported
   from it (hence `tests/__init__.py`). Move them to `tests/support.py` when the suite grows.
 - `FastAPI(version="0.1.0")` duplicates the version in `pyproject.toml`.
+- Step 8: the frozen `Clock` must pin to exactly 2026-10-01T00:00:00Z. Only `last_login_at` has
+  a margin around its cutoff; other expected counts (e.g. tickets closed a year ago) are exact
+  only at that instant (D-079).
+- Steps 8-9: no rule in backend plan §9 blocks a side-effect function such as
+  `pg_terminate_backend`; as written it would go to review and be shadow-run. `labeled.yaml`
+  (`terminate-backends`) expects block.
+- Step 9: `tests/test_seed_counts.py` repeats the `users.paying` derived group in
+  `DERIVED_GROUPS`; switch it to read `policies/rules.yaml`.
+- Step 10: `CREATE DATABASE ... TEMPLATE` does not copy database-level rights, so
+  `FakeNeonClient` must grant CONNECT (reader) and CONNECT, TEMPORARY (writer) on each
+  `shadow_*` database, as `seed.py` does for `company_main`.
+- Step 6 onward: asyncpg sends unknown URL query parameters to Postgres as settings, so Neon's
+  `channel_binding=require` must stay out of the company URLs (keep `sslmode=require`).
+- Hook spike: MultiEdit is no longer listed in Claude Code's tools reference; confirm the matcher
+  list in BE-103/BE-104.
+- Two labeled actions disagree with rules alone on purpose (`close-one-ticket`,
+  `delete-inactive-enterprise-customer`); the evals will count them as a false block and a miss
+  until the judge handles them.
+- Running `seed.py --target local` drops and rebuilds `company_main` with `WITH (FORCE)`,
+  disconnecting anything using it. Rebasing local `company_main` breaks the anchor test; re-seed
+  instead. The scripts cannot tell Neon projects apart: the `--confirm <host>` guard is the only
+  check against loading the wrong one.
+- CI now takes about 93 s (35 s before step 3): the seed plus the scratch-database tests.
+- The GitHub CLI (`gh`) is not installed, so PRs are opened by hand in the browser. `test_checks_catch_a_bad_workflow[pytest-before-postgres]`
+  now also trips on the missing seed step; `test_order_check_catches_a_seed_before_postgres`
+  covers the new step's order.
 
 ## Stage 0: setup
 - [x] Plan audit done (Prompt 0A): `docs/plan-audit.md`
@@ -134,7 +194,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 ## Stage 1: foundation
 - [x] 1. Repo and skeleton
 - [x] 2. CI
-- [ ] 3. Demo company database and eval scenarios
+- [x] 3. Demo company database and eval scenarios
 - [ ] 4. Blastproof data model
 - [ ] 5. Auth
 - [ ] Spike: MCP mounting

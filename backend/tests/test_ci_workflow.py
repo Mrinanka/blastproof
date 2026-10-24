@@ -25,6 +25,7 @@ REQUIRED_RUN_ORDER = [
     "uv run ruff check",
     "uv run ruff format --check",
     "docker compose up",
+    "demo_company/seed.py --target local",  # step 3: builds company_template and company_main
     "uv run pytest",
 ]
 
@@ -170,3 +171,28 @@ def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -
 )
 def test_checks_catch_a_bad_workflow(bad_yaml: str, check: Any) -> None:
     assert check(bad_yaml) != []
+
+
+def test_seed_runs_from_the_repo_root_against_local_only(ci: dict[Any, Any]) -> None:
+    (seed,) = [s for s in steps(ci) if "demo_company/seed.py" in s.get("run", "")]
+    # The repo root has no pyproject.toml, so uv must be pointed at the backend project.
+    assert "uv run --project backend" in seed["run"]
+    assert seed["working-directory"] == "${{ github.workspace }}"
+    assert "--target neon" not in seed["run"]  # CI never talks to Neon (TEST-04)
+
+
+def test_lint_covers_demo_company(ci: dict[Any, Any]) -> None:
+    runs = [s["run"] for s in steps(ci) if "uv run ruff" in s.get("run", "")]
+    assert len(runs) == 2
+    assert all("../demo_company" in run for run in runs)
+
+
+def test_order_check_catches_a_seed_before_postgres() -> None:
+    bad = load_yaml(
+        "jobs: {b: {steps: ["
+        "{run: uv sync --locked}, {run: uv run ruff check .},"
+        "{run: uv run ruff format --check .},"
+        "{run: uv run --project backend python demo_company/seed.py --target local},"
+        "{run: docker compose up -d --wait}, {run: uv run pytest}]}}"
+    )
+    assert run_order_problems(bad) == [f"steps out of order: {REQUIRED_RUN_ORDER}"]

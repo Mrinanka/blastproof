@@ -4,8 +4,12 @@ import asyncio.selector_events
 import ipaddress
 import os
 import socket
+import subprocess
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
 
 import asyncpg
 import psycopg
@@ -15,6 +19,7 @@ from psycopg.conninfo import conninfo_to_dict
 
 from app.config import Settings
 from app.main import create_app
+from evals.schema import ExpectedImpact, SqlScenario, load_scenario_file
 
 BLASTPROOF_OWNER_URL = os.environ.get(
     "TEST_BLASTPROOF_OWNER_URL",
@@ -24,6 +29,43 @@ BLASTPROOF_APP_URL = os.environ.get(
     "TEST_BLASTPROOF_APP_URL",
     "postgresql://blastproof_app:blastproof_app@localhost:5432/blastproof",
 )
+
+
+# The Compose company-db (step 3). The superuser is test/dev only, like FAKE_NEON_ADMIN_URL.
+COMPANY_ADMIN_URL = os.environ.get(
+    "TEST_COMPANY_ADMIN_URL", "postgresql://company:company@localhost:5433/postgres"
+)
+COMPANY_READER_URL = os.environ.get(
+    "TEST_COMPANY_READER_URL",
+    "postgresql://blastproof_reader:blastproof_reader@localhost:5433/company_main",
+)
+COMPANY_WRITER_URL = os.environ.get(
+    "TEST_COMPANY_WRITER_URL",
+    "postgresql://blastproof_writer:blastproof_writer@localhost:5433/company_main",
+)
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+DEMO_COMPANY_DIR = REPO_ROOT / "demo_company"
+SCENARIOS_DIR = REPO_ROOT / "backend" / "evals" / "scenarios"
+REPLIT_SCENARIO_ID = "replit-clean-up-inactive-users"
+
+
+def scenario_anchor_date() -> date:
+    """The seed's anchor date, as the scenario files hold it (D-052: tests read it from there)."""
+    return load_scenario_file(SCENARIOS_DIR / "incidents.yaml").anchor_date
+
+
+def replit_impact() -> ExpectedImpact:
+    """The demo's headline facts (48,213 users, 12 paying), as incidents.yaml states them."""
+    for scenario in load_scenario_file(SCENARIOS_DIR / "incidents.yaml").scenarios:
+        if isinstance(scenario, SqlScenario) and scenario.id == REPLIT_SCENARIO_ID:
+            assert scenario.expected_impact is not None
+            return scenario.expected_impact
+    raise AssertionError(f"{REPLIT_SCENARIO_ID} is missing from incidents.yaml")
+
+
+def company_url(database: str) -> str:
+    """The company-db superuser URL for another database on the same server."""
+    return COMPANY_ADMIN_URL.rsplit("/", 1)[0] + f"/{database}"
 
 
 @pytest.fixture
@@ -59,6 +101,61 @@ def blastproof_db_reachable() -> None:
             f" ({type(exc).__name__})",
             pytrace=False,
         )
+
+
+@pytest.fixture(scope="session")
+def company_db_seeded() -> None:
+    """Fail at once, with a clear message, when company-db is down or company_main is not seeded."""
+
+    async def probe() -> None:
+        conn = await asyncpg.connect(company_url("company_main"), timeout=3)
+        try:
+            await conn.fetchval("SELECT anchor_date FROM blastproof.seed_info")
+        finally:
+            await conn.close()
+
+    try:
+        asyncio.run(probe())
+    except (OSError, TimeoutError, asyncpg.PostgresError) as exc:
+        pytest.fail(
+            "company_main is not ready on localhost:5433. Run `docker compose up -d`, then"
+            " `uv run --project backend python demo_company/seed.py --target local` from the repo"
+            f" root. ({type(exc).__name__})",
+            pytrace=False,
+        )
+
+
+def run_demo_script(
+    script: str, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run a demo_company script as a subprocess (the backend never imports it, D-047).
+
+    The child never reads backend/.env (SEED_ENV_FILE is empty) and sees only the URLs given here.
+    """
+    child_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k.upper()
+        not in {
+            "SEED_NEON_OWNER_URL",
+            "COMPANY_DB_READER_URL",
+            "COMPANY_DB_WRITER_URL",
+            "FAKE_NEON_ADMIN_URL",
+        }
+    }
+    child_env |= {"SEED_ENV_FILE": "", "FAKE_NEON_ADMIN_URL": COMPANY_ADMIN_URL}
+    child_env |= env or {}
+    return subprocess.run(
+        [sys.executable, str(DEMO_COMPANY_DIR / script), *args],
+        env=child_env,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+        check=False,
+    )
 
 
 class NetworkBlockedError(RuntimeError):

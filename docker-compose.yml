@@ -1,4 +1,4 @@
-# Local infrastructure (backend plan §15). company-db is added in step 3.
+# Local infrastructure (backend plan §15).
 services:
   blastproof-db:
     # Pinned to an exact build (the multi-arch index digest), so the image cannot change underneath
@@ -26,5 +26,27 @@ services:
       timeout: 5s
       retries: 30
 
+  # The fake company database for tests, CI and seeded actions (backend plan §15, D-003). Postgres 18
+  # to match the Neon projects (D-057). Holds company_template (seeded, then locked) and company_main
+  # (cloned from it); demo_company/seed.py --target local builds both, not an init script.
+  company-db:
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+    environment:
+      # Superuser used by the init scripts, the seed and (step 10) FakeNeonClient. Dev-only values.
+      # The default database stays "postgres".
+      POSTGRES_USER: company
+      POSTGRES_PASSWORD: company
+    # Loopback only, IPv4 and IPv6, like blastproof-db (D-070).
+    ports: ["127.0.0.1:5433:5432", "[::1]:5433:5432"]
+    volumes:
+      - company-data:/var/lib/postgresql # Postgres 18 layout (D-067)
+      - ./docker/company-init:/docker-entrypoint-initdb.d:ro # reader and writer roles only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U company -d postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
 volumes:
   blastproof-data:
+  company-data:
