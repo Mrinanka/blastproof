@@ -1,10 +1,30 @@
 # Progress
 
 ## Current focus
-Next: step 2 (CI). Read backend plan §8 step 2 and §15 (CI) first.
+Next: step 3 (demo company database and eval scenarios). Read backend plan §8 step 3, §5 (the
+`blastproof` schema and `applied_actions`), §14 (incident replays) and §15 (`company-db`) first.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
+Step 2 (CI) done 2026-10-24, decisions D-072 to D-075.
+
+### Step 2, done 2026-10-24
+- `.github/workflows/ci.yml`: one `backend` job on every pull request and on pushes to `develop` and
+  `main`. It runs `uv sync --locked`, `ruff check`, `ruff format --check`,
+  `docker compose up -d --wait` (D-072) and `pytest` (unit + integration). There are no secrets,
+  the token is read-only, actions are SHA-pinned and the runner is `ubuntu-24.04` (D-075).
+  `APP_ENV=test`, `NEON_CLIENT=fake`.
+- uv pinned once with `required-version = "==0.13.5"` in `backend/pyproject.toml` (D-073).
+- `.github/dependabot.yml`: weekly grouped PRs for uv, GitHub Actions and the Compose image
+  digest, into `develop` (D-074).
+- `backend/tests/test_ci_workflow.py`: 13 unit tests guarding the workflow and Dependabot config
+  (64 tests in total).
+- Done-when checked: PR #1 (`ci/step-2` → `develop`) shows a green `backend` check (commit
+  `595f1cb`, 35 s). The first Linux run cleared two step 1 risks: publishing on `[::1]` works on the
+  runner, and the `no_network` guard passes on Linux.
+- Requirements ticked: DW-B02, ARCH-21. Left open: SEC-21 (alerts not confirmed on yet), OPS-01
+  (seed, Alembic and evals are added to CI by steps 3, 4 and the Evals stage), TEST-01 and TEST-04
+  (ongoing; CI holds no secrets and sets `NEON_CLIENT=fake`, which nothing reads yet).
 
 ### Step 1, done 2026-10-24
 - Backend skeleton in `backend/`: `pyproject.toml` with the whole MVP stack pinned (D-065),
@@ -72,13 +92,26 @@ created at deploy time straight into Fly.io secrets (D-058).
 - The Postgres port is published on `127.0.0.1` and `[::1]`. Publishing only IPv4 made every
   `localhost` connection on Windows wait about 2 s for the IPv6 attempt to fail.
 - Partial requirements from step 1, finished by later steps: BE-02 and BE-03 (`company-db`,
-  step 3), ARCH-21 (TID251 must run in CI, step 2), SEC-21 (Dependabot alerts, step 2), OBS-02
-  and CONV-09 (`action_id` binding and stage timings, steps 8-16), CONV-16 (`package-lock.json`,
-  F1).
-- Step 1 was only run on Windows. Step 2's CI is the first Linux run: watch the `no_network`
-  guard's asyncio and psycopg paths. If anyone runs Compose on Linux without IPv6, check that
-  publishing on `[::1]` still works.
-- uv's own version is not pinned (only packages are, in `uv.lock`). Pin it in CI (step 2).
+  step 3), OBS-02 and CONV-09 (`action_id` binding and stage timings, steps 8-16), CONV-16
+  (`package-lock.json`, F1).
+- SEC-21 needs the owner to turn on Dependabot alerts and security updates (Settings → Advanced
+  Security). Tick it once that is confirmed.
+- PR #1 merged into `develop` on 2026-10-24, so Dependabot now reads `dependabot.yml`. Its config
+  is not yet checked: look for errors under Insights → Dependency graph → Dependabot.
+- CI is partial (OPS-01): add `company-db` to Compose and `seed.py --target local` (step 3),
+  `alembic upgrade head` (step 4), and incident replays plus rule-only evals (Evals stage). Update
+  `REQUIRED_RUN_ORDER` in `tests/test_ci_workflow.py` when steps are added.
+- CI cannot use `ubuntu-latest`. When 24.04 nears end of life, move the pin and its test together.
+  Docker Compose on the runner is 2.38 while dev runs v5; keep `docker-compose.yml` to features
+  both support.
+- CI's Python is the latest 3.13 patch, which may differ from the dev machine's patch.
+- `cancel-in-progress` means that when two pushes land on `develop` quickly, the older commit's run
+  is cancelled and that commit gets no check.
+- Branch protection (making `backend` a required check on `develop`) is not set; owner's choice.
+- uv upgrades now start in `backend/pyproject.toml` (`required-version`); uv refuses to run at any
+  other version.
+- If anyone runs Compose on Linux without IPv6, check that publishing on `[::1]` still works (it
+  does on GitHub's `ubuntu-24.04` runner).
 - 404 and 422 responses still use FastAPI's default `{"detail": ...}` body, not CLAUDE.md's
   `{"error": {...}}` envelope. Only the crash 500 uses the envelope (D-068). Fixed in step 19.
 - The crash path logs the full exception text. Nothing handles sensitive data yet, but once
@@ -100,7 +133,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 
 ## Stage 1: foundation
 - [x] 1. Repo and skeleton
-- [ ] 2. CI
+- [x] 2. CI
 - [ ] 3. Demo company database and eval scenarios
 - [ ] 4. Blastproof data model
 - [ ] 5. Auth
