@@ -1,17 +1,16 @@
 # Progress
 
 ## Current focus
-Now: finish step 3 by committing on `feat/step-3` and getting a green CI check on its PR (the
-first CI run of the new seed step). Then step 4 (Blastproof data model): backend plan §8 step 4
-and §5.
+Next: step 4 (Blastproof data model). Read backend plan §8 step 4 and §5 (the eleven tables,
+roles and the audit trigger) first, and the known issue about `CREATE EXTENSION vector` as
+`blastproof_owner`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
 Step 2 (CI) done 2026-10-24, decisions D-072 to D-075.
-Step 3 (demo company database and eval scenarios) Done-when passed 2026-10-24, decisions D-076
-to D-081; waiting on its PR's CI run.
+Step 3 (demo company database and eval scenarios) done 2026-10-24, decisions D-076 to D-081.
 
-### Step 3, Done-when passed 2026-10-24
+### Step 3, done 2026-10-24
 - `company-db` in Compose (`postgres:18`, digest-pinned, loopback `:5433`, volume
   `company-data`); `docker/company-init/01-roles.sql` creates `blastproof_reader` and
   `blastproof_writer`.
@@ -32,11 +31,16 @@ to D-081; waiting on its PR's CI run.
   (`ep-patient-butterfly-...`, 35 s, roles created with SQL and in no group); count by plan as
   `blastproof_reader` gave enterprise 153, free 49,388, pro 459 on both, and the inactive split
   48,201 / 9 / 3 on both; both scenario files validate.
-- Requirements ticked: BE-02, BE-03, BE-04, BE-06, BE-07, BE-08, BE-09, BE-10, EVAL-01, EVAL-04,
-  DW-B03. Left open: BE-05 (verified by step 10's cascade counts; FK test already passes), BE-11
-  (the owner's `blastproof-company` load at deploy), BE-12 (verified by step 11's retrieval),
-  EVAL-02 (50 entries at the Evals stage), EVAL-03 (its CI test runs once the PR is open), OPS-01,
-  OPS-07.
+- CI: the PR's `backend` check passed on commit `08fa5e9` (93 s, up from 35 s with the seed), the
+  first Linux run of the seed and the subprocess tests.
+- Requirements ticked: BE-02, BE-03, BE-04, BE-06, BE-07, BE-08, BE-09, BE-10, EVAL-01, EVAL-03,
+  EVAL-04, DW-B03. Left open: BE-05 (verified by step 10's cascade counts; FK test already
+  passes), BE-11 (the owner's `blastproof-company` load at deploy), BE-12 (verified by step 11's
+  retrieval), EVAL-02 (50 entries at the Evals stage), OPS-01 (Alembic and evals still to add),
+  OPS-07 (Deploy).
+- Fixed after the verify review: error messages scrub only the passwords of the target in use (the
+  local dev password `company` had blanked the word "company" in a Neon message); tests read the
+  anchor date and the demo's headline counts from `incidents.yaml` (D-052).
 
 ### Step 2, done 2026-10-24
 - `.github/workflows/ci.yml`: one `backend` job on every pull request and on pushes to `develop` and
@@ -174,7 +178,8 @@ created at deploy time straight into Fly.io secrets (D-058).
   disconnecting anything using it. Rebasing local `company_main` breaks the anchor test; re-seed
   instead. The scripts cannot tell Neon projects apart: the `--confirm <host>` guard is the only
   check against loading the wrong one.
-- CI is about 16 s longer (the seed). `test_checks_catch_a_bad_workflow[pytest-before-postgres]`
+- CI now takes about 93 s (35 s before step 3): the seed plus the scratch-database tests.
+- The GitHub CLI (`gh`) is not installed, so PRs are opened by hand in the browser. `test_checks_catch_a_bad_workflow[pytest-before-postgres]`
   now also trips on the missing seed step; `test_order_check_catches_a_seed_before_postgres`
   covers the new step's order.
 
@@ -189,7 +194,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 ## Stage 1: foundation
 - [x] 1. Repo and skeleton
 - [x] 2. CI
-- [ ] 3. Demo company database and eval scenarios
+- [x] 3. Demo company database and eval scenarios
 - [ ] 4. Blastproof data model
 - [ ] 5. Auth
 - [ ] Spike: MCP mounting

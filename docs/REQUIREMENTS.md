@@ -308,7 +308,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [x] | EVAL-01 | `backend/evals/scenarios/incidents.yaml` holds the MVP incident replays: Replit-style mass delete, DROP TABLE, delete without WHERE (and `WHERE true`), `psql` bypass attempt, hook-settings edit, and PocketOS-lite (credential hunt denied, no credential in the workspace). | SPEC §14; BE B3, §14; D-011 | B3 | DW-B03 |
 | [ ] | EVAL-02 | A first `labeled.yaml` with about 20 labeled actions is written in step 3; the Evals stage tops it up to 50 SQL statements labeled allow, review or block, including subtle cases. | BE B3, §14; D-035 | B3, Evals | DW-B03; pytest: at least 50 entries and every label present |
-| [ ] | EVAL-03 | Each scenario has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`; the scenario files carry `anchor_date: 2026-10-01` at the top, which backend tests and evals read. | BE B3; D-052 | B3 | DW-B03; CI test: `anchor_date` equals `seed_info.anchor_date` on local `company_main` |
+| [x] | EVAL-03 | Each scenario has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`; the scenario files carry `anchor_date: 2026-10-01` at the top, which backend tests and evals read. | BE B3; D-052 | B3 | DW-B03; CI test: `anchor_date` equals `seed_info.anchor_date` on local `company_main` |
 | [x] | EVAL-04 | Scenario files load and validate against a Pydantic schema. | BE B3 | B3 | DW-B03 |
 | [ ] | EVAL-05 | Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them. | BE B3 | B8-B13 | DW-B08, DW-B09, DW-B10 |
 | [ ] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
