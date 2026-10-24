@@ -76,7 +76,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | TEST-04 | Integration tests and CI use the local `company-db` and `FakeNeonClient` (`NEON_CLIENT=fake`) and never call Neon. | CL; BE §11, §15; D-003 | B2, B10 | CI config review |
 | [ ] | TEST-05 | Test setup recreates `company_main` from the never-connected `company_template`. | BE B10, §14; D-019 | B10 | DW-B10 (two previews in a row) |
 | [ ] | TEST-06 | Tests and evals freeze the classifier's `Clock` at `ANCHOR_DATE`. | BE B3, B8, §14; D-017 | B8 | DW-B08 (frozen-clock case) |
-| [ ] | TEST-07 | App startup does not call Neon or download models when `APP_ENV=test`. | BE B1 | B1 | *test that startup succeeds offline* |
+| [x] | TEST-07 | App startup does not call Neon or download models when `APP_ENV=test`. | BE B1 | B1 | *test that startup succeeds offline* |
 | [ ] | TEST-08 | Agent message templates are tested word for word. | BE §6 | B17 | *unit tests per template* |
 | [ ] | TEST-09 | A Playwright e2e test runs against the real local backend with `seed-demo-actions` data: log in as demo user 1, open the seeded pending action, see headline and numbers, reject with a reason, find it in History as rejected with your name, then as demo user 2 confirm it is absent and its URL shows "not found". | FE §12 | F7-F9 (after B20) | OPS-06 (nightly/manual workflow) |
 | [ ] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
@@ -91,7 +91,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | BE-01 | FastAPI app (`main.py`) with a `/health` route, `config.py` using pydantic-settings, structlog JSON logging, Ruff and pytest. | BE B1 | B1 | DW-B01 |
+| [x] | BE-01 | FastAPI app (`main.py`) with a `/health` route, `config.py` using pydantic-settings, structlog JSON logging, Ruff and pytest. | BE B1 | B1 | DW-B01 |
 | [ ] | BE-02 | `docker-compose.yml` runs `blastproof-db` (`pgvector/pgvector:pg18`, port 5432) and `company-db` (`postgres:18`, matching Neon's version, port 5433). | BE B1, §15 | B1, B3 | DW-B01, DW-B03 |
 | [ ] | BE-03 | Init scripts in `docker/` create `blastproof_owner` and `blastproof_app` on `blastproof-db`, and only the reader and writer roles on `company-db`. | BE B1, §15 | B1, B3 | *integration test connects as each role* |
 | [ ] | BE-04 | `demo_company/schema.sql` has about 11 tables (`users` with plan free/pro/enterprise and `last_login_at`, `organizations`, `subscriptions`, `payments`, `invoices`, `products`, `orders`, `order_items`, `support_tickets`, `feature_flags`, `customer_notes`), each with a primary key, and no triggers. | BE B3 | B3 | DW-B03 |
@@ -226,8 +226,8 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | BE-122 | Seeded actions belong to a "Demo seed (local)" system with `connection_profile = local`, so approving one never touches Neon. | BE B20; D-027 | B20 | *integration test* |
 | [ ] | BE-123 | `export-openapi` writes the OpenAPI schema to `backend/openapi.json` with no server or database. | BE B20; FE §13 | B20 | OPS-05 |
 | [ ] | BE-124 | `README.md` and a setup guide cover prerequisites, the three databases, `.env` setup, bootstrap, connecting Claude Code and installing the hook. | BE B20 | B20 | DW-B20 |
-| [ ] | BE-125 | All settings come from environment variables read once by `config.py`; `backend/.env` is git-ignored with a committed `.env.example`; production uses Fly.io secrets. | BE §11 | B1 | *check `.gitignore` and `.env.example`* |
-| [ ] | BE-126 | Configuration defaults match BE §11 (e.g. `REVIEW_WAIT_SECONDS` 20, `STATUS_MAX_WAIT_SECONDS` 50, `REVIEW_TIMEOUT_HOURS` 24, `MAX_CONCURRENT_SHADOWS` 2, `JUDGE_MIN_CONFIDENCE` 0.6, `RETENTION_DAYS` 30). | BE §11 | B1 onward | *unit test of Settings defaults* |
+| [x] | BE-125 | All settings come from environment variables read once by `config.py`; `backend/.env` is git-ignored with a committed `.env.example`; production uses Fly.io secrets. | BE §11 | B1 | *check `.gitignore` and `.env.example`* |
+| [x] | BE-126 | Configuration defaults match BE §11 (e.g. `REVIEW_WAIT_SECONDS` 20, `STATUS_MAX_WAIT_SECONDS` 50, `REVIEW_TIMEOUT_HOURS` 24, `MAX_CONCURRENT_SHADOWS` 2, `JUDGE_MIN_CONFIDENCE` 0.6, `RETENTION_DAYS` 30). | BE §11 | B1 onward | *unit test of Settings defaults* |
 
 ## SEC: security
 
@@ -325,7 +325,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | OBS-01 | LangSmith traces every LangChain call and LangGraph run (so every write has a trace), tagged with `action_id`, `agent_id` and `env`. | SPEC §7, §15; BE §13 | B12-B14 | MVP-B09 |
 | [ ] | OBS-02 | Structured JSON logs bind `request_id` and `action_id` on every line and log each stage with its duration (classify, shadow, retrieve, impact, judge, decide, commit). | BE §13; SPEC §15 | B1, B8-B16 | *log inspection test* |
 | [ ] | OBS-03 | Every fail-closed block logs `event=fail_closed` with a reason code. | BE §13; SPEC §15 | B14 | *integration test* |
-| [ ] | OBS-04 | Middleware adds an `X-Request-ID` header to every response. | BE §13 | B1 | *integration test* |
+| [x] | OBS-04 | Middleware adds an `X-Request-ID` header to every response. | BE §13 | B1 | *integration test* |
 | [ ] | OBS-05 | Actions record `preview_ms`, `total_ms`, LLM tokens and `llm_cost_usd`. | BE §5, B12 | B10, B12, B14 | *integration test* |
 | [ ] | OBS-06 | Every action has a complete audit timeline in `audit_events`: one event per status change, named after the new status, plus `shadow_done`, `decided` and `fail_closed`. | BE §5; SPEC §7, §10; D-037 | B6, B14-B16 | MVP-B09; *integration test: event types match the status history* |
 | [ ] | OBS-07 | Every decision carries a human-readable reason. | SPEC §7, §10 | B9, B13, B14 | *eval check that reason is non-empty* |
@@ -377,7 +377,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Done when | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | DW-B01 | `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`. | BE B1 | B1 | Manual + test |
+| [x] | DW-B01 | `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`. | BE B1 | B1 | Manual + test |
 | [ ] | DW-B02 | A pull request shows a green check. | BE B2 | B2 | CI |
 | [ ] | DW-B03 | The seed runs; a count by plan returns sensible numbers on the local and dev databases; the scenario files load and validate against a Pydantic schema. | BE B3 | B3 | Manual + test |
 | [ ] | DW-B04 | `alembic upgrade head` creates all tables locally; a test as `blastproof_app` fails to update or delete an audit event, and so does one as `blastproof_owner` (trigger). | BE B4 | B4 | Integration test |

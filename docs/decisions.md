@@ -499,3 +499,98 @@ with winget. F1 pins the version for CI and Vercel (`engines` in `package.json`)
 **Why:** The frontend plan asks for the current LTS. Node 22 is in maintenance only, until April 2027.
 **Rejected:** staying on Node 22. Note: Claude upgraded Node without asking first; the owner
 kept the upgrade, and Claude now asks before installing anything.
+
+## D-063 · 2026-10-24 · MCP Python SDK v2 (`mcp` 2.3.0)
+**Decision:** Pin `mcp==2.3.0`, the current major version. The plan was written against v1, so
+step 6 and the MCP spike read "FastMCP" as v2's `MCPServer` (`from mcp.server.mcpserver import
+...`). Known v2 changes to check in the spike: `stateless_http` and the transport options moved to
+`streamable_http_app()`; `get_context()` is gone (a `ctx: Context` parameter is injected); the host
+lifespan must enter `session_manager.run()`; DNS-rebinding protection is on by default, so the
+Fly.io hostname needs `TransportSecuritySettings`.
+**Why:** v1 is no longer the current line; starting the MVP on it would mean a migration later.
+**Rejected:** pinning the last 1.x release to match the plan's wording.
+
+## D-064 · 2026-10-24 · SQLAlchemy 2.1
+**Decision:** Pin `sqlalchemy[asyncio]==2.1.6` instead of the plan's "SQLAlchemy 2.0 (async)".
+**Why:** 2.1 is the current stable release and the async API the plan relies on is unchanged.
+**Rejected:** holding back on 2.0.x.
+
+## D-065 · 2026-10-24 · Version policy: latest stable, pinned exactly; whole MVP stack in step 1
+**Decision:** Every backend dependency is the latest stable release on 2026-10-24, pinned with
+`==` in `pyproject.toml`, with transitive versions fixed in `uv.lock`. Step 1 installs the whole
+MVP stack at once, except `qdrant-client` and `voyageai` (after the MVP) and `mypy` (optional,
+skipped). `faker` is a dev dependency, used only by `demo_company/seed.py`.
+**Why:** One `uv sync` proves the full stack resolves on Python 3.13 (D-060) before any code
+depends on it, and later steps need no new dependency approvals for planned libraries.
+**Rejected:** adding each library in the step that first uses it.
+
+## D-066 · 2026-10-24 · Request IDs: pure-ASGI middleware that trusts only incoming UUIDs
+**Decision:** `RequestIdMiddleware` is plain ASGI, not Starlette's `BaseHTTPMiddleware`. It reuses
+an incoming `X-Request-ID` only if it parses as a UUID (returned in canonical form), otherwise it
+generates a `uuid4`. It binds `request_id` into structlog's contextvars, sets the response header,
+and logs one `request_finished` line per request, so uvicorn's access log is raised to WARNING.
+**Why:** `BaseHTTPMiddleware` breaks streaming responses such as the MCP transport (step 6).
+Accepting only UUIDs stops clients from putting arbitrary text (newlines, huge values) into logs.
+**Rejected:** echoing any incoming value; logging both our line and uvicorn's access line.
+
+## D-067 · 2026-10-24 · Postgres 18 images mount their volume at `/var/lib/postgresql`
+**Decision:** The Compose volume for `blastproof-db` mounts at `/var/lib/postgresql`, not
+`/var/lib/postgresql/data` as in backend plan §15's snippet. The same applies to `company-db` in
+step 3. The healthcheck runs `pg_isready` over TCP (`-h 127.0.0.1`).
+**Why:** From Postgres 18 the official images (and `pgvector/pgvector:pg18`, built on them) set
+`PGDATA=/var/lib/postgresql/18/docker` and declare the volume at `/var/lib/postgresql`; the old
+mount path is no longer where data lives. The temporary server that runs the init scripts listens
+only on the Unix socket, so a TCP check passes only once the roles exist (matters for CI).
+**Rejected:** setting `PGDATA` back to the old path.
+
+## D-068 · 2026-10-24 · The request-ID middleware turns unhandled exceptions into the 500
+**Decision:** If the app raises before sending a response, `RequestIdMiddleware` logs
+`event=unhandled_exception` (with the traceback and `request_id`) and sends the 500 itself, with
+`X-Request-ID` and the body `{"error": {"code": "internal_error", "message": "Internal server
+error"}}`. If the response has already started, it logs and re-raises so the server closes the
+connection. Amends D-066.
+**Why:** Starlette's outer error handler runs outside user middleware, so its 500 had no
+`X-Request-ID` and its traceback no `request_id` (found in the step 1 verify review). OBS-04 says
+every response. The body follows CLAUDE.md's error format and never includes the exception text.
+**Rejected:** waiting for the step 19 error handlers (OBS-04 would stay false until then);
+registering a FastAPI exception handler for `Exception` (Starlette still routes it through the
+outer error handler, outside this middleware).
+
+## D-069 · 2026-10-24 · The app is built on first access; dev runs with `--log-config`
+**Decision:** `app.main` no longer builds the app at import time. A module `__getattr__`
+(PEP 562) builds it once, the first time `app.main.app` is read, which is what uvicorn's
+`app.main:app` does. `backend/log_config.json` (a logging `dictConfig` using
+`app.logging.make_handler`) makes uvicorn's reloader process log JSON too, so the dev command in
+CLAUDE.md is now `uv run uvicorn app.main:app --reload --log-config log_config.json`. The plan's
+Done-when command still works without the flag. `LOG_LEVEL` is validated (one of
+DEBUG/INFO/WARNING/ERROR/CRITICAL, case-insensitive).
+**Why:** Importing the module (as tests do) used to read `backend/.env`, so a bad value there
+could break test collection. The reloader process never imports the app, so only a log config
+passed to uvicorn can make its lines JSON. An invalid `LOG_LEVEL` used to fail with a raw
+`ValueError` from `logging` instead of a settings error.
+**Rejected:** uvicorn's `--factory` flag (changes the plan's Done-when command); a custom launcher
+script (`python -m app`), which is another entry point to keep in sync.
+
+## D-070 · 2026-10-24 · Local Postgres: loopback only, digest-pinned, no temporary tables for the app
+**Decision:** Compose publishes `blastproof-db` on `127.0.0.1:5432` and `[::1]:5432` only. The
+image is pinned by its multi-arch index digest (`pgvector/pgvector:pg18@sha256:2358fc...`).
+`blastproof_app` cannot create temporary tables (a side effect of `REVOKE ALL ... FROM PUBLIC`,
+now deliberate, commented in the init script and tested). The same rules apply to `company-db`
+in step 3.
+**Why:** The superuser password is a dev value, so the port must not be reachable from the
+network. Both loopback addresses are needed: with only IPv4, every `localhost` connection on
+Windows waited about 2 s for IPv6 to fail. A floating tag could change the database under us
+(CONV-16). Nothing in the stack needs temporary tables, so the app does not get the right.
+**Rejected:** `0.0.0.0` (the plan's snippet); a bare `pg18` tag; granting `TEMPORARY` just in case.
+
+## D-071 · 2026-10-24 · Test guards: wider network blocking, integration tests fail fast
+**Decision:** The `no_network` fixture blocks non-loopback connections at four layers: DNS
+(`getaddrinfo`), `socket.connect`/`connect_ex`, the asyncio event loop's `sock_connect`, and
+psycopg's `connect`. A session fixture checks once that `blastproof-db` is reachable and fails
+every integration test at once with "run `docker compose up -d`" if not.
+**Why:** The verify review showed that an asyncio connection to a numeric IP got past a guard that
+only patched sockets (on Windows the proactor loop connects in C), and psycopg's libpq bypasses
+Python sockets entirely. Without the fail-fast check, a stopped database cost about 4 s per
+integration test in timeouts.
+**Rejected:** skipping integration tests when Postgres is down (a missing database must never
+look like a pass); an OS-level network sandbox (not portable to Windows).

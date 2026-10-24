@@ -164,7 +164,7 @@ When I approve, build it with these rules:
 
 ```text
 Verify this step:
-1. Run the full test suite and lint for every part you touched (backend and/or
+1. Run the test suite and lint for every part i touched (see file changes) (backend and/or
    frontend). Paste the actual output summary, not a description of it.
 2. Run the step's "Done when" check. Paste the actual output.
 3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.
@@ -172,7 +172,7 @@ Verify this step:
    CLAUDE.md. List every deviation, shortcut, TODO, skipped test or hard-coded value.
 5. List anything that is not finished or not working. "Done" only means the check passed.
 6. Explain the two most important design choices in this step in plain language, as I
-   would in an interview.
+   would in an interview, write it in the design choise guide md file (create one if necessary).
 ```
 
 If anything in steps 4-5 is a real problem, ask Claude to fix it (or use Prompt D),

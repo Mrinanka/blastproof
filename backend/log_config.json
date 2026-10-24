@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "handlers": {
+    "json": { "()": "app.logging.make_handler" }
+  },
+  "root": { "handlers": ["json"], "level": "INFO" },
+  "loggers": {
+    "uvicorn": { "handlers": [], "propagate": true },
+    "uvicorn.error": { "handlers": [], "propagate": true },
+    "uvicorn.access": { "handlers": [], "propagate": true, "level": "WARNING" }
+  }
+}

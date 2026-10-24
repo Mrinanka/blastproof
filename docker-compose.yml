@@ -1,0 +1,30 @@
+# Local infrastructure (backend plan §15). company-db is added in step 3.
+services:
+  blastproof-db:
+    # Pinned to an exact build (the multi-arch index digest), so the image cannot change underneath
+    # us. Dependabot can bump it once enabled (step 2).
+    image: pgvector/pgvector:pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+    environment:
+      # Superuser used only by the init scripts. The app connects as blastproof_app and
+      # migrations as blastproof_owner. Dev-only values.
+      POSTGRES_USER: blastproof
+      POSTGRES_PASSWORD: blastproof
+      POSTGRES_DB: blastproof
+    # Loopback only (IPv4 and IPv6, so "localhost" connects at once on Windows): the superuser
+    # password is a dev value, so the port is not exposed to the network.
+    ports: ["127.0.0.1:5432:5432", "[::1]:5432:5432"]
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql (PGDATA=/var/lib/postgresql/18/docker),
+      # not /var/lib/postgresql/data as older images did (D-067).
+      - blastproof-data:/var/lib/postgresql
+      - ./docker/blastproof-init:/docker-entrypoint-initdb.d:ro # creates blastproof_owner and blastproof_app
+    healthcheck:
+      # TCP, not the Unix socket: the temporary server that runs the init scripts listens only on
+      # the socket, so this passes only once the roles exist.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U blastproof -d blastproof"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  blastproof-data:
