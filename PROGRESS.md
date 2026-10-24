@@ -226,9 +226,11 @@ created at deploy time straight into Fly.io secrets (D-058).
   instead. The scripts cannot tell Neon projects apart: the `--confirm <host>` guard is the only
   check against loading the wrong one.
 - CI now takes about 93 s (35 s before step 3): the seed plus the scratch-database tests.
-- The GitHub CLI (`gh`) is not installed, so PRs are opened by hand in the browser. `test_checks_catch_a_bad_workflow[pytest-before-postgres]`
-  now also trips on the missing seed step; `test_order_check_catches_a_seed_before_postgres`
-  covers the new step's order.
+- The GitHub CLI (`gh` 2.103.2) was installed with winget on 2026-10-25 and is logged in as
+  Mrinanka; PRs are now opened with `gh pr create` (step 4 is PR #4). Shells started before the
+  install need a restart, or the full path `C:\Program Files\GitHub CLI\gh.exe`.
+- `test_checks_catch_a_bad_workflow[pytest-before-postgres]` now also trips on the missing seed
+  step; `test_order_check_catches_a_seed_before_postgres` covers the seed step's order.
 
 ## Stage 0: setup
 - [x] Plan audit done (Prompt 0A): `docs/plan-audit.md`
