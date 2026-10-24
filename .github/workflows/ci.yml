@@ -42,13 +42,19 @@ jobs:
       # --locked fails if uv.lock is out of date with pyproject.toml.
       - run: uv sync --locked
 
-      # Includes TID251, the ban on importing demo_company (ARCH-21).
-      - run: uv run ruff check .
+      # Includes TID251, the ban on importing demo_company (ARCH-21). demo_company/ has no
+      # pyproject.toml, so Ruff lints it with the backend's settings.
+      - run: uv run ruff check . ../demo_company
 
-      - run: uv run ruff format --check .
+      - run: uv run ruff format --check . ../demo_company
 
       # The same Compose file, image digest and role init scripts as local dev (D-072).
       - run: docker compose up -d --wait
+        working-directory: ${{ github.workspace }}
+
+      # Builds company_template (locked) and company_main on the local company-db (step 3).
+      # Local target only: CI never talks to Neon.
+      - run: uv run --project backend python demo_company/seed.py --target local
         working-directory: ${{ github.workspace }}
 
       # Unit and integration tests; integration tests fail (not skip) if Postgres is down.

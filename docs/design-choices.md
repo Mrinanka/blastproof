@@ -133,3 +133,74 @@ upgrade on my machine now means editing `pyproject.toml` first. The secret check
 `secrets.`, so `secrets['X']` written with brackets would get past it. Code review is the backstop
 there. The workflow can't turn on Dependabot alerts by itself; that is a repo setting the owner
 switches on.
+
+---
+
+## Step 3: Demo company database and eval scenarios
+
+### 1. The fake data is deterministic, and the demo's numbers are built in, not hoped for
+
+**What I did.** The seed generates about 270,000 rows for a fake SaaS company: 50,000 users, their
+subscriptions, payments, invoices, orders and so on. Every run produces byte-identical tables. The
+numbers the whole project quotes, "48,213 inactive users, including 12 paying customers (3
+enterprise)", are not luck. I fix the user mix first (exactly 48,201 inactive free users, 9
+inactive pro, 3 inactive enterprise, and so on), shuffle it with a seeded generator, and only then
+fill in names and details. Every date is relative to a fixed anchor, 1 October 2026, never to
+today. No user's last login is within 14 days of the "6 months ago" line, so asking for "6 months"
+or "180 days", at any time of day, always gives the same answer. A separate `rebase_dates` script
+moves every date forward by whole days when a long-lived database needs to look current, so the ages
+stay the same.
+
+**Why.** The project's claims are numbers: the impact report must say 48,213, the evals must say
+"100% of incidents caught", and later steps compare their output against expected counts. If the
+data changed between runs, every one of those tests would be flaky, and I couldn't tell a bug from
+a reshuffle. I was careful about *what* randomness I trust. Python only promises that
+`random.random()` returns the same sequence on future versions; `randint` and `choice` may change.
+So every value that affects a count goes through `random()`. Faker only writes cosmetic text, so
+when Dependabot upgrades Faker, names may change but counts cannot. A `NOT NULL` last login closes a
+quiet trap: in SQL, `last_login_at < cutoff` silently skips NULL rows.
+
+**What I rejected.** Letting Faker generate everything and writing down whatever counts came out.
+It's quicker, but the numbers would move with any library upgrade, and the spec's headline numbers
+would need rewriting each time. Freezing the clock in the running app was also rejected, because a
+pinned "now" that isn't now is a bug outside demos. The anchor plus rebasing gives stable numbers
+without lying about time.
+
+**Trade-off and limits.** The margin only protects the one time window I designed for (last
+login). Other windows, such as "tickets closed over a year ago", have no margin, so their counts are
+exact only when `now()` is pinned to midnight on the anchor date. I found this when a count moved by
+2 depending on the hour. Step 8's frozen clock must pin to exactly that instant. The data is also
+deliberately odd (96% of users inactive), because it serves a demo, not realism.
+
+### 2. The scenario files are facts checked against the database, and labels say what *should* happen
+
+**What I did.** Before any of the safety pipeline exists, I wrote the tests it has to pass. There
+are two files. `incidents.yaml` replays the six real-world incident patterns. `labeled.yaml` has 23
+writes labeled allow, review or block. Each SQL entry states the decision it should get, the rules
+that should match, and where useful, the exact effect it should have: rows deleted, updated or
+inserted per table, the plan breakdown, and how many paying customers it touches. Three incidents
+aren't SQL at all (running `psql`, editing the hook settings, reading `.env`), so the schema has a
+second kind of entry in the shape Claude Code's hook actually sends. A Pydantic model rejects typos
+and unknown keys. An integration test runs every SQL scenario inside a transaction on a scratch
+copy of the database and rolls it back. It hashes every row before and after, by primary key, the
+same way the real preview will, and the measured effect must equal the file.
+
+**Why.** "Measure, don't predict" is the core idea of Blastproof, so the expected numbers must be
+measured too, not worked out by hand. Measuring caught two mistakes I would have shipped. An
+`UPDATE` that sets a value a row already has changes nothing, so the diff (correctly) doesn't count
+it, which meant one scenario's expected rule was wrong. And the time-of-day drift described above.
+Labels are the *correct* outcome, not what today's rules happen to do. If I copied the rules' output
+into the labels, the false-block rate would be zero by definition and the evals would measure
+nothing. Instead, where rules alone get it wrong (a harmless one-row ticket update the rules send
+to review; an enterprise account the rules only review but the business rules say never delete),
+a note says so, and the eval will count it honestly.
+
+**What I rejected.** Squeezing hook incidents into the SQL shape with empty fields. A single
+"expected rule" per entry, when the Replit delete legitimately matches three. Hand-computed
+expected counts with no test behind them.
+
+**Trade-off and limits.** The count test copies the shadow run's method instead of using the shadow
+run, which doesn't exist until step 10. So step 10 must still reproduce these numbers itself. The
+labeled set is 23 of the planned 50. Writing the scenarios exposed a gap in the plan's rules:
+nothing blocks `pg_terminate_backend`, a side-effect function. It's labeled `block` and flagged for
+steps 8 and 9, not quietly papered over.

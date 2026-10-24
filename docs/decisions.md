@@ -640,3 +640,73 @@ edit that undoes any of this.
 **Rejected:** floating tags and `ubuntu-latest`; LLM evals with `GOOGLE_API_KEY` in the PR workflow
 (they belong to the nightly workflow, OPS-02). Known gap: the secret check matches `secrets.` as
 text, so bracket syntax (`secrets['X']`) would get past it.
+
+## D-076 · 2026-10-24 · The company writer role may create temporary tables
+**Decision:** On the company databases, `blastproof_writer` gets `CONNECT, TEMPORARY`;
+`blastproof_reader` gets `CONNECT` only. PUBLIC gets nothing. Amends D-070's "same rules apply to
+`company-db`" for the writer.
+**Why:** The shadow run keeps its before-hashes in session temp tables on the branch, connected as
+the writer (D-018). The reader never needs them, so it keeps least privilege.
+**Rejected:** no temp tables for either role (the shadow run could not work); granting TEMPORARY
+only on shadow databases (Neon branches copy main's rights, so main must have it anyway).
+
+## D-077 · 2026-10-24 · The seed creates the company roles with SQL, never in the Neon Console
+**Decision:** `seed.py --target neon` creates or updates `blastproof_reader` and `blastproof_writer`
+with `CREATE/ALTER ROLE ... NOSUPERUSER NOCREATEDB NOCREATEROLE`, taking the passwords from
+`COMPANY_DB_READER_URL` and `COMPANY_DB_WRITER_URL`. It refuses a role that is a member of any other
+role, and asks for it to be deleted in the Console first.
+**Why:** Neon makes every Console- or API-created role a member of `neon_superuser` (CREATEROLE,
+CREATEDB, BYPASSRLS), which would break BE-09's least privilege. SQL-created roles get only basic
+rights. Neon requires 60 bits of password entropy for SQL-created roles.
+**Rejected:** creating the roles in the Console; generating passwords in the script (it would have
+to print them).
+
+## D-078 · 2026-10-24 · Deterministic seed: exact demo numbers by construction
+**Decision:** Every value that changes a count comes from `random.Random(seed).random()`; Faker
+fills only cosmetic text. The user mix is fixed: 50,000 users, 48,213 inactive at the anchor
+(free 48,201, pro 9, enterprise 3). Every `last_login_at` is at least 14 days from the 6-month
+cutoff and is `NOT NULL`. Two seed runs give byte-identical tables (checked).
+**Why:** The spec, plans and landing page quote 48,213 and 12. Python promises a stable `random()`
+sequence across versions but not `randint` or `choice`, and Faker output may change when Dependabot
+bumps it. The margin keeps counts exact whatever the time of day and for "180 days" as well as
+"6 months". A NULL last login would silently fall out of `last_login_at < ...`.
+**Rejected:** leaving the counts to Faker's randomness and recording whatever came out.
+
+## D-079 · 2026-10-24 · Scenario files: two kinds of entry, labels are the correct outcome
+**Decision:** `evals/schema.py` has `sql` entries (sql, intent, expected decision, `expected_rules`
+as a list, `decidable_from_sql`, optional `expected_impact`) and `hook` entries (Claude Code's
+PreToolUse `tool_name` and `tool_input`, expected allow or deny). A label is the right decision, not
+what today's rules produce; `notes` says where rules alone differ. Expected counts were measured on
+the seed and are checked by `tests/test_seed_counts.py`, which pins `now()` to midnight UTC on the
+anchor date and diffs row hashes by primary key, as the shadow run will.
+**Why:** Three of the six MVP incidents are hook calls with no SQL. Several rules can match one
+write. Labels taken from the rules would make the false block rate always zero. Pinning `now()` at
+midnight makes counts exact at any time of day (a time window without a seed margin, such as
+tickets closed a year ago, moved by 2 rows when the real clock was used).
+**Rejected:** forcing hook incidents into a SQL shape; one `expected_rule`; rebasing a copy to today
+for the count test (exact only for columns with a margin).
+
+## D-080 · 2026-10-24 · Seed and rebase commands: targets, confirmation, no backend imports
+**Decision:** The scripts run from the repo root with `uv run --project backend python
+demo_company/<script>.py` (the root has no `pyproject.toml`). `--target local` uses the Compose
+superuser (`FAKE_NEON_ADMIN_URL`, dev default). `--target neon` uses `SEED_NEON_OWNER_URL`, refuses a
+`-pooler` host, prints the target, and changes nothing unless `--confirm <host>` names the host
+exactly. `rebase_dates.py` is a separate script that shifts only `public` columns by whole days.
+Settings come from the environment, then `backend/.env`; `SEED_ENV_FILE` overrides the file so tests
+never read it. Errors print no traceback and no password. Backend tests check the scripts by running
+them as subprocesses and through the database, never by importing them (D-047); Ruff lints
+`demo_company/` with the backend's settings.
+**Why:** A typed host cannot be confirmed by habit the way "y" can, and works without a terminal.
+Neon recommends the direct endpoint for admin work; the pooler drops session settings.
+**Rejected:** a bare `--yes` flag; a `[y/N]` prompt (cannot run from a non-interactive tool);
+subcommands on `seed.py` (changes the plan's command).
+
+## D-081 · 2026-10-24 · Demo schema details the plan left open
+**Decision:** Primary keys are `bigint GENERATED BY DEFAULT AS IDENTITY`, and the seed moves each
+sequence past the loaded ids. `order_items.product_id` is not a foreign key. `orders`,
+`support_tickets` and `customer_notes` default `created_at` to `now()`. Every table has a
+`COMMENT ON TABLE` line. `blastproof.seed_info` has a one-row boolean primary key.
+**Why:** Agent inserts must work without an id. The plan lists every FK, and D-010 keeps RESTRICT
+out of the demo. Agents leave `created_at` out of inserts. `list_tables` (step 6) can read the
+comments as its one-line descriptions.
+**Rejected:** `serial` columns; a RESTRICT foreign key to products.
