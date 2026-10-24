@@ -443,3 +443,59 @@ goes through `visible_actions`; same-owner agents see each other's actions, as t
 **Rejected:** calling `visible_actions(owner)` with admin widening on (admin agents would see
 everything); a separate lookup outside `visible_actions`; a 403-style message (it would reveal that
 the action exists).
+
+## D-056 · 2026-10-24 · Gemini is the default LLM provider
+**Decision:** The summary and judge models default to Gemini through `init_chat_model`
+(`google_genai:<Flash model>` for `SUMMARY_MODEL`, `google_genai:<Pro model>` for `JUDGE_MODEL`;
+exact model names are picked from current docs in steps 12 and 13). The key is `GOOGLE_API_KEY`,
+also the repository secret for the nightly LLM evals. `langchain-google-genai` replaces
+`langchain-anthropic` in the stack; the owner approves it when step 1 installs it.
+**Why:** The owner chose Gemini. The design is already provider-agnostic, and no evals exist yet, so
+the "run the eval suite before switching models" rule does not apply: evals are built on Gemini.
+**Rejected:** Anthropic Claude (Haiku and Sonnet) as the default; it stays one config string away.
+
+## D-057 · 2026-10-24 · Neon projects run Postgres 18; local images match
+**Decision:** The Neon projects use Postgres 18 in `aws-us-east-2`. The local Compose images become
+`pgvector/pgvector:pg18` and `postgres:18`; step 1 checks both tags exist. Neon names each project's
+default branch `production`; "main branch" in the plans means that branch, found by its ID
+(`NEON_PARENT_BRANCH_ID`), never by name.
+**Why:** Postgres 18 was Neon's default when the projects were created, and a project's version
+cannot change later. The local `company-db` must match Neon so tests behave like the real database.
+**Rejected:** recreating the projects on Postgres 16 to match the original plan (older, no benefit).
+
+## D-058 · 2026-10-24 · The production Neon API key is created at deploy time
+**Decision:** During outside setup only `blastproof-company-dev` gets an API key: project-scoped,
+named `blastproof-dev-local`, in `backend/.env`. The `blastproof-company` key is created at deploy
+time and goes straight into Fly.io secrets.
+**Why:** Keeps the production credential off the dev machine, where the agent can reach `.env`
+(D-002). A project-scoped key cannot touch any other project.
+**Rejected:** creating both keys during outside setup; an org-wide key.
+
+## D-059 · 2026-10-24 · Embeddings: fastembed with `BAAI/bge-small-en-v1.5`
+**Decision:** Keep the plan's default embedder (384 dimensions, local, no key).
+**Why:** Free, no extra account, and good enough for the MVP's knowledge base. Changing the
+embedding model later means re-embedding every chunk, so the choice is made once, now.
+**Rejected:** Voyage AI (another account and key; revisit only if retrieval fails the gate audit).
+
+## D-060 · 2026-10-24 · Python 3.13 instead of 3.12
+**Decision:** The backend targets Python 3.13: the owner's installed `C:\Python313`, managed by
+uv 0.13.5. Step 1 pins `requires-python = ">=3.13,<3.14"`; the deploy image is `python:3.13-slim`.
+**Why:** 3.13 is already installed, the planned libraries ship 3.13 builds, and it is supported for
+a year longer (security fixes until October 2029). If a library fails `uv sync` in step 1, fall
+back to 3.12 with `uv python install 3.12` and log the change.
+**Rejected:** installing a separate 3.12 through uv.
+
+## D-061 · 2026-10-24 · npm instead of pnpm for the frontend
+**Decision:** The frontend uses npm (bundled with Node): `npm run dev`, `npm run lint`,
+`npm run typecheck`, `npm test`, `npm run gen:api`; one-off tools run with `npx`. The lockfile is
+`package-lock.json`, and CI installs with `npm ci`.
+**Why:** The owner already uses npm, and it needs no extra install. pnpm's main gain here, refusing
+imports of undeclared packages, is small for one app; ESLint's import rules can cover most of it.
+**Rejected:** pnpm 12 (the plan's original choice).
+
+## D-062 · 2026-10-24 · Node.js 24 LTS
+**Decision:** The dev machine runs Node 24.22.1 ("Krypton", the current LTS), upgraded from 22.15
+with winget. F1 pins the version for CI and Vercel (`engines` in `package.json`).
+**Why:** The frontend plan asks for the current LTS. Node 22 is in maintenance only, until April 2027.
+**Rejected:** staying on Node 22. Note: Claude upgraded Node without asking first; the owner
+kept the upgrade, and Claude now asks before installing anything.

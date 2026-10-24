@@ -35,9 +35,9 @@ Backend (run from `backend/`):
 - `uv run python -m evals.run` - eval suite
 
 Frontend (run from `frontend/`):
-- `pnpm dev` - dashboard on :3000
-- `pnpm lint && pnpm typecheck && pnpm test` - checks
-- `pnpm gen:api` - regenerate API types from the backend's OpenAPI schema
+- `npm run dev` - dashboard on :3000
+- `npm run lint && npm run typecheck && npm test` - checks
+- `npm run gen:api` - regenerate API types from the backend's OpenAPI schema
 
 ## How we work
 
@@ -78,7 +78,7 @@ Frontend (run from `frontend/`):
 ## Conventions
 
 Backend:
-- Python 3.12, type hints everywhere, async I/O.
+- Python 3.13, type hints everywhere, async I/O.
 - Thin routes; logic in `app/services/`; database code in `app/db/`.
 - Every route declares a Pydantic response model (the frontend generates types from it).
 - Errors: `{"error": {"code": "...", "message": "..."}}`, including validation errors.

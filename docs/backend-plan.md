@@ -28,16 +28,16 @@ Do these before writing code; each takes a few minutes. Keep every key in a pass
 **Accounts and API keys:**
 
 - [ ] **GitHub:** a new repo `blastproof`, with GitHub Actions enabled.
-- [ ] **Anthropic Console** (console.anthropic.com): create an API key for Claude models (the default; any provider LangChain supports also works, with its own key). Set a monthly spend limit (e.g. $50).
-- [ ] **Neon** (neon.tech): three projects. `blastproof-company` holds the fake company database for the deployed demo (the one agents act on there, and the one we branch). `blastproof-company-dev` is an identical copy for local development, so dev credentials can never touch the demo's data (Neon branches share role passwords with their parent, so a dev *branch* would not give that separation). `blastproof-app` holds Blastproof's own database for production. For each company project, note the project ID and its main branch ID, and create an API key scoped to that project if your plan offers project-scoped keys (check in the Neon spike; otherwise use separate keys and treat the dev key as dev-only). Check the free plan's project limit when you sign up.
+- [ ] **Google AI Studio** (aistudio.google.com): create a Gemini API key (`GOOGLE_API_KEY`) for the default provider (D-056; any provider LangChain supports also works, with its own key). Set a monthly project spend cap (e.g. $50).
+- [ ] **Neon** (neon.tech): three projects. `blastproof-company` holds the fake company database for the deployed demo (the one agents act on there, and the one we branch). `blastproof-company-dev` is an identical copy for local development, so dev credentials can never touch the demo's data (Neon branches share role passwords with their parent, so a dev *branch* would not give that separation). `blastproof-app` holds Blastproof's own database for production. For each company project, note the project ID and its main branch ID (Neon names the default branch `production`; "main branch" in these plans means it, D-057), and create an API key scoped to that project if your plan offers project-scoped keys (check in the Neon spike; otherwise use separate keys and treat the dev key as dev-only). Create the `blastproof-company` key at deploy time, straight into Fly.io secrets, so it never sits on the dev machine (D-058). All three projects use Postgres 18 in the same region (D-057). Free plan in October 2026: 100 projects, 10 branches and 1 GB storage per project.
 - [ ] **LangSmith** (smith.langchain.com): create an API key and a project named `blastproof-dev`.
-- [ ] **Embeddings:** pick one. Default: a free local model via `fastembed` (no key needed). Alternative: Voyage AI, which Anthropic recommends for embeddings (needs an API key).
+- [ ] **Embeddings:** a free local model via `fastembed` (`BAAI/bge-small-en-v1.5`, no key needed; D-059). Voyage AI (needs an API key) was the alternative.
 - [ ] **Fly.io** (fly.io): account and the `flyctl` CLI, for deployment in the last week.
 - [ ] **Vercel AI Gateway** (vercel.com, needed right after the MVP for the Jev judge): enable AI Gateway, create an API key, and add a payment card, which the Gateway requires before serving requests.
 
 **Tools on your machine:**
 
-- [ ] Python 3.12 and `uv` (package manager).
+- [ ] Python 3.13 and `uv` (package manager) (D-060).
 - [ ] Docker Desktop (runs Blastproof's local Postgres).
 - [ ] Node.js and Claude Code (the agent you will protect).
 - [ ] `psql` or a GUI like TablePlus to inspect databases.
@@ -58,7 +58,7 @@ Every library below is a common industry choice with good documentation; nothing
 | Company DB access | `asyncpg` (raw SQL) | Runs agent SQL on Neon branches and main |
 | SQL parsing | `sqlglot` | Classify statements, find tables, add `RETURNING *` |
 | Neon API | `httpx` | Create and delete branches |
-| LLM calls | `langchain` + `langchain-anthropic` | `init_chat_model` lives in `langchain`; models are created from provider:model strings in config, so any provider works (add e.g. langchain-google-genai or langchain-openai); structured output into Pydantic models |
+| LLM calls | `langchain` + `langchain-google-genai` | `init_chat_model` lives in `langchain`; models are created from provider:model strings in config, so any provider works (add e.g. langchain-anthropic or langchain-openai); structured output into Pydantic models |
 | Workflow | `langgraph` + `langgraph-checkpoint-postgres` + `psycopg[binary]` | Approval flow with interrupt and Postgres checkpoints; the checkpointer uses psycopg 3, not asyncpg |
 | Vectors | `pgvector` (extension + Python package) | Default vector store behind a VectorStore interface; qdrant-client for the swappable Qdrant implementation |
 | Embeddings | `fastembed` (or `voyageai`) | Local free model by default |
@@ -70,7 +70,7 @@ Every library below is a common industry choice with good documentation; nothing
 | Testing | `pytest`, `pytest-asyncio`, `httpx` test client | Unit, integration and eval tests |
 | Quality | `ruff` (lint + format), `mypy` (optional) | Run in CI |
 
-**Models:** defaults are Claude Haiku for impact summaries (fast, cheap) and Claude Sonnet for the LLM judge (better reasoning), but both are provider:model strings in config (SUMMARY\_MODEL, JUDGE\_MODEL), so Gemini, GPT or others work with no code change. Rule: run the full eval suite with a new model and compare before switching. The embedding model is the exception: changing it means re-embedding every chunk and possibly a migration for the vector size, so pick it once. The risk judge is pluggable: Jev (TypeSafe AI), called through Vercel AI Gateway's HTTP API with httpx, is the second implementation.
+**Models:** defaults are Gemini Flash for impact summaries (fast, cheap) and Gemini Pro for the LLM judge (better reasoning) (D-056; exact model names are picked from current docs in steps 12 and 13), but both are provider:model strings in config (SUMMARY\_MODEL, JUDGE\_MODEL), so Claude, GPT or others work with no code change. Rule: run the full eval suite with a new model and compare before switching. The embedding model is the exception: changing it means re-embedding every chunk and possibly a migration for the vector size, so pick it once. The risk judge is pluggable: Jev (TypeSafe AI), called through Vercel AI Gateway's HTTP API with httpx, is the second implementation.
 
 ## 4. Project structure
 
@@ -277,7 +277,7 @@ Rules can block at two points, the judge can only make a decision stricter, and 
 
 Steps 1 to 7 give you a dumb pipe: Claude Code reads the company database through Blastproof, and every call is recorded. Each step ends with a test you can run.
 
-1. **Repo and skeleton.** `uv init`, add the libraries from section 3, create `main.py` with a `/health` route, `config.py` with pydantic-settings, structlog JSON logging, Ruff and pytest. Add `docker-compose.yml` with Blastproof's Postgres using the `pgvector/pgvector:pg16` image, and an init script in `docker/` that creates the `blastproof_owner` and `blastproof_app` roles (section 5). Startup must not call Neon or download models when `APP_ENV=test`. Configure Ruff's banned-imports rule (`flake8-tidy-imports`, TID251) to ban `demo_company` in the backend (check the current Ruff docs for the syntax).
+1. **Repo and skeleton.** `uv init`, add the libraries from section 3, create `main.py` with a `/health` route, `config.py` with pydantic-settings, structlog JSON logging, Ruff and pytest. Add `docker-compose.yml` with Blastproof's Postgres using the `pgvector/pgvector:pg18` image, and an init script in `docker/` that creates the `blastproof_owner` and `blastproof_app` roles (section 5). Startup must not call Neon or download models when `APP_ENV=test`. Configure Ruff's banned-imports rule (`flake8-tidy-imports`, TID251) to ban `demo_company` in the backend (check the current Ruff docs for the syntax).
    *Done when:* `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`.
 2. **CI.** A GitHub Actions workflow that runs `ruff check`, `ruff format --check` and `pytest`, with a Postgres service container for tests.
    *Done when:* a pull request shows a green check.
@@ -390,7 +390,7 @@ sensitive_columns:
 
 Two layers catch "affects every row". The classifier sets `has_where: false` when the WHERE simplifies to a constant true (`WHERE true`, `WHERE 1=1`; sqlglot's simplifier), which blocks in pass 1. The measured `fraction_of_table_gte: 1.0` then catches what syntax can't (`WHERE id > 0`). The demo's "clean up inactive users" (about 96% of users) is held for review, not blocked, by "Most of a table", "Large change" and "Touches paying customers".
 
-10. **Neon client and shadow executor** (`services/neon.py`, `services/shadow.py`). *Spike first:* the create-branch payload, waiting on `operations`, connection URIs for a non-owner role, branch `expires_at` (could replace startup cleanup), free-plan branch and compute caps, the default Postgres version (and whether PG18 is available), and **measured p50/p95 from create-branch to first query**. That number sets the latency target in SPEC §10.
+10. **Neon client and shadow executor** (`services/neon.py`, `services/shadow.py`). *Spike first:* the create-branch payload, waiting on `operations`, connection URIs for a non-owner role, branch `expires_at` (could replace startup cleanup), free-plan branch and compute caps, confirm the projects run Postgres 18 (D-057), and **measured p50/p95 from create-branch to first query**. That number sets the latency target in SPEC §10.
     - **`NeonClient` interface** with two implementations, picked per system by its `connection_profile`:
       - `NeonApiClient` creates a branch from `NEON_PARENT_BRANCH_ID` named `shadow-<action_id>` with a read-write endpoint, waits until ready, returns its **direct (non-pooled)** connection string, and deletes it afterward. asyncpg's prepared statements and Neon's pooled (PgBouncer) endpoint may not mix; the spike confirms this. Commits on main also use the direct endpoint.
       - `FakeNeonClient` (the `local` profile: tests, CI, seeded actions) "branches" with `CREATE DATABASE shadow_<id> TEMPLATE company_main` on the local `company-db`, which gives real copy semantics with no network. `CREATE DATABASE … TEMPLATE` fails if any session is connected to the source, so: the `local` profile opens company-database connections per operation (no pool); and before cloning, the fake terminates any remaining sessions on `company_main` with `pg_terminate_backend`, using a test-only superuser URL (`FAKE_NEON_ADMIN_URL`). Test setup recreates `company_main` from the never-connected `company_template`. Because that terminate step would abort an in-flight commit or a second clone, every `local`-profile operation on `company_main` (clone, read, commit) takes one shared lock (a Postgres advisory lock on `company-db`), so they run one at a time.
@@ -413,7 +413,7 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     - `reindex` command: rebuilds the active store from `knowledge_chunks`. Run it after switching `VECTOR_STORE` or the embedding model.
     - Contract tests: one pytest suite runs against every `VectorStore` implementation, so a new store must pass the same checks.
     *Done when:* an action deleting users retrieves the "paying customer" and "enterprise contracts" rules; once the Qdrant store exists, switching `VECTOR_STORE` and running `reindex` gives the same results on the eval set.
-12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic facts from the diff: affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3), each derived group (paying: 12), cascades, and any percentage the summary may need (computed in code). Then the summary model (Claude Haiku by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given and to write numbers as digits. The prompt sees only `sql_display` and masked samples.
+12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic facts from the diff: affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3), each derived group (paying: 12), cascades, and any percentage the summary may need (computed in code). Then the summary model (Gemini Flash by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given and to write numbers as digits. The prompt sees only `sql_display` and masked samples.
     - **Number guardrail:** extract every number from the output with a regex (`\d[\d,]*(\.\d+)?%?`, commas stripped). Each must be in the allowed set: the facts, the numbers in the agent's intent, and the rule thresholds. Any other number means falling back to a plain template summary built from the facts.
     - **Cost:** record input and output tokens from LangChain's `usage_metadata`; `llm_cost_usd` is tokens × a per-model price table in config (code counts, again).
     - **Limits:** 20-second timeout and a max-token cap. On error or timeout, use the template summary.
@@ -423,7 +423,7 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     - **What it can do:** only make a decision stricter. It may raise allow to review or block, and review to block, but never lower anything. A `confidence` below `JUDGE_MIN_CONFIDENCE` (default 0.6) on an allow recommendation counts as review; otherwise confidence is stored for calibration evals.
     - **On error, timeout (20 s) or an unparseable result:** the decision becomes at least review, with the `ai_unavailable` message to the agent. The facts exist, so a human can still decide; a write is never allowed because the judge failed.
     - **Prompt-injection guard:** SQL, intent and sample rows are passed as clearly marked untrusted data, and a simple pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review.
-    - `LLMJudge` (MVP default): any chat model set in `JUDGE_MODEL` (Claude Sonnet by default), with structured output; writes the reason itself.
+    - `LLMJudge` (MVP default): any chat model set in `JUDGE_MODEL` (Gemini Pro by default), with structured output; writes the reason itself.
     - `JevJudge` (right after the MVP): calls Jev through Vercel AI Gateway's `/v1/evaluate` HTTP API with `httpx`, asking a few boolean questions (affects paying customers? matches the stated intent? touches sensitive tables?). Code turns the probabilities into a recommendation using thresholds from config, takes `confidence` from them, and builds the reason from the questions that scored high. Request zero data retention in the provider options.
     - Shadow judging: the optional `JUDGE_SHADOW_PROVIDER` runs a second judge on the same context and logs its result to LangSmith and `audit_events`, without affecting the decision. Real comparison data at no risk.
     *Done when:* tests show the judge escalates a risky "allowed" action, cannot downgrade a blocked one, and a judge that raises or times out produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change.
@@ -504,8 +504,8 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `FAKE_NEON_ADMIN_URL` | `postgresql://company:...@localhost:5433/postgres` | Test and local only: superuser connection `FakeNeonClient` uses to clone databases and end stray sessions. Refused at startup when `APP_ENV=production` |
 | `AGENT_POLL_BUDGET_MINUTES` | `10` | After this long waiting for review, `get_action_status` tells the agent to stop polling |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | The backend's public address, used to build the `mcp_url` and setup lines for new agents |
-| `ANTHROPIC_API_KEY` | secret | Claude calls (add the matching key, e.g. GOOGLE\_API\_KEY, for another provider) |
-| `SUMMARY_MODEL` / `JUDGE_MODEL` | `anthropic:\<haiku model>` / `anthropic:\<sonnet model>` | Any provider:model string, e.g. google\_genai:\<gemini model> |
+| `GOOGLE_API_KEY` | secret | Gemini calls (add the matching key, e.g. ANTHROPIC\_API\_KEY, for another provider) |
+| `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:\<flash model>` / `google_genai:\<pro model>` | Any provider:model string, e.g. anthropic:\<claude model> |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embeddings |
 | `LANGSMITH_TRACING` | `true` | Turns tracing on |
 | `LANGSMITH_API_KEY` | secret | Sends traces |
@@ -596,7 +596,7 @@ Locally you run two Postgres containers and the FastAPI app; in production the a
 # docker-compose.yml
 services:
   blastproof-db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     environment:
       POSTGRES_USER: blastproof
       POSTGRES_PASSWORD: blastproof
@@ -606,7 +606,7 @@ services:
       - blastproof-data:/var/lib/postgresql/data
       - ./docker/blastproof-init:/docker-entrypoint-initdb.d   # creates blastproof_owner and blastproof_app
   company-db:
-    image: postgres:16   # match the Neon Postgres version found in the Neon spike
+    image: postgres:18   # matches the Neon projects' Postgres version (D-057)
     environment:
       POSTGRES_USER: company
       POSTGRES_PASSWORD: company   # default database stays "postgres"
@@ -619,11 +619,11 @@ volumes:
 
 The Compose superuser is used only by the init scripts; the app connects as `blastproof_app`, and migrations as `blastproof_owner`. Run the app with `uv run uvicorn app.main:app --reload`.
 
-- **CI** (`.github/workflows/ci.yml`): on every pull request, install with uv, run Ruff, start two Postgres service containers (Blastproof and `company-db`, with the same role init scripts), run `demo_company/seed.py --target local` to build `company_template` and `company_main`, run Alembic migrations, run tests and rule-only evals with `NEON_CLIENT=fake`. CI never talks to Neon. A second workflow runs the LLM evals nightly using the `ANTHROPIC_API_KEY` repository secret.
+- **CI** (`.github/workflows/ci.yml`): on every pull request, install with uv, run Ruff, start two Postgres service containers (Blastproof and `company-db`, with the same role init scripts), run `demo_company/seed.py --target local` to build `company_template` and `company_main`, run Alembic migrations, run tests and rule-only evals with `NEON_CLIENT=fake`. CI never talks to Neon. A second workflow runs the LLM evals nightly using the `GOOGLE_API_KEY` repository secret.
 
 **Deployment** (do this once Gate 1 passes)
 
-1. Write a multi-stage `Dockerfile`: install dependencies with uv in a build stage, copy into a slim Python image, run as a non-root user, start Uvicorn on port 8080. Download the embedding model at build time so startup is fast.
+1. Write a multi-stage `Dockerfile`: install dependencies with uv in a build stage, copy into a slim Python 3.13 image, run as a non-root user, start Uvicorn on port 8080. Download the embedding model at build time so startup is fast.
 2. In the Neon `blastproof-app` project, run `CREATE EXTENSION vector`. This becomes `BLASTPROOF_DATABASE_URL` in production.
 3. `fly launch --no-deploy` to create the app, choosing a region close to your Neon region. In `fly.toml`, set `release_command = "alembic upgrade head"` (using `BLASTPROOF_MIGRATOR_URL`), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1` and `kill_timeout = 60` (graceful drain, step 15), and scale to exactly one machine (`fly scale count 1`). Background tasks run in-process, so a stopped machine or a second one would break them; the advisory locks are a second safety net.
 4. `fly secrets set` for every secret in section 11.

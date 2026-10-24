@@ -33,9 +33,9 @@ The frontend needs only one new account; everything else is reused from the back
 
 **Tools on your machine:**
 
-- [ ] Node.js (current LTS) and pnpm.
+- [ ] Node.js (current LTS, 24) and npm, which comes with it (D-061, D-062).
 - [ ] A browser with React Developer Tools and the TanStack Query devtools (installed as a package, shown in development only).
-- [ ] Playwright browsers, installed once with `pnpm exec playwright install`.
+- [ ] Playwright browsers, installed once with `npx playwright install` from `frontend/`, right after `@playwright/test` is added there, so the browsers match the pinned Playwright version.
 
 ## 3. Tech stack and libraries
 
@@ -104,7 +104,7 @@ The backend's OpenAPI schema is the single contract between the two apps. TypeSc
 
 **Typed client:**
 
-`pnpm gen:api` reads the backend's `/openapi.json` and writes `src/lib/api/schema.d.ts`. The client is two lines:
+`npm run gen:api` reads the backend's `/openapi.json` and writes `src/lib/api/schema.d.ts`. The client is two lines:
 
 ```ts
 import createClient from "openapi-fetch";
@@ -199,8 +199,8 @@ All of these fields come from the backend's `ActionDetail` schema (backend plan 
 
 Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real backend through the proxy. Each step ends with a test you can run.
 
-1. **F1. Scaffold.** In the repo root, `pnpm create next-app frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `pnpm dlx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, form, sonner, dropdown-menu, sidebar, skeleton). Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
-   *Done when:* `pnpm dev` shows the starter page at `http://localhost:3000`.
+1. **F1. Scaffold.** In the repo root, `npx create-next-app@latest frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `npx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, form, sonner, dropdown-menu, sidebar, skeleton). Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
+   *Done when:* `npm run dev` shows the starter page at `http://localhost:3000`.
 2. **F2. Typed API client.** Add `openapi-typescript` and `openapi-fetch`. A `gen:api` script reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts` (committed). `src/lib/api/client.ts` creates the client with base URL `/api/blastproof`. Set up TanStack Query's provider in the root layout, with `refetchOnWindowFocus` on and polling paused while the tab is hidden.
    *Done when:* hovering `api.GET("/v1/actions/{id}")` in your editor shows the backend's real response type.
 3. **F3. Proxy and login.** Build the three route handlers and the auth proxy (`src/proxy.ts`) from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. It rejects any POST or DELETE whose `Origin` is not the dashboard's own address (section 11). A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
@@ -261,7 +261,7 @@ The dashboard can approve changes to production data, so a stolen session is as 
 A few unit tests for the pieces with logic, and one end-to-end test for the flow that matters most. No snapshot tests and no mocking the whole backend.
 
 - **Unit (Vitest + React Testing Library):** formatting helpers, status and risk badges, the reject dialog's validation, the proxy's header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected).
-- **Type safety:** `pnpm typecheck` catches any mismatch with the generated API types.
+- **Type safety:** `npm run typecheck` catches any mismatch with the generated API types.
 - **End-to-end (Playwright):** against the real local backend with demo data from the backend's `seed-demo-actions` command:
   1. Log in as the first demo user.
   2. Open the review queue and click the seeded pending action.
@@ -287,7 +287,7 @@ Preview deployments use the same backend as production. That is acceptable for a
 
 **CI (GitHub Actions, `frontend` job on every pull request):**
 
-- Install with pnpm (cached), then `lint`, `typecheck`, `test` (Vitest) and `build`.
+- Install with `npm ci` (cached), then `lint`, `typecheck`, `test` (Vitest) and `build`.
 - **Contract check:** the backend writes its OpenAPI schema to a file with `export-openapi` (no server or database needed); the frontend regenerates `schema.d.ts` from it; the job fails if the file changed. This catches any backend change the frontend hasn't caught up with.
 - **End-to-end:** a separate workflow, run nightly or by hand, starts Postgres and the backend, runs `seed-demo-actions`, starts the dashboard and runs Playwright.
 - Protect `main` in GitHub so merging requires both the backend and frontend jobs to pass.
