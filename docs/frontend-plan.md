@@ -139,6 +139,7 @@ blastproof/
           knowledge/page.tsx
           settings/agents/page.tsx
           settings/rules/page.tsx
+          settings/users/page.tsx   # admin only
         api/
           auth/login/route.ts   # sets the session cookie
           auth/logout/route.ts  # clears it
@@ -168,7 +169,7 @@ Ten pages: two public, two admin-only, and six that show each user only their ow
 | --- | --- | --- | --- |
 | Landing (public) | `/` | Product story for visitors: pitch, problem, how it works, demo, results, Log in button | None; static page |
 | Login (public) | `/login` | Email and password form; error message on failure | POST `/api/auth/login` |
-| Overview | `/dashboard` | Your count cards: pending reviews, decisions today, blocked today, average preview time, LLM cost today; your 10 latest actions | `/stats`, `/actions?limit=10` (every 15 s) |
+| Overview | `/dashboard` | Your count cards: pending reviews, decisions today, blocked today, average preview time, LLM cost today ("today" is the UTC day, labelled on the cards); your 10 latest actions | `/stats`, `/actions?limit=10` (every 15 s) |
 | Review queue | `/dashboard/review` | Your agents' pending actions, oldest first: agent, intent, headline, risk badge, waiting time | `/actions?status=awaiting_review` (every 5 s) |
 | Change request | `/dashboard/actions/[id]` | See the layout below; "not found" if it is not yours | `/actions/{id}` (every 5 s while pending) |
 | History | `/dashboard/history` | Your actions, with filters for status, agent, table and dates; 25 per page | `/actions` with filters from the URL |
@@ -183,7 +184,7 @@ Ten pages: two public, two admin-only, and six that show each user only their ow
 2. Plain-language impact: the headline in large text, key points and concerns underneath.
 3. Decision bar (only while pending, shown when the backend's can\_decide flag is true, meaning you own the action or are an admin): Approve, and Reject, which opens a dialog requiring a reason. After a decision, the page refreshes; a 409 shows "already decided by ...".
 4. Agent's intent, then the SQL in a monospace block (`sql_display`). When values were pinned, show the original next to it and list the pinned values, e.g. `now()` → `2026-10-24 12:00 UTC`. If this action retries a rejected one (`retry_of`), link to it.
-5. Impact numbers: rows changed per table (cascades marked) and the breakdown by important columns, e.g. plan: free 48,201, pro 9, enterprise 3.
+5. Impact numbers: rows changed per table (cascades marked), the breakdown by important columns, e.g. plan: free 48,201, pro 9, enterprise 3, and the derived groups, e.g. paying: 12.
 6. Sample affected rows (sensitive columns arrive already masked from the backend).
 7. Judge result: recommendation, confidence, reason, which judge ran.
 8. Rules that matched, with their reasons.
@@ -202,10 +203,10 @@ Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real
    *Done when:* `pnpm dev` shows the starter page at `http://localhost:3000`.
 2. **F2. Typed API client.** Add `openapi-typescript` and `openapi-fetch`. A `gen:api` script reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts` (committed). `src/lib/api/client.ts` creates the client with base URL `/api/blastproof`. Set up TanStack Query's provider in the root layout, with `refetchOnWindowFocus` on and polling paused while the tab is hidden.
    *Done when:* hovering `api.GET("/v1/actions/{id}")` in your editor shows the backend's real response type.
-3. **F3. Proxy and login.** Build the three route handlers and the auth proxy (`src/proxy.ts`) from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
+3. **F3. Proxy and login.** Build the three route handlers and the auth proxy (`src/proxy.ts`) from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. It rejects any POST or DELETE whose `Origin` is not the dashboard's own address (section 11). A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
    *Done when:* you can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`.
-4. **F4. Layout and navigation.** The `app/dashboard/layout.tsx` layout (a real URL segment, not a route group) has a sidebar (Overview, Review with a count badge, History, Knowledge, Settings) and a user menu with logout. The badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. Admin-only links (Knowledge, Users) are hidden from members (the backend still enforces roles).
-   *Done when:* creating a pending action with the backend's demo seed command makes the badge change within 5 seconds.
+4. **F4. Layout and navigation.** The `app/dashboard/layout.tsx` layout (a real URL segment, not a route group) has a sidebar (Overview, Review with a count badge, History, Knowledge, and Settings with Agents, Rules and, for admins, Users) and a user menu with logout. The badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. Admin-only links (Knowledge, Users) are hidden from members (the backend still enforces roles).
+   *Done when:* creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds.
 5. **F5. Shared components.** `StatusBadge`, `RiskBadge`, `TimeAgo`, `SQLBlock`, `NumberBreakdown`, `AuditTimeline`, `DataTable` with pagination, and standard loading (skeleton), empty and error states. Number and date formatting live in `lib/format.ts`.
    *Done when:* Vitest tests pass for the badges and formatting helpers.
 
@@ -214,7 +215,7 @@ Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real
 Steps F6 to F12 build the pages in order of importance, so the demo-critical flow works first.
 
 6. **F6. Review queue.** `useActions({status: "awaiting_review"})` polling every 5 seconds; rows link to the change request page.
-   *Done when:* a newly seeded pending action appears without a page refresh.
+   *Done when:* a pending action added with `seed-demo-actions --add-pending` appears without a page refresh.
 7. **F7. Change request page.** The layout from section 7. Approve and reject are TanStack Query mutations; on success, refresh this action, the queue and the badge. Reject opens a dialog with a required reason (zod: at least 10 characters). A 409 shows a toast naming who already decided. The decision bar shows only while the action is pending and the backend's can\_decide flag is true.
    *Done when:* approving and rejecting work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second.
 8. **F8. History.** Filters (status, agent, table, date range) are stored in the URL, so a filtered view can be bookmarked or shared. Server-side pagination, 25 rows per page.
@@ -222,7 +223,7 @@ Steps F6 to F12 build the pages in order of importance, so the demo-critical flo
 9. **F9. Overview.** Count cards from `/v1/stats` and the latest 10 actions, refreshing every 15 seconds.
    *Done when:* numbers match a manual SQL count on Blastproof's database.
 10. **F10. Knowledge.** Source list; upload a `.md` or `.txt` file (multipart through the BFF route) with a size limit of 1 MB and an optional list of tables it applies to; delete with a confirm dialog; "Rescan schema" button. The page is admin-only; members never see it.
-    *Done when:* a document uploaded with the table `users` appears in the "Knowledge used" list of the next action that touches `users` (checked with the seed command, so no Neon or real LLM is needed).
+    *Done when:* a document uploaded with the table `users` appears in the "Knowledge used" list of the next action that touches `users` (checked with `seed-demo-actions --add-pending`, so no Neon or real LLM is needed).
 11. **F11. Agents and rules.** Create agent: show the key once with a copy button and the pre-filled Claude Code setup lines; deactivate with confirmation. Users page (admin only) lists users and creates new ones with an initial password. Rules page renders `/v1/policies` as a read-only table.
     *Done when:* a newly created key works in Claude Code by copy-pasting the shown commands.
 12. **F12. Polish.** Keyboard focus and labels on every control, readable color contrast, dark mode (shadcn supports it), page titles, and a friendly 404 page. Check every page at a narrow width so it works on a laptop split screen.
@@ -297,7 +298,7 @@ Adding the dashboard moves the full MVP from four weeks to about five. The dashb
 
 &#91;embedded content: Combined schedule · backend and dashboard lanes over 5 weeks\]
 
-To make that start possible, pull small backend pieces forward in week 3: the auth routes (`/v1/auth/login`, `/v1/auth/me`) and GET `/v1/actions` and `/v1/actions/{id}` at the start of the week, then the `seed-demo-actions` command right after backend step 15, because it runs the real graph. F1 to F3 and F5 don't need seeded data; F4's check does, so it finishes after the seed command exists. The rest of step 19 can follow later in the week. Week 5 doubles as buffer: if the backend slips, it absorbs it. The landing page (F13, about two days) also lands in week 5, once real eval numbers and a demo recording exist.
+To make that start possible, pull small backend pieces forward in week 3: the auth routes (`/v1/auth/login`, `/v1/auth/me`) and GET `/v1/actions` and `/v1/actions/{id}` at the start of the week, then the approve and reject routes and the `seed-demo-actions` command right after backend step 15, because they need its `resume()` and the real graph (step 17's check and Gate 1 also use approve and reject). F1 to F3 and F5 don't need seeded data; F4's check does, so it finishes after the seed command exists. The rest of step 19 can follow later in the week. Week 5 doubles as buffer: if the backend slips, it absorbs it. The landing page (F13, about two days) also lands in week 5, once real eval numbers and a demo recording exist.
 
 ## 15. Done checklist and what is deferred
 
@@ -314,7 +315,7 @@ The dashboard MVP is done when every box is ticked on the deployed Vercel site, 
 - [ ] Lighthouse accessibility score of 90 or above on the change request page.
 
 **Deferred:** rule editing in the UI, undo button, observe-mode toggle, Slack notifications, WebSockets or server-sent events, charts and trends, a
-staging backend for preview deployments, multi-company accounts, single sign-on.
+staging backend for preview deployments, multi-company accounts, single sign-on, server-side logout (token revocation; logout clears the cookie and the JWT expires after 8 hours, D-041), "today" counts in the viewer's local day (D-051).
 
 ## 16. Backend and spec changes this plan depends on
 

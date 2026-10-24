@@ -2,8 +2,10 @@
 
 ## Current focus
 Stage 0: setup. Plan audit decisions applied (D-001 to D-016), then a follow-up review of the
-applied plan fixed (D-017 to D-028), both on 2026-10-24. Next: owner reviews the plan diff and
-commits, then outside setup (now three Neon projects), then Prompt 0B (requirements list).
+applied plan fixed (D-017 to D-029), all on 2026-10-24. Prompt 0B drafted `docs/REQUIREMENTS.md`.
+Prompt 0C done: spot-check fixes applied, and all 26 "Implied, needs confirmation" items settled
+(23 from 0B plus 3 found in the spot-check; D-030 to D-055). Next: Prompt 0D in `docs/WORKFLOW.md`
+(outside setup, three Neon projects), then 0E (commit and confirm Stage 0).
 
 ## Known issues
 - Accepted dev limitation (D-002): on the dev machine, the agent could reach the dev `.env` by a
@@ -16,11 +18,12 @@ commits, then outside setup (now three Neon projects), then Prompt 0B (requireme
 - Landing page CSP allows `'unsafe-inline'` scripts (D-028); verify the real headers in F1.
 
 ## Stage 0: setup
-- [ ] Outside setup done (backend plan section 2, frontend plan section 2)
-- [ ] Repo files committed (CLAUDE.md, docs/, PROGRESS.md)
 - [x] Plan audit done (Prompt 0A): `docs/plan-audit.md`
 - [x] Plans fixed with the audit decisions: `docs/audit-response.md`, `docs/decisions.md`
-- [ ] docs/REQUIREMENTS.md created and reviewed (Prompt 0B)
+- [x] docs/REQUIREMENTS.md drafted (Prompt 0B)
+- [x] docs/REQUIREMENTS.md created and reviewed, IMP items settled (Prompt 0C)
+- [ ] Outside setup done (backend plan section 2, frontend plan section 2) (Prompt 0D)
+- [ ] Repo files committed (CLAUDE.md, docs/, PROGRESS.md) (Prompt 0E)
 
 ## Stage 1: foundation
 - [ ] 1. Repo and skeleton
@@ -49,6 +52,7 @@ commits, then outside setup (now three Neon projects), then Prompt 0B (requireme
 - [ ] Spike: LangGraph interrupt and resume
 - [ ] 14. LangGraph workflow
 - [ ] 15. Workflow runner
+- [ ] Pull forward: POST /v1/actions/{id}/approve and /reject (D-053)
 - [ ] Pull forward: seed-demo-actions
 - [ ] 16. Commit
 - [ ] 17. Wire up query_database

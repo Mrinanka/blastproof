@@ -1,21 +1,304 @@
 # Building Blastproof with Claude Code: the workflow
 
-Copy the prompts below into Claude Code. Replace anything in <ANGLE BRACKETS>.
-Golden rules: one step per session, plan before code, evidence before "done",
-and you personally run every "Done when" check.
+Every prompt below is copy-paste ready. None has blanks to fill in: Claude finds the
+current step in `PROGRESS.md`. Where a prompt has an optional `<...>` line, delete it
+if you have nothing to add.
+
+Golden rules: one step per session, plan before code, evidence before "done", and you
+run every "Done when" check yourself.
 
 ---
 
-## Part 1: One-time setup (before any code)
+## Quick start: what do I do next?
 
-1. Do the outside setup in section 2 of both plans (accounts, API keys, tools).
-2. Create the repo with: `CLAUDE.md`, `PROGRESS.md`, `docs/spec.md` (lowercase),
-   `docs/backend-plan.md`, `docs/frontend-plan.md`, empty `docs/decisions.md`,
-   this file as `docs/WORKFLOW.md`. Commit.
-3. Run Prompt 0A (plan audit). Fix the plans with what it finds. Commit.
-4. Run Prompt 0B (requirements list). Review it. Commit.
+Open `PROGRESS.md` and find the first unticked box. Then:
 
-### Prompt 0A: plan audit (once)
+| The next box is...                         | Do this                                   |
+| ------------------------------------------ | ----------------------------------------- |
+| Something in Stage 0                       | Part 1, in order (0C, 0D, 0E)             |
+| A numbered step (`1.`-`20.`, `F1.`-`F13.`) | Part 2 (the step loop)                    |
+| `Pull forward: ...`                        | Part 2 (the step loop), same as a step    |
+| `Evals`, security pass, deploy             | Part 2 (the step loop), same as a step    |
+| `Spike: ...`                               | Prompt S (spike), then the next step loop |
+| `GATE AUDIT` or `FINAL AUDIT`              | Prompt G (gate audit)                     |
+| Demo video                                 | You, no prompt                            |
+
+Lost or confused at any point? Paste **Prompt R (where am I?)** from Part 3.
+
+---
+
+## Part 1: One-time setup (Stage 0)
+
+Done already: repo files, Prompt 0A (plan audit), Prompt 0B (requirements list).
+They are kept at the end of this file for reference.
+
+Remaining, in order. Use a fresh session (`/clear`) for each:
+
+### Prompt 0C: check the requirements and settle the open questions
+
+`REQUIREMENTS.md` was written by an AI, so spot-check it before you trust it. Then decide
+every "Implied, needs confirmation" (IMP) item, because each step's plan will rely on them.
+
+```text
+Read CLAUDE.md, PROGRESS.md, docs/REQUIREMENTS.md, docs/decisions.md and the three plans.
+Do not write any code.
+
+Part 1, spot-check: pick 15 requirement rows spread across all sections. For each, quote
+the source text it cites and say whether the row is accurate (correct, wrong, or
+overstated). Then list any "Done when" check or MVP done checklist item that has no row.
+Fix only clear mistakes in REQUIREMENTS.md and tell me what you changed.
+
+Part 2, IMP items: go through the "Implied, needs confirmation" table 5 items at a time.
+For each item give: your recommended answer, a one-line reason, and what changes if I
+agree (plan edit, new requirement row, or "deferred"). Keep MVP scope small: when in
+doubt, recommend the simplest safe option or deferring it. Then stop and wait for my
+answers before the next 5.
+
+After I answer a batch, apply it:
+- add a decision entry to docs/decisions.md for each answer (next D-number, with the
+  reason and the alternative rejected),
+- make the smallest matching edit to the plan files,
+- move accepted items into the right table in REQUIREMENTS.md with a proper ID, and
+  mark deferred ones "Deferred (D-nnn)" in the IMP table.
+```
+
+Reply to each batch with something like `1 yes, 2 yes, 3 defer, 4 no because ..., 5 yes`.
+When all 23 are done, paste:
+
+```text
+All IMP items are settled. Re-read the changed plan sections and check they don't
+contradict each other or decisions.md. Then update PROGRESS.md: tick
+"docs/REQUIREMENTS.md created and reviewed", set Current focus to the next item, and
+suggest a commit message. Then commit everything with that message.
+```
+
+### Prompt 0D: outside setup (accounts, keys, tools)
+
+```text
+Walk me through the outside setup in backend plan section 2 and frontend plan section 2,
+one item at a time. I do the clicking; you tell me exactly what to do. Check current
+docs or sign-up pages if a step may have changed (e.g. Neon free-plan project limits).
+
+Rules:
+- Never ask me to paste a key, password or connection string into this chat. I put
+  secret values in the .env file myself. You only tell me the variable NAME.
+- For each item, give me a check command that proves it works without printing a
+  secret (for example `uv --version`, `docker compose version`, or a script that prints
+  only "connected OK").
+- Use only the dev Neon project (blastproof-company-dev) for any connection test.
+- Skip items the plan marks as needed later (Fly.io, Vercel AI Gateway); list them at
+  the end so I remember.
+After each item, wait for me to say "done" or describe a problem.
+At the end, tick "Outside setup done" in PROGRESS.md and set the next step.
+```
+
+Tip: to run a check command yourself so Claude sees the output, type `! <command>`.
+
+### Prompt 0E: check the repo is committed and ready
+
+```text
+Run git status and show me the result. If anything in CLAUDE.md, docs/ or PROGRESS.md is
+uncommitted, show me the diff summary and suggest a commit message, then commit it when
+I say yes. Then confirm Stage 0 is fully ticked in PROGRESS.md and tell me what the first
+step of Stage 1 is.
+```
+
+---
+
+## Part 2: The step loop (use it for every step)
+
+Three prompts per step. Each step gets its own fresh session.
+
+1. Type `/clear`.
+2. Press **Shift+Tab** until the input box shows **plan mode**. Paste **Prompt 1**.
+3. Read the plan with the checklist below. If something is wrong, reject the plan
+   ("keep planning") and type your corrections. When it is right, approve it. Claude
+   then builds it.
+4. When Claude says it is finished, paste **Prompt 2** (verify).
+5. **You** run the "Done when" commands it gives you (`! <command>`), and read the diff
+   (`git diff`, or your editor's source control view).
+6. Paste **Prompt 3** (wrap up and commit).
+
+### Prompt 1: plan the next step (in plan mode)
+
+```text
+Find the first unticked item in PROGRESS.md. That is this session's step. Read CLAUDE.md,
+PROGRESS.md (including Known issues), docs/REQUIREMENTS.md, docs/decisions.md, the plan
+text for this step and any sections it refers to. If a spike for this step has already
+run, read its findings in docs/decisions.md and spikes/.
+
+Before planning, check the CURRENT official docs for every library or API this step uses
+that is on CLAUDE.md's "check current documentation" list. Tell me the exact versions you
+will pin and the docs pages you read.
+
+Then give me the plan, with no code yet:
+1. The step's goal in two sentences, and the requirement IDs it covers.
+2. Files to create or change, and what each will contain.
+3. Key functions, classes and data shapes.
+4. Tests you will write first, including the "Done when" check as an automated test
+   where possible. Include failure cases (errors, timeouts, wrong user).
+5. Assumptions the plan does not state.
+6. Anything in the step that looks wrong, risky or unclear, with your proposed fix.
+7. What is explicitly NOT part of this step.
+
+When I approve, build it with these rules:
+- Tests first for logic (classifier, rules, permissions, diffs), then the code.
+- Small increments; run the tests after each one.
+- No new dependencies beyond the approved plan without asking me.
+- Never change or delete an existing test, or weaken a security rule, to get green.
+  If a test seems wrong, stop and explain.
+- If something surprises you (an API differs from the docs, a test fails for an unclear
+  reason), stop and tell me instead of working around it.
+```
+
+**Your plan checklist (2 minutes):**
+
+- Does it cover everything in the step, and nothing from later steps?
+- Are its assumptions true? Correct any that are not.
+- Did it cite real docs and pin exact versions?
+- Do the tests actually prove the "Done when" check, including failure cases?
+- Does it break any architecture rule in CLAUDE.md (fail closed, credentials, masking,
+  ownership, 404 not 403...)?
+
+### Prompt 2: verify with evidence
+
+```text
+Verify this step:
+1. Run the full test suite and lint for every part you touched (backend and/or
+   frontend). Paste the actual output summary, not a description of it.
+2. Run the step's "Done when" check. Paste the actual output.
+3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.
+4. Review your own diff against the step's plan text and the architecture rules in
+   CLAUDE.md. List every deviation, shortcut, TODO, skipped test or hard-coded value.
+5. List anything that is not finished or not working. "Done" only means the check passed.
+6. Explain the two most important design choices in this step in plain language, as I
+   would in an interview.
+```
+
+If anything in steps 4-5 is a real problem, ask Claude to fix it (or use Prompt D),
+then paste Prompt 2 again.
+
+### Prompt 3: wrap up and commit
+
+```text
+I have run the Done-when check and read the diff. Wrap up this step:
+1. Update PROGRESS.md: tick the step, add anything partial or deferred to Known issues,
+   and set Current focus to the next unticked item.
+2. Tick the requirement IDs this step fully verified in docs/REQUIREMENTS.md. Only tick
+   ones whose verification actually passed.
+3. Add each real decision made in this step to docs/decisions.md (next D-number, with
+   the reason and the alternative rejected). Skip it if there were none.
+4. Show me git status, then commit everything with a Conventional Commits message
+   (e.g. "feat(backend): step 8 classifier"). Do not push.
+```
+
+---
+
+## Part 3: Special prompts
+
+### Prompt S: spike (prove a risky API before building on it)
+
+Spikes come before steps 6 (MCP mounting), 7 and 18 (Claude Code hook), 10 (Neon
+branching) and 14 (LangGraph interrupt and resume). The questions each spike must answer
+are in that step's text in the backend plan. The hook spike also answers: matcher tool
+names (Read, Grep, Glob, MultiEdit, NotebookEdit), the default hook timeout and whether a
+timeout fails open, `permissions.deny` path syntax, whether hooks are snapshotted at
+startup, `disableAllHooks` and settings precedence, and behaviour in bypass-permissions mode.
+
+Use a fresh session, normal mode (not plan mode):
+
+```text
+The first unticked item in PROGRESS.md is a spike. Read CLAUDE.md, the plan text for the
+step it comes before, and the spike notes in docs/WORKFLOW.md Part 3. List the questions
+this spike must answer and wait for my OK.
+
+Then write throwaway code in spikes/<name>.py (not production code; no imports from
+backend/app). Use the current official docs and cite them. Use only dev resources
+(local Docker Postgres, the blastproof-company-dev Neon project). Run it and paste the
+real output.
+
+Finish with:
+1. Each question and its answer, backed by the real output.
+2. Everything that differs from what our plan assumes, and the plan edit you propose.
+After I agree, record the findings in docs/decisions.md, make the plan edits, tick the
+spike in PROGRESS.md and commit.
+```
+
+### Prompt G: gate audit (end of each stage, fresh session)
+
+```text
+You are a skeptical senior engineer reviewing someone else's work. The first unticked
+item in PROGRESS.md is a GATE AUDIT (or the FINAL AUDIT). Read CLAUDE.md,
+docs/REQUIREMENTS.md, PROGRESS.md and the plan text for every step in this stage (for the
+final audit: both MVP done checklists). Then inspect the code itself. Do not trust
+PROGRESS.md or the ticks in REQUIREMENTS.md; verify against the code and tests.
+
+Report, ranked by severity:
+1. Requirements ticked as done that are not actually implemented or tested.
+2. Requirements for this stage that are missing entirely.
+3. Violations of the architecture rules in CLAUDE.md.
+4. Security problems (secrets, authorization gaps, missing masking, fail-open paths).
+5. Missing or weak tests, especially for failure cases.
+6. Whether the gate's check (written next to it in PROGRESS.md) passes. Show the proof.
+Run the full tests, lint and evals, and paste the results. Do not fix anything yet.
+```
+
+Then fix the findings one at a time (ask "fix finding 1", using Prompt D for bugs), and tick
+the gate only when its check passes. If an audit finds a lot, fix it in a new session.
+
+### Prompt D: debug (when something breaks)
+
+```text
+Something is broken: <WHAT YOU SEE, plus the full error>.
+1. Reproduce it and show me the output.
+2. List possible causes, most likely first, and how you would confirm each.
+3. Confirm the cause before changing anything.
+4. Make the smallest fix, add a test that would have caught it, and run all tests.
+Do not change unrelated code and do not weaken tests or security rules to get green.
+```
+
+### Prompt R: where am I? (after a break, a crash, or a long session)
+
+```text
+Read PROGRESS.md and run git status and git diff --stat. Tell me:
+1. Which step I'm on, and whether it looks not started, half built, or built but not
+   verified or committed.
+2. What is uncommitted and whether it looks complete.
+3. Exactly which prompt from docs/WORKFLOW.md I should paste next.
+Do not change anything.
+```
+
+### Prompt E: explain (so you can defend every line in interviews)
+
+```text
+Explain <FILE OR FUNCTION> to me as if I'm preparing for an interview: what it does,
+why it's designed this way, what alternatives exist, and what breaks if it fails.
+Then ask me three questions an interviewer might ask about it, and check my answers.
+```
+
+---
+
+## Part 4: Rules that prevent most bugs and hallucinations
+
+- **Fresh session per step.** Long sessions drift and forget the plan. If a session
+  gets long mid-step, `/clear` and paste Prompt R.
+- **Evidence, not claims.** Accept "done" only with real test and command output.
+- **Docs before code** for fast-moving libraries; spike before building on them.
+- **Tests first** for anything with logic or security.
+- **Never let tests or security rules be weakened** to get green.
+- **Commit after every green step**, so any bad change is one `git revert` away.
+- **"Should work" means run it. "I assumed" means check it.**
+- **Two strikes rule:** if the same bug survives two fix attempts, stop, `/clear`, and
+  start Prompt D from scratch.
+- **Read every diff.** If you can't explain a change, use Prompt E before committing.
+- **Plan wrong? Fix the plan, not just the code.** Any change goes into the plan file
+  and `docs/decisions.md`, so later sessions see it.
+
+---
+
+## Reference: prompts already used
+
+### Prompt 0A: plan audit (done)
 
 ```text
 Read CLAUDE.md and all three plans in docs/. Do not write any code.
@@ -29,7 +312,7 @@ List, with section references:
 Rank by how much each would hurt if not fixed. Be concrete; no generic advice.
 ```
 
-### Prompt 0B: requirements list (once)
+### Prompt 0B: requirements list (done)
 
 ```text
 Read all three plans in docs/. Create docs/REQUIREMENTS.md: a checklist of every
@@ -40,200 +323,3 @@ architecture rule in CLAUDE.md, and every item in the MVP done checklists.
 Do not invent requirements; if something is implied but not stated, list it
 separately at the end under "Implied, needs confirmation".
 ```
-
----
-
-## Part 2: The loop for every step
-
-Use this exact loop for every backend step (1-20) and frontend step (F1-F13).
-
-1. Start a fresh session (`/clear`) so old context does not leak in.
-2. Run Prompt 1 (plan). Use Claude Code's plan mode.
-3. Review the plan with the checklist below. Correct it. Approve.
-4. Run Prompt 2 (implement).
-5. Run Prompt 3 (verify).
-6. YOU run the "Done when" check yourself and read the diff.
-7. Run Prompt 4 (wrap up). Commit.
-
-### Prompt 1: plan the step
-
-```text
-Read CLAUDE.md, PROGRESS.md, docs/REQUIREMENTS.md, and <PLAN FILE> step <N>
-(<STEP NAME>), plus any sections it refers to.
-Before planning, check the current official docs for: <LIBRARIES THIS STEP USES>.
-Tell me which versions you will use and cite the docs pages you read.
-
-Then give me a plan, with no code yet:
-1. Goal of this step in two sentences, and the requirement IDs it covers.
-2. Files to create or change, and what each will contain.
-3. Key functions, classes and data shapes.
-4. Tests you will write first, including the "Done when" check as an automated test
-   where possible.
-5. Assumptions you are making that the plan does not state.
-6. Anything in the step that looks wrong, risky or unclear.
-7. What is explicitly NOT part of this step.
-Wait for my approval.
-```
-
-**Your plan review checklist (2 minutes):**
-
-- Does it cover everything in the step and nothing from later steps?
-- Are its assumptions true? Correct any that are not.
-- Did it cite real docs and pin versions for fast-moving libraries?
-- Do the tests actually prove the "Done when" check?
-- Does it respect every architecture rule in CLAUDE.md?
-
-### Prompt 2: implement
-
-```text
-Approved, with these changes: <YOUR CORRECTIONS, OR "none">.
-Implement the plan:
-- Write the tests first for logic (classifier, rules, permissions, diffs), then the code.
-- Work in small increments and run the tests after each one.
-- Do not add dependencies beyond the plan without asking.
-- Do not change or delete existing tests to make them pass; if a test seems wrong,
-  stop and explain why.
-- If anything surprises you (an API differs from the docs, a test fails for an
-  unclear reason), stop and tell me instead of working around it.
-```
-
-### Prompt 3: verify with evidence
-
-```text
-Verify this step:
-1. Run the full test suite and lint. Paste the actual output summary.
-2. Run the "Done when" check for step <N>. Paste the actual output.
-3. Review your own diff against the step's plan text and the architecture rules in
-   CLAUDE.md. List any deviation, shortcut, TODO or hard-coded value.
-4. List anything that is not finished or not working. Be honest; "done" only means
-   the check passed.
-5. Explain the two most important design choices in this step in plain language,
-   as I would in an interview.
-```
-
-### Prompt 4: wrap up
-
-```text
-Wrap up step <N>:
-1. Update PROGRESS.md: mark the step done, note anything partial in Known issues,
-   and set the next step.
-2. Tick the covered requirement IDs in docs/REQUIREMENTS.md.
-3. Add any real decision, with its reason and the alternative rejected, to
-   docs/decisions.md.
-4. Suggest a commit message (Conventional Commits style).
-```
-
----
-
-## Part 3: Special prompts
-
-### Spike: prove a risky API before building on it
-
-Use BEFORE these steps: 6 (MCP mounting), 7 (Claude Code hook; it shapes step 7's
-deny rules and step 18), 10 (Neon branching), 14 (LangGraph interrupt and resume), Jev judge.
-Each spike must answer the questions listed in its backend plan step (for example, the
-Neon spike measures branch-create-to-first-query p50/p95, which sets the latency target).
-Hook spike questions: matcher tool names (Read, Grep, Glob, MultiEdit, NotebookEdit), default
-hook timeout and whether a timeout fails open, `permissions.deny` path syntax, hook snapshot at
-startup, `disableAllHooks` and settings precedence, behaviour in bypass-permissions mode.
-
-```text
-Before step <N>, write a throwaway spike in spikes/<NAME>.py (not production code)
-that proves <WHAT MUST WORK, e.g. "create a Neon branch, run one query on it, and
-delete it">. Use the current official docs and cite them. Run it and paste the real
-output. Then tell me exactly what the real API looks like and anything that differs
-from what our plan assumes.
-```
-
-### Debug: when something breaks
-
-```text
-Something is broken: <WHAT YOU SEE, plus the full error>.
-1. Reproduce it and show me the output.
-2. List possible causes, most likely first, and how you would confirm each.
-3. Confirm the cause before changing anything.
-4. Make the smallest fix, add a test that would have caught it, and run all tests.
-Do not change unrelated code and do not weaken tests or security rules to get green.
-```
-
-### Stage gate audit: at the end of every stage (fresh session)
-
-```text
-You are a skeptical senior engineer reviewing someone else's work. Read CLAUDE.md,
-docs/REQUIREMENTS.md, PROGRESS.md and the plan sections for steps <A>-<B>.
-Then inspect the code. Do not trust PROGRESS.md; verify against the code.
-Report:
-1. Requirements marked done that are not actually implemented or tested.
-2. Requirements in these steps that are missing entirely.
-3. Violations of the architecture rules in CLAUDE.md.
-4. Security problems (secrets, authorization gaps, missing masking, fail-open paths).
-5. Missing or weak tests, especially for failure cases.
-Run the full tests and evals and paste the results. Rank findings by severity.
-```
-
-### Explain: so you can defend every line in interviews
-
-```text
-Explain <FILE OR FUNCTION> to me as if I'm preparing for an interview: what it does,
-why it's designed this way, what alternatives exist, and what breaks if it fails.
-Then ask me three questions an interviewer might ask about it.
-```
-
----
-
-## Part 4: The order to follow
-
-Each line is one loop (Part 2). Spikes and audits are marked.
-
-**Stage 0: setup** - outside setup, repo files, Prompt 0A, Prompt 0B.
-
-**Stage 1: foundation (week 1)**
-
-- Backend steps 1, 2, 3 (includes writing the eval scenarios), 4, 5
-- Spike: MCP mounting -> backend step 6
-- Spike: Claude Code hook -> backend step 7
-- GATE AUDIT (steps 1-7). Check: Claude Code reads the demo DB only via Blastproof.
-
-**Stage 2: judging parts (week 2)**
-
-- Backend steps 8, 9
-- Spike: Neon branching -> backend step 10
-- Backend steps 11, 12, 13
-- GATE AUDIT (steps 8-13). Check: exact diffs and correct retrieval.
-
-**Stage 3: the flow + dashboard start (week 3)**
-
-- Pull forward: /v1/auth/me, GET /v1/actions, GET /v1/actions/{id} (from backend step 19)
-- Spike: LangGraph interrupt/resume -> backend steps 14, 15
-- Pull forward: seed-demo-actions (from backend step 20; it runs the real graph)
-- Backend steps 16, 17
-- Frontend F1, F2, F3, F4, F5 (in between backend steps if you like)
-- GATE AUDIT. Check: Gate 1, the Replit case is held and can be approved via /docs.
-
-**Stage 4: finish backend + core dashboard (week 4)**
-
-- Backend step 18 (its spike already ran in Stage 1)
-- Backend steps 19, 20, then evals, security pass and deployment (backend plan 12-15)
-- Frontend F6, F7, F8, F9
-- GATE AUDIT. Check: Gate 2, evals green and backend deployed.
-
-**Stage 5: complete and ship (week 5)**
-
-- Frontend F10, F11, F12, F13, deploy to Vercel
-- FINAL AUDIT against both MVP done checklists, then record the demo video.
-
----
-
-## Part 5: Rules that prevent most bugs and hallucinations
-
-- Fresh session per step. Long sessions drift and forget the plan.
-- Evidence, not claims: accept "done" only with real test and command output.
-- Docs before code for fast-moving libraries; spike before building on them.
-- Tests first for anything with logic or security.
-- Never let tests or security rules be weakened to get green.
-- Commit after every green step, so any bad change is one `git revert` away.
-- If Claude says "should work", run it. If it says "I assumed", check it.
-- Two strikes rule: if the same bug survives two fix attempts, stop, start a fresh
-  session, and use the Debug prompt from scratch.
-- Read every diff. If you can't explain a change, ask the Explain prompt before
-  committing.

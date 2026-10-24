@@ -235,3 +235,211 @@ would abort concurrent local work. A crash between resume and `committing` left 
 `rebase-dates` rewrites a Neon main branch, which CLAUDE.md reserves for the owner.
 **Rejected:** treating every COMMIT exception as failure; `MAX_CONCURRENT_SHADOWS=1` alone (it
 doesn't serialise commits); resuming without checking the thread's state.
+
+---
+
+*D-030 onward settle the "Implied, needs confirmation" items in `docs/REQUIREMENTS.md` (Prompt 0C).*
+
+## D-030 · 2026-10-24 · Deactivated agent keys are rejected (IMP-01)
+**Decision:** `get_current_agent` rejects the key of an agent whose `is_active` is false with 401,
+on `/mcp` and on the hook endpoint.
+**Why:** Otherwise the deactivate route changes nothing; it is one check in one dependency.
+**Rejected:** deleting agent rows on deactivate (loses the link from past actions to their agent).
+
+## D-031 · 2026-10-24 · The hook endpoint authenticates the agent key (IMP-02)
+**Decision:** `/v1/hook/pre-tool-use` checks `BLASTPROOF_AGENT_KEY` with `get_current_agent` and
+stores that agent and its owner on each `hook_events` row. A wrong or deactivated key gets 401, and
+the hook script treats a 401 as a deny for every tool. The authorization matrix covers the endpoint
+with a valid, a wrong and a deactivated agent key (it takes agent keys, not user logins).
+**Why:** An unauthenticated endpoint would accept anyone's calls, and `hook_events` already has
+`user_id` and `agent_id` columns to fill.
+**Rejected:** an open hook endpoint; testing it as owner, other user and admin (it has no user login).
+
+## D-032 · 2026-10-24 · Per-agent write rate limit: 30 per minute, counted from `actions` (IMP-03)
+**Decision:** In `query_database`, once the classifier says a call is a write and before its action
+is created, count that agent's write actions from the last 60 seconds. At
+`MAX_WRITES_PER_MINUTE_PER_AGENT` (default 30) or more, reply with the `busy` message, create no
+action, and log `event=rate_limited`. This is the one exception to step 6's "record every call".
+**Why:** It stops a looping agent from flooding the review queue. Counting existing rows needs no new
+table, and reusing `busy` needs no new message template.
+**Rejected:** a separate counter table; a new `rate_limited` template; recording refused calls as
+actions (a flood of refused calls would then flood `actions`).
+
+## D-033 · 2026-10-24 · The LLM cost cap is checked once, after the summary (IMP-04)
+**Decision:** After the summary call, if the action's `llm_cost_usd` is over
+`MAX_LLM_COST_PER_ACTION_USD`, the judge is skipped and the write takes the judge-failure path: at
+least review, with the `ai_unavailable` message. The summary already written is kept. Built in step 14.
+**Why:** Cost is only known after a call, so between the two calls is the only point the cap can act.
+Reusing the judge-failure branch adds no new path, and the summary has already passed the number check.
+**Rejected:** also replacing the summary with the template (throws away a checked summary); no build
+step (the setting would exist but do nothing).
+
+## D-034 · 2026-10-24 · Latency and concurrency measured without a load-test tool (IMP-05)
+**Decision:** The eval runner reports p50/p95 of `total_ms` per path (read, fast lane, previewed).
+For reads it also runs each query directly, without Blastproof, and reports the difference as the
+gateway's overhead (NFR-01). Concurrency (NFR-05) is one integration test in step 17: about 5 writes
+plus reads at once with `FakeNeonClient`. A real load test is deferred.
+**Why:** Real p95 numbers for the README and landing page with no new dependency.
+**Rejected:** adding a load-testing tool (Locust, k6) to the MVP.
+
+## D-035 · 2026-10-24 · The Evals stage tops the labeled set up to 50 (IMP-06)
+**Decision:** Step 3 writes about 20 labeled actions; the Evals stage (Stage 4) adds the rest to
+reach 50. A pytest checks there are at least 50 entries and that allow, review and block all appear.
+**Why:** By then steps 8 to 13 have shown which edge cases are worth labeling.
+**Rejected:** adding a few per step from 8 to 13 (no single owner, easy to forget).
+
+## D-036 · 2026-10-24 · LLM-as-judge explanation score deferred (IMP-07)
+**Decision:** The MVP checks explanation accuracy by code only (the number guardrail plus exact
+checks in evals). The LLM-as-judge score in LangSmith moves to after the MVP.
+**Why:** The numbers, which matter most, are already checked exactly; the LangSmith experiments
+(rules only vs rules plus judge, with vs without RAG) still show LangSmith evals; neither MVP
+checklist needs the score.
+**Rejected:** building a LangSmith LLM-as-judge evaluator in the MVP.
+
+## D-037 · 2026-10-24 · One audit event per status change; decisions record the approver (IMP-08)
+**Decision:** Every status change writes an audit event named after the new status, plus the extra
+events `shadow_done`, `decided` and `fail_closed`. The approve or reject claim in `resume()` writes
+its event in the same transaction, with the approver's `user_id` and `display_name` in `data`.
+Auto-approvals carry no approver.
+**Why:** A rule cannot drift from the state machine the way a hand-kept list did (it had no
+`rejected`, `blocked` or `awaiting_review`), and SPEC §13 requires the approver in the audit log.
+**Rejected:** extending the hand-kept list.
+
+## D-038 · 2026-10-24 · Which MCP calls create actions (IMP-09)
+**Decision:** `query_database`, `list_tables` and `describe_table` each create an action; reads end
+as `executed` and appear in History and `/v1/stats` as they are, with no new filter.
+`get_action_status` creates no action and is only logged. Together with D-032's rate-limited
+writes, these are the two exceptions to step 6's "record every call".
+**Why:** One recording path keeps the audit complete, and the status filter already separates reads
+from writes. A status call asks about an existing action; recording each poll would add about a
+dozen rows per review.
+**Rejected:** recording only `query_database`; recording `get_action_status` polls as actions.
+
+## D-039 · 2026-10-24 · Reads over 500 rows are truncated with a notice (IMP-10)
+**Decision:** A read fetches 501 rows. If the 501st exists, the agent gets the first 500 plus the
+fixed `truncated` notice from `agent_messages.py`: "Showing the first 500 rows; add a LIMIT or narrow
+the WHERE to see the rest." No total count is computed.
+**Why:** The notice tells the agent what to change; an error makes it retry blindly. Counting the
+total would need a second, possibly slow query.
+**Rejected:** returning an error; computing the total row count.
+
+## D-040 · 2026-10-24 · A rule blocks unparseable SQL (IMP-11)
+**Decision:** SQL over 20 KB is not parsed and returns `kind: unknown`, like a parse error or parse
+timeout. A pass-1 rule, "Unparseable SQL" (`kind_in: [unknown]` → block), blocks every `unknown`;
+the agent gets the `blocked` template with the rule's reason.
+**Why:** The plan called `unknown` "a dangerous write", but no rule matched it, so it would have gone
+to review and a shadow run of SQL nobody could parse: a fail-open path. One rule closes it, and no
+new template is needed.
+**Rejected:** a separate `too_large` message; a hard-coded block in the classifier outside the rules.
+
+## D-041 · 2026-10-24 · Logout clears the cookie only; server-side revocation deferred (IMP-12)
+**Decision:** Logout deletes the session cookie. The JWT itself stays valid until its 8-hour expiry.
+**Why:** The token only ever lived in that httpOnly cookie, never in page JavaScript. Revoking it
+would need a backend logout route and a `token_version` bump on every logout.
+**Rejected:** a backend logout route that bumps `token_version` in the MVP.
+
+## D-042 · 2026-10-24 · The change request page shows derived groups (IMP-13)
+**Decision:** The impact numbers section shows `derived_groups` (e.g. "paying: 12") next to the
+breakdowns.
+**Why:** It is the demo's key number; the reviewer should see it as computed by code beside the
+LLM's sentence. `ActionDetail` already returns it.
+**Rejected:** showing it only inside the LLM summary.
+
+## D-043 · 2026-10-24 · Judge-override feedback loop deferred (IMP-14)
+**Decision:** The MVP stores what the loop needs (`actions.judge` holds the judge's recommendation;
+status and `decided_by` hold the human's decision). Turning overrides into eval cases comes later.
+**Why:** The data costs nothing to keep; the export is new work no MVP check needs.
+**Rejected:** building the export into the eval set in the MVP.
+
+## D-044 · 2026-10-24 · Alerts deferred (IMP-15)
+**Decision:** Spec §15's alerts (spikes in blocks, long waits, shadow failures, fail-closed events)
+come after the MVP.
+**Why:** `event=fail_closed` and the per-stage logs already make them countable; alerting needs a
+tool the MVP does not have.
+**Rejected:** adding an alerting service to the MVP.
+
+## D-045 · 2026-10-24 · PR eval gate: incident replays at 100%; no false-block threshold yet (IMP-16)
+**Decision:** Every pull request fails if any incident replay is not caught in the rule-only run;
+the nightly LLM eval keeps the same 100% gate. False block rate is recorded with no threshold until a
+first real measurement sets one.
+**Why:** Rule-only replays are deterministic, so a hard gate never flakes. A threshold chosen before
+measuring would be a guess.
+**Rejected:** a catch-rate threshold on the labeled set per PR; inventing a false-block threshold now.
+
+## D-046 · 2026-10-24 · Users page sits under Settings (IMP-17)
+**Decision:** The sidebar's "Settings" item opens a group of Agents, Rules and Users (Users for
+admins only). `settings/users/page.tsx` is added to the frontend project tree.
+**Why:** The route is already `/dashboard/settings/users`; the link belongs with the other settings.
+**Rejected:** a separate top-level "Users" sidebar item.
+
+## D-047 · 2026-10-24 · Ruff bans `demo_company` imports in the backend (IMP-18)
+**Decision:** Step 1 configures Ruff's banned-imports rule (`flake8-tidy-imports`, TID251) to ban
+`demo_company`; CI's existing `ruff check` enforces it.
+**Why:** It turns the CLAUDE.md rule into an automated check with no new dependency.
+**Rejected:** a custom AST test; adding import-linter.
+
+## D-048 · 2026-10-24 · One retention setting for working data; audit events kept (IMP-19)
+**Decision:** The 10-minute sweeper deletes `preview_rows`, `before_images`, `hook_events` and
+`login_attempts` older than `RETENTION_DAYS` (30). `audit_events` are never deleted in the MVP.
+**Why:** One setting and one loop. `login_attempts` hold emails and IPs, so they should not pile up.
+The audit log is the append-only record, and its trigger blocks deletes anyway.
+**Rejected:** separate retention settings per table; deleting old audit events.
+
+## D-049 · 2026-10-24 · Seeded actions use real retrieval; `--add-pending` adds one (IMP-20)
+**Decision:** `seed-demo-actions` fakes only the LLM and Neon; retrieval uses the real knowledge
+service and the configured embedder. `seed-demo-actions --add-pending` adds one new pending action on
+`users` for demo user 1.
+**Why:** DW-F10 needs an uploaded document to appear in "Knowledge used" (it does through the table
+tag), and DW-F04, DW-F06 and DW-F10 each need one fresh pending action without re-seeding everything.
+**Rejected:** faking retrieval in the seed; re-running the whole seed for each check.
+
+## D-050 · 2026-10-24 · The Origin check is built in F3 (IMP-21)
+**Decision:** F3's BFF route rejects any POST or DELETE whose `Origin` is not the dashboard's own
+address.
+**Why:** FE §11 promises it and FE §12 tests it, but no step listed it.
+**Rejected:** relying on `SameSite=Lax` alone.
+
+## D-051 · 2026-10-24 · "Today" in stats is the UTC day (IMP-22)
+**Decision:** `/v1/stats` counts "today" as the UTC day, and the Overview cards say "today (UTC)".
+The viewer's local day is deferred.
+**Why:** The backend computes it with no time-zone input; the label keeps it honest for viewers
+outside UTC.
+**Rejected:** passing the viewer's time zone to the backend in the MVP.
+
+## D-052 · 2026-10-24 · `ANCHOR_DATE` is 2026-10-01, kept in two checked places (IMP-23)
+**Decision:** `ANCHOR_DATE` is 2026-10-01. `seed.py` writes it to `blastproof.seed_info`; the
+scenario files carry `anchor_date: 2026-10-01` at the top, and backend tests and evals read it from
+there. A CI test checks the two match on the local `company_main`.
+**Why:** Expected counts in `incidents.yaml` need a fixed date. The backend cannot import the seed's
+constant (D-047), so the value lives in two places, and the test stops them drifting apart.
+**Rejected:** a backend config setting for the anchor (a third copy); importing it from `demo_company/`.
+
+## D-053 · 2026-10-24 · Approve and reject routes are pulled forward to Stage 3 (IMP-24)
+**Decision:** `POST /v1/actions/{id}/approve` and `/reject` are built right after step 15, complete
+with the decision claim, the 409 naming who decided, the 10-character reason, owner-or-admin access
+and their owner, other-user and admin tests. They use the stub commit until step 16.
+**Why:** Step 17's "Done when" rejects an action in `/docs` and Gate 1 needs it approvable; both come
+before step 19, so step 17 could not pass its own check.
+**Rejected:** testing step 17 by calling `resume()` directly (Gate 1 is meant to be checked through
+the API, as a reviewer would).
+
+## D-054 · 2026-10-24 · The owner loads the seed into `blastproof-company`, at deploy time (IMP-25)
+**Decision:** Step 3 seeds only the local `company-db` and Neon `blastproof-company-dev` (Claude
+asks before the dev load, because it overwrites a Neon main branch). The owner loads
+`blastproof-company` during deployment; the command prints the target project and asks for
+confirmation. Claude Code never runs it.
+**Why:** CLAUDE.md keeps Claude Code off `blastproof-company`, and that database is only needed for
+the deployed demo.
+**Rejected:** loading all three databases in step 3.
+
+## D-055 · 2026-10-24 · MCP action IDs are scoped to the agent's owner (IMP-26)
+**Decision:** `get_action_status` and `query_database`'s `retry_of` look up action IDs through
+`visible_actions` called for the agent's owner with admin widening turned off, so the filter is the
+owner's `user_id` even when the owner is an admin. An unknown or foreign ID gets the `not_found`
+template: "No action {id} was found."
+**Why:** Otherwise any agent could read another user's reviewer notes, and an admin's agent would
+inherit admin-wide visibility. Keeping one function keeps the CLAUDE.md rule that every action query
+goes through `visible_actions`; same-owner agents see each other's actions, as that function does.
+**Rejected:** calling `visible_actions(owner)` with admin widening on (admin agents would see
+everything); a separate lookup outside `visible_actions`; a 403-style message (it would reveal that
+the action exists).
