@@ -9,7 +9,7 @@ and you personally run every "Done when" check.
 ## Part 1: One-time setup (before any code)
 
 1. Do the outside setup in section 2 of both plans (accounts, API keys, tools).
-2. Create the repo with: `CLAUDE.md`, `PROGRESS.md`, `docs/spec.md`,
+2. Create the repo with: `CLAUDE.md`, `PROGRESS.md`, `docs/spec.md` (lowercase),
    `docs/backend-plan.md`, `docs/frontend-plan.md`, empty `docs/decisions.md`,
    this file as `docs/WORKFLOW.md`. Commit.
 3. Run Prompt 0A (plan audit). Fix the plans with what it finds. Commit.
@@ -76,6 +76,7 @@ Wait for my approval.
 ```
 
 **Your plan review checklist (2 minutes):**
+
 - Does it cover everything in the step and nothing from later steps?
 - Are its assumptions true? Correct any that are not.
 - Did it cite real docs and pin versions for fast-moving libraries?
@@ -128,8 +129,13 @@ Wrap up step <N>:
 
 ### Spike: prove a risky API before building on it
 
-Use BEFORE these steps: 6 (MCP mounting), 10 (Neon branching), 14 (LangGraph
-interrupt and resume), 18 (Claude Code hook), Jev judge.
+Use BEFORE these steps: 6 (MCP mounting), 7 (Claude Code hook; it shapes step 7's
+deny rules and step 18), 10 (Neon branching), 14 (LangGraph interrupt and resume), Jev judge.
+Each spike must answer the questions listed in its backend plan step (for example, the
+Neon spike measures branch-create-to-first-query p50/p95, which sets the latency target).
+Hook spike questions: matcher tool names (Read, Grep, Glob, MultiEdit, NotebookEdit), default
+hook timeout and whether a timeout fails open, `permissions.deny` path syntax, hook snapshot at
+startup, `disableAllHooks` and settings precedence, behaviour in bypass-permissions mode.
 
 ```text
 Before step <N>, write a throwaway spike in spikes/<NAME>.py (not production code)
@@ -182,30 +188,37 @@ Each line is one loop (Part 2). Spikes and audits are marked.
 **Stage 0: setup** - outside setup, repo files, Prompt 0A, Prompt 0B.
 
 **Stage 1: foundation (week 1)**
-- Backend steps 1, 2, 3, 4, 5
-- Spike: MCP mounting -> backend step 6 -> backend step 7
+
+- Backend steps 1, 2, 3 (includes writing the eval scenarios), 4, 5
+- Spike: MCP mounting -> backend step 6
+- Spike: Claude Code hook -> backend step 7
 - GATE AUDIT (steps 1-7). Check: Claude Code reads the demo DB only via Blastproof.
 
 **Stage 2: judging parts (week 2)**
+
 - Backend steps 8, 9
 - Spike: Neon branching -> backend step 10
 - Backend steps 11, 12, 13
 - GATE AUDIT (steps 8-13). Check: exact diffs and correct retrieval.
 
 **Stage 3: the flow + dashboard start (week 3)**
-- Pull forward: /v1/auth/me, GET /v1/actions, GET /v1/actions/{id},
-  seed-demo-actions (from backend steps 19-20)
-- Spike: LangGraph interrupt/resume -> backend steps 14, 15, 16, 17
+
+- Pull forward: /v1/auth/me, GET /v1/actions, GET /v1/actions/{id} (from backend step 19)
+- Spike: LangGraph interrupt/resume -> backend steps 14, 15
+- Pull forward: seed-demo-actions (from backend step 20; it runs the real graph)
+- Backend steps 16, 17
 - Frontend F1, F2, F3, F4, F5 (in between backend steps if you like)
 - GATE AUDIT. Check: Gate 1, the Replit case is held and can be approved via /docs.
 
 **Stage 4: finish backend + core dashboard (week 4)**
-- Spike: Claude Code hook -> backend step 18
+
+- Backend step 18 (its spike already ran in Stage 1)
 - Backend steps 19, 20, then evals, security pass and deployment (backend plan 12-15)
 - Frontend F6, F7, F8, F9
 - GATE AUDIT. Check: Gate 2, evals green and backend deployed.
 
 **Stage 5: complete and ship (week 5)**
+
 - Frontend F10, F11, F12, F13, deploy to Vercel
 - FINAL AUDIT against both MVP done checklists, then record the demo video.
 

@@ -11,6 +11,9 @@ The plans are the source of truth. Read the relevant one before any task:
 - `docs/backend-plan.md` - backend MVP, built in numbered steps 1-20
 - `docs/frontend-plan.md` - dashboard MVP, built in steps F1-F13
 - `docs/decisions.md` - decisions made during the build (append-only)
+
+Historical, not for implementation: `docs/plan-audit.md` and `docs/audit-response.md` record the
+pre-build audit. Where they differ from the plans or `decisions.md`, the plans win.
 - `PROGRESS.md` - which steps are done, what is next, known issues
 
 ## Repo layout
@@ -51,7 +54,11 @@ Frontend (run from `frontend/`):
 
 ## Architecture rules (do not break these)
 
-- Fail closed: any error, timeout or unparseable SQL blocks the write.
+- Fail closed: any error, timeout or unparseable SQL blocks the write. The one exception: if only
+  the AI judge fails, the write goes to human review. A failed check never lets a write through.
+- Commit exactly what was previewed: `pinned_sql` is previewed, approved and committed; the commit
+  must reproduce the approved diff or roll back.
+- The security boundary is credential isolation, not the hook. Hook rules are guardrails.
 - Code counts, the LLM explains: numbers come from the database, never from a model.
   Every number in an LLM summary must match the computed facts.
 - Rules run before the judge; the judge can only make a decision stricter, never looser.
@@ -102,11 +109,14 @@ Frontend:
 - Unit tests: no network. Use fakes for LLM calls and the Neon client.
 - Integration tests: real Postgres from Docker Compose.
 - Authorization matrix test: every endpoint as owner, other user and admin.
-- Evals live in `backend/evals/`; incident replays must stay at 100% caught.
+- Integration tests and CI use the local `company-db` and `FakeNeonClient`; they never call Neon.
+- Evals live in `backend/evals/`; the MVP incident replays (`evals/scenarios/incidents.yaml`) must
+  stay at 100% caught.
 
 ## Safety while building
 
 - Never print, copy or commit values from `.env` files or secrets.
-- Only connect to the development Neon projects. Ask before any command that could
+- Only connect to the development Neon projects (`blastproof-company-dev`); never to
+  `blastproof-company`, which only the deployed backend uses. Ask before any command that could
   delete or overwrite data on a Neon main branch, even the fake company database.
 - Never weaken a security rule to make a test pass; report the problem instead.

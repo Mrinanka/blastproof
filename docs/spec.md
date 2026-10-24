@@ -105,7 +105,7 @@ Every action follows the same path; only the preview method changes by action ty
 3. **Classify.** A SQL parser marks the query as a write affecting the users table.
 4. **Session check.** Blastproof reviews the session's earlier actions for dangerous patterns.
 5. **Shadow run.** Blastproof creates an instant branch of the database, runs the query there, and records before and after.
-6. **Impact report.** The diff engine counts changes; RAG over schema docs and business rules adds meaning: "48,213 users deleted, 12 paying customers, 3 active yesterday."
+6. **Impact report.** The diff engine counts changes; RAG over schema docs and business rules adds meaning: "48,213 users deleted, including 12 paying customers (3 enterprise), and their orders through a cascade."
 7. **Risk decision.** Policy rules run first; an LLM judge handles gray areas. Result: human review.
 8. **Review.** The dashboard shows a change request with the plain-language impact. The reviewer rejects it with a reason.
 9. **Feedback.** The agent receives the reason, rewrites the query to exclude paying customers, and the flow restarts.
@@ -121,11 +121,11 @@ Blastproof has ten modules; MVP marks what must exist for the first demo, Later 
 | #   | Module            | Must do                                                                                                                                                                             | Phase                                       |
 | --- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | 1   | Gateway           | Act as an MCP server to agents; proxy calls to real tools; hold all credentials; per-agent API keys                                                                                 | MVP                                         |
-| 2   | Claude Code hook  | PreToolUse hook that forwards Bash, Edit and Write calls to Blastproof and returns allow or deny with a reason                                                                      | MVP                                         |
+| 2   | Claude Code hook  | PreToolUse hook that forwards Bash, file edit (Edit, Write, MultiEdit, NotebookEdit) and file read/search (Read, Grep, Glob) calls to Blastproof and returns allow or deny with a reason | MVP                                         |
 | 3   | Classifier        | Sort actions into read, write, irreversible using SQL parsing, shell command rules and API rules                                                                                    | MVP                                         |
 | 4   | Shadow executor   | Postgres branch per write; Docker sandbox for shell and files; dry-run adapters (Terraform plan)                                                                                    | MVP: Postgres. Later: shell, Terraform      |
 | 5   | Impact engine     | Row and file diffs; sensitive column detection; plain-language summary via LLM with RAG over schema and business rules                                                              | MVP                                         |
-| 6   | Risk engine       | Policy rules (YAML) first; pluggable judge for gray areas (Claude by default, Jev as an alternative); prompt-injection checks on tool inputs and outputs; session pattern detection | MVP: rules + judge. Later: session patterns |
+| 6   | Risk engine       | Policy rules (YAML) first; pluggable judge for gray areas (Claude by default, Jev as an alternative); prompt-injection checks on tool inputs and outputs; session pattern detection | MVP: rules + judge + input injection checks. Later: output injection checks, session patterns |
 | 7   | Approval workflow | LangGraph flow with human-in-the-loop pause, timeout, reject reason sent back to the agent                                                                                          | MVP                                         |
 | 8   | Commit and undo   | Drift check, before-image, transactional apply, one-click undo for database changes                                                                                                 | MVP: commit. Later: undo                    |
 | 9   | Memory            | Remember past decisions per action pattern; suggest auto-approval for repeatedly approved patterns; per-agent history                                                               | Later                                       |
@@ -143,6 +143,8 @@ Blastproof covers every action type, but how deeply it protects each depends on 
 | Has a dry-run mode  | Terraform apply, Kubernetes changes, some cloud APIs, payment test modes          | Tool's own preview (e.g. Terraform plan) parsed into an impact report                                     | Partial, depends on the tool                                     |
 | Cannot be previewed | Send email, post to Slack, charge a card, delete a cloud resource with no dry-run | Show exactly what will happen (content, recipients, amount); stricter rules; always human review or block | Delay window or compensating action (e.g. refund) where possible |
 
+**MVP note on schema changes:** in the MVP, all DDL from agents is blocked by a rule. Previewing schema changes on a branch comes later, together with a DDL-capable commit role.
+
 **Dangerous combinations:** Some actions are safe alone but dangerous together. The classic case: an agent reads private data, is exposed to untrusted content (a document or web page with a hidden prompt injection), then sends something to an external address. Blastproof tracks each session and blocks the final step when all three conditions are present.
 
 **Expansion order:** Postgres first (clearest demo), then shell and files, then one external app (email or Slack) to show irreversible handling, then Terraform as a stretch goal.
@@ -153,7 +155,7 @@ Blastproof connects to agents in two ways, because coding agents like Claude Cod
 
 **1. MCP gateway (any MCP agent):** Blastproof registers as an MCP server. Agents call Blastproof's tools (for example `query_database`, `run_command`, `send_email`) and Blastproof proxies them to the real systems. Works with Claude Code, Claude Desktop, Cursor and any MCP client.
 
-**2. Claude Code hook (built-in tools):** A `PreToolUse` hook script receives each Bash, Edit and Write call as JSON, forwards it to Blastproof's API, and returns a decision. A deny blocks the call and sends the reason back to Claude, so it can retry safely. Per the [Claude Code hooks docs](https://code.claude.com/docs/en/hooks), these hooks run before permission-mode checks, so they still apply when a developer skips permission prompts. Check the current docs when building; hook details have changed across versions.
+**2. Claude Code hook (built-in tools):** A `PreToolUse` hook script receives each Bash, file edit and file read/search call as JSON, forwards it to Blastproof's API, and returns a decision. It is a guardrail; the security boundary is credential isolation (section 13). A deny blocks the call and sends the reason back to Claude, so it can retry safely. Per the [Claude Code hooks docs](https://code.claude.com/docs/en/hooks), these hooks run before permission-mode checks, so they still apply when a developer skips permission prompts. Check the current docs when building; hook details have changed across versions.
 
 **3. Credential isolation:** Database passwords and API keys live only in Blastproof. They are never placed in the project's `.env` or the agent's environment, so the agent has no way around the gateway.
 
@@ -176,7 +178,7 @@ Blastproof must be safe when it fails, fast on safe actions, and explainable on 
 | ----------------- | -------------------------------------------------------------------------------------- | ------------------------------------------ |
 | Safety on failure | If Blastproof or any check fails, writes are blocked (fail closed); reads may continue | 0 writes pass on error                     |
 | Latency, reads    | Pass-through overhead stays small so agents feel no slowdown                           | under 50 ms added at p95                   |
-| Latency, writes   | Shadow run plus impact report fast enough to keep the agent's flow                     | under 5 s for a demo-size database         |
+| Latency, writes   | Shadow run plus impact report fast enough to keep the agent's flow; trivially safe small inserts take a fast lane with no shadow run or LLM call | Fast lane under 300 ms; previewed writes: target set from the Neon spike's measured p50/p95 (aim: under 5 s for a demo-size database) |
 | Reliability       | Pending approvals survive restarts; no action is lost or applied twice                 | Durable workflow state; idempotent commits |
 | Explainability    | Every decision carries a reason a non-expert can read                                  | 100% of decisions                          |
 | Auditability      | Every action, decision and approver recorded; log is append-only                       | 100% of actions                            |
@@ -199,18 +201,18 @@ Python for the backend (best LangGraph and LangSmith support), TypeScript and Re
 | Layer            | Tool                                                                                                                                                 | Why                                                                                                                                         | Est. cost / month   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | Gateway API      | Python, FastAPI, official MCP Python SDK                                                                                                             | Async, fast, standard MCP support                                                                                                           | $0                  |
-| Claude Code hook | Small Python or shell script calling the gateway API                                                                                                 | Covers built-in Bash, Edit, Write                                                                                                           | $0                  |
+| Claude Code hook | Small Python or shell script calling the gateway API                                                                                                 | Covers built-in Bash, file edit and file read/search tools                                                                                  | $0                  |
 | SQL parsing      | sqlglot                                                                                                                                              | Reliable read/write detection without an LLM                                                                                                | $0                  |
 | Policy rules     | YAML rules engine (Open Policy Agent as a later option)                                                                                              | Deterministic, testable, admin-editable                                                                                                     | $0                  |
 | Workflow         | LangGraph with Postgres checkpointer                                                                                                                 | Human-in-the-loop pause and resume; durable state                                                                                           | $0                  |
-| LLM calls        | LangChain with Claude (Sonnet for judge and summaries, Haiku for cheap checks)                                                                       | Model-agnostic wrappers; structured output. The judge is pluggable, with Jev (TypeSafe AI) via Vercel AI Gateway as a second implementation | $20 to $60          |
+| LLM calls        | LangChain with Claude (Sonnet for the judge, Haiku for summaries and cheap checks)                                                                     | Model-agnostic wrappers; structured output. The judge is pluggable, with Jev (TypeSafe AI) via Vercel AI Gateway as a second implementation | $20 to $60          |
 | RAG / vector DB  | pgvector inside Postgres                                                                                                                             | Default store behind a swappable VectorStore interface; Qdrant as the dedicated vector DB alternative                                       | $0                  |
 | Shadow databases | Neon Postgres branching                                                                                                                              | Instant copy-on-write branches; free tier                                                                                                   | $0 to $19           |
 | Sandboxes        | Docker containers (E2B or Firecracker as later options)                                                                                              | Isolated shell and file previews                                                                                                            | $0                  |
 | Background work  | FastAPI async background tasks (no Redis in the MVP)                                                                                                 | Keeps reads fast; workflow state and results saved in Postgres. Add a Postgres jobs table or Redis queue only if load tests show the need   | $0                  |
-| Dashboard        | React, TypeScript, Next.js, React Query polling every 3 to 5 s                                                                                       | Near-live review queue with no socket infrastructure; your strongest frontend stack; hosted on Vercel                                       | $0                  |
+| Dashboard        | React, TypeScript, Next.js, React Query polling (review queue every 5 s, overview every 15 s)                                                       | Near-live review queue with no socket infrastructure; your strongest frontend stack; hosted on Vercel                                       | $0                  |
 | Auth             | API keys per agent; email and password dashboard login with a backend-issued JWT, kept in an httpOnly cookie by the dashboard's own proxy; SSO later | Simple, standard                                                                                                                            | $0                  |
-| Secrets          | Doppler, Infisical or cloud secrets manager                                                                                                          | Credentials never in code or agent env                                                                                                      | $0                  |
+| Secrets          | MVP: environment variables locally, Fly.io secrets in production. Later: Doppler, Infisical or a cloud secrets manager                              | Credentials never in code or agent env                                                                                                      | $0                  |
 | Tracing          | LangSmith                                                                                                                                            | LLM and LangGraph traces, datasets, experiments                                                                                             | $0 (developer tier) |
 | Metrics          | OpenTelemetry, Prometheus, Grafana                                                                                                                   | Latency, block rate, queue depth                                                                                                            | $0                  |
 | Evals            | LangSmith datasets, pytest, GitHub Actions                                                                                                           | Automated on every change                                                                                                                   | $0                  |
@@ -224,8 +226,8 @@ Blastproof is itself a high-value target, because it holds every credential; the
 
 **Security principles:**
 
-- Credential isolation: secrets live only in Blastproof's secrets manager.
-- Least privilege: each agent gets its own identity and a scoped list of allowed systems and tools.
+- Credential isolation: secrets live only in Blastproof's environment (a secrets manager later). This is the real security boundary: no credential that matters exists anywhere the agent process can read. Hooks and deny-lists are guardrails that give clear feedback and catch honest mistakes, not the boundary.
+- Least privilege: each agent gets its own identity. MVP: one protected system, which every agent may use. Later: a scoped list of allowed systems and tools per agent.
 - Fail closed: any error blocks writes.
 - Defense in depth: deterministic rules first, AI judgement second, human review third.
 - Untrusted content: tool outputs and documents are data, never instructions to Blastproof's own LLM calls.
@@ -236,7 +238,7 @@ Blastproof is itself a high-value target, because it holds every credential; the
 | -------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Destructive mistake              | Agent deletes far more rows than intended                                   | Shadow run, impact report, row-count rules, review                                                                          |
 | Credential theft                 | Agent reads a token from a file and calls the cloud API directly (PocketOS) | No credentials in agent environment; all access via gateway                                                                 |
-| Hook bypass                      | Agent runs `psql` directly in the terminal                                  | Claude Code `PreToolUse` hook on Bash; no DB credentials available locally                                                  |
+| Hook bypass                      | Agent runs `psql` directly, or finds a way around a deny-list               | Boundary: the credentials that matter never exist on the agent's machine (production company DB credentials live only in the deployed backend's secrets). Guardrails: `PreToolUse` hook on Bash, file and search tools, plus Claude Code `permissions.deny` rules. In local development the boundary is weaker by choice (dev credentials, dev data only) |
 | Prompt injection                 | A document tells the agent to email customer data out                       | Injection checks on tool inputs/outputs; session pattern detection; external sends always reviewed                          |
 | Attacking Blastproof's LLM       | Malicious data in a diff tries to trick the risk judge into "low risk"      | Rules run before and can override the judge; judge sees data as quoted content; judge cannot lower a rule-based verdict     |
 | Drift between preview and commit | Data changes after approval                                                 | Drift check before commit; re-run if changed                                                                                |
@@ -252,7 +254,7 @@ Evals prove Blastproof works: they measure how many dangerous actions it catches
 
 **Eval datasets:**
 
-1. **Incident replays:** recreate the Replit, PocketOS and Terraform incidents in a test environment. Every one must be caught.
+1. **Incident replays:** recreate the real incidents in a test environment. Every one must be caught. MVP set: the Replit-style mass delete, DROP TABLE, delete without WHERE, a `psql` bypass attempt, a hook-settings edit, and "PocketOS-lite" (the agent hunts for credentials and finds none or is denied). Phase 2 adds the real cloud-API delete (PocketOS), Terraform and prompt-injection replays.
 2. **Labeled action set:** a few hundred SQL, shell and API actions, each labeled safe, needs review, or dangerous. Mix obvious and tricky cases (e.g. a DELETE with a subtle WHERE mistake).
 3. **Injection set:** sessions containing hidden prompt injections that try to exfiltrate data.
 4. **Explanation set:** shadow-run diffs with known correct summaries, to grade the impact reports.
@@ -268,7 +270,7 @@ Evals prove Blastproof works: they measure how many dangerous actions it catches
 | Added latency        | Overhead on reads and writes                               | Load tests, p50 and p95                             |
 | Cost per action      | LLM spend per intercepted write                            | LangSmith token tracking                            |
 
-**Process:** evals run in GitHub Actions on every pull request; a drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
+**Process:** incident replays and rule-only evals run in GitHub Actions on every pull request (no LLM cost); the full LLM eval runs nightly, on demand, and before any model change. A drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
 
 ## 15. Observability
 
@@ -286,11 +288,11 @@ Every action gets one trace ID that follows it from interception to commit, so a
 Everything runs locally with one command and deploys to the cloud from the same definitions.
 
 - **Services:** two app services (the FastAPI backend, which runs the gateway, hook API and background work, and the Next.js dashboard), Postgres with pgvector, and a Grafana stack. Shadow databases on Neon; Docker sandboxes (later phase) on the backend host. No Redis in the MVP.
-- **Local:** Docker Compose brings up the full stack plus a demo company database seeded with realistic fake data.
+- **Local:** Docker Compose brings up Blastproof's database and a local demo company database. With the seed command, that is enough for tests, seeded dashboard data and local previews. Real Neon branching in dev uses the separate Neon dev project.
 - **Cloud:** backend on Fly.io (AWS as a later option for a stronger infra story), dashboard on Vercel, databases on Neon. Infrastructure defined in Terraform.
 - **CI (GitHub Actions):** lint, type checks, unit tests, integration tests against a disposable Postgres, then the eval suite with pass/fail thresholds.
-- **CD:** merge to main builds container images, runs migrations, deploys to a staging environment, then promotes to production.
-- **Environments:** local, staging, production (demo). Separate secrets and databases for each.
+- **CD:** MVP: merge to main deploys straight to production (demo). Phase 2: build images, deploy to staging, then promote to production.
+- **Environments:** MVP: test (local Postgres only), local dev (its own Neon project) and production demo (its own Neon project). Separate secrets and databases for each. Staging comes in Phase 2.
 - **Resilience:** health checks, automatic restarts, durable workflow state in Postgres, database backups.
 
 Nice touch for interviews: Blastproof can protect its own Terraform. Route your deploy pipeline's infrastructure changes through Blastproof.
@@ -299,14 +301,20 @@ Nice touch for interviews: Blastproof can protect its own Terraform. Route your 
 
 A two-to-three-minute live demo in Claude Code against a fake company database, recreating real incidents and stopping them.
 
-**Setup:** a demo SaaS company in Postgres (customers, plans, payments, orders), Claude Code in a project whose only database access is through Blastproof, and the dashboard open beside the terminal.
+**Setup:** a demo SaaS company in Postgres (customers, plans, payments, orders, customer notes), Claude Code connected to the deployed Blastproof backend on a machine that holds no production company credentials, and the dashboard open beside the terminal.
 
-1. **Normal work flows.** "Add a note to customer 42." Auto-approved instantly. Shows Blastproof does not slow anyone down.
+**MVP demo:**
+
+1. **Normal work flows.** "Add a note to customer 42." Auto-approved instantly through the fast lane. Shows Blastproof does not slow anyone down.
 2. **The Replit moment.** "Clean up inactive users." Claude writes a DELETE. The dashboard shows: 48,213 users, including 12 paying customers. Reject with a reason. Claude rewrites a safer query, which is approved and committed. This is the "whoa" moment.
-3. **The PocketOS moment.** Claude tries to delete a cloud storage volume via API. No preview possible, so it is blocked as an irreversible production action. Point out the agent never had the API key.
-4. **The injection moment (later phase).** Claude reads a support ticket containing a hidden instruction to email customer data out. Blastproof blocks the external send based on the session pattern.
-5. **Undo.** Show an approved change that turned out wrong; one click restores the data.
-6. **Close on the numbers.** Show the eval dashboard: incidents replayed, catch rate, false block rate, added latency, using your real measured results.
+3. **The bypass attempt.** Claude tries `psql`, or goes looking for credentials. The hook blocks it with a clear reason, and there is nothing to find anyway: the agent never had the credentials.
+4. **Close on the numbers.** Show the eval results: incidents replayed, catch rate, false block rate, added latency, using your real measured results.
+
+**Phase 2 additions:**
+
+- **The PocketOS moment.** Claude tries to delete a cloud storage volume via API. No preview possible, so it is blocked as an irreversible production action.
+- **The injection moment.** Claude reads a support ticket containing a hidden instruction to email customer data out. Blastproof blocks the external send based on the session pattern.
+- **Undo.** Show an approved change that turned out wrong; one click restores the data.
 
 Record a polished video of the demo for your README and LinkedIn, in case a live demo fails during an interview.
 
@@ -355,7 +363,7 @@ The hardest problems are where the preview can differ from reality; each is a de
 
 - [ ] Decided: one backend service and no Redis for the MVP. Open: what load-test result would justify a separate worker and a queue?
 - [ ] Rules format: plain YAML, or Open Policy Agent from the start?
-- [ ] How long can an agent wait for human review before the action times out?
+- [x] How long can an agent wait for human review before the action times out? Decided: reviews expire after 24 hours; the agent stops polling after 10 minutes and tells the user.
 - [ ] Which external app for the irreversible-action phase: email or Slack?
 - [ ] Name check: is "Blastproof" free of conflicts with existing products?
 
@@ -365,7 +373,7 @@ The project is finished when a recruiter can understand it in 30 seconds and an 
 
 - [ ] Public GitHub repo with a README that opens with the pitch, a 30-second GIF of the "whoa" moment, the architecture diagram and the eval results table.
 - [ ] Two-to-three-minute demo video.
-- [ ] One-command local setup (`docker compose up`) with seeded demo data.
+- [ ] Short local setup: `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; running the full demo against Neon additionally needs the Neon dev project (README).
 - [ ] Live deployed demo (optional, with a read-only public dashboard).
 - [ ] Eval report: datasets, metrics, before/after experiment results.
 - [ ] Design notes: the key trade-offs from section 19 and how you solved them.

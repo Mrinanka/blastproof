@@ -29,7 +29,7 @@ Do these before writing code; each takes a few minutes. Keep every key in a pass
 
 - [ ] **GitHub:** a new repo `blastproof`, with GitHub Actions enabled.
 - [ ] **Anthropic Console** (console.anthropic.com): create an API key for Claude models (the default; any provider LangChain supports also works, with its own key). Set a monthly spend limit (e.g. $50).
-- [ ] **Neon** (neon.tech): two projects. `blastproof-company` holds the fake company database (the one agents act on, and the one we branch). `blastproof-app` holds Blastproof's own database for production. Create a Neon API key and note the `blastproof-company` project ID and its main branch ID.
+- [ ] **Neon** (neon.tech): three projects. `blastproof-company` holds the fake company database for the deployed demo (the one agents act on there, and the one we branch). `blastproof-company-dev` is an identical copy for local development, so dev credentials can never touch the demo's data (Neon branches share role passwords with their parent, so a dev *branch* would not give that separation). `blastproof-app` holds Blastproof's own database for production. For each company project, note the project ID and its main branch ID, and create an API key scoped to that project if your plan offers project-scoped keys (check in the Neon spike; otherwise use separate keys and treat the dev key as dev-only). Check the free plan's project limit when you sign up.
 - [ ] **LangSmith** (smith.langchain.com): create an API key and a project named `blastproof-dev`.
 - [ ] **Embeddings:** pick one. Default: a free local model via `fastembed` (no key needed). Alternative: Voyage AI, which Anthropic recommends for embeddings (needs an API key).
 - [ ] **Fly.io** (fly.io): account and the `flyctl` CLI, for deployment in the last week.
@@ -58,8 +58,8 @@ Every library below is a common industry choice with good documentation; nothing
 | Company DB access | `asyncpg` (raw SQL) | Runs agent SQL on Neon branches and main |
 | SQL parsing | `sqlglot` | Classify statements, find tables, add `RETURNING *` |
 | Neon API | `httpx` | Create and delete branches |
-| LLM calls | `langchain-anthropic` | Created with init\_chat\_model from provider:model strings in config, so any provider works (add e.g. langchain-google-genai or langchain-openai); structured output into Pydantic models |
-| Workflow | `langgraph` + `langgraph-checkpoint-postgres` | Approval flow with interrupt and Postgres checkpoints |
+| LLM calls | `langchain` + `langchain-anthropic` | `init_chat_model` lives in `langchain`; models are created from provider:model strings in config, so any provider works (add e.g. langchain-google-genai or langchain-openai); structured output into Pydantic models |
+| Workflow | `langgraph` + `langgraph-checkpoint-postgres` + `psycopg[binary]` | Approval flow with interrupt and Postgres checkpoints; the checkpointer uses psycopg 3, not asyncpg |
 | Vectors | `pgvector` (extension + Python package) | Default vector store behind a VectorStore interface; qdrant-client for the swappable Qdrant implementation |
 | Embeddings | `fastembed` (or `voyageai`) | Local free model by default |
 | Tracing | `langsmith` | Automatic for LangChain and LangGraph calls |
@@ -97,8 +97,9 @@ blastproof/
         vectorstores/      # VectorStore interface, pgvector.py, qdrant.py
         impact.py          # breakdown counts + LLM summary
         judge.py           # LLM risk judge
-        commit.py          # drift check, before-image, apply
+        commit.py          # drift check, before-image, apply, reconciler
         hook_rules.py      # shell and file rules for Claude Code
+        agent_messages.py  # the exact text returned to agents for each outcome
         audit.py           # writes audit events
       workflow/
         graph.py           # LangGraph state, nodes, edges
@@ -107,34 +108,55 @@ blastproof/
     migrations/            # Alembic
     policies/rules.yaml    # policy rules
     tests/                 # unit, integration
-    evals/                 # scenarios + eval runner
+    evals/
+      scenarios/           # incident replays + labeled actions (YAML), written in step 3
+      run.py               # eval runner
     Dockerfile
     pyproject.toml
   frontend/                # Next.js dashboard (frontend plan)
   demo_company/            # schema.sql, seed.py, schema_docs.md
   claude_hook/             # pre_tool_use.py + example .claude/settings.json
+  docker/                  # Postgres init scripts (roles)
   docker-compose.yml
   .github/workflows/ci.yml
 ```
 
 ## 5. Data model
 
-Blastproof's own database has eight tables, plus the checkpoint tables LangGraph creates for itself. The company database is separate and untouched by this schema.
+Blastproof's own database has eleven tables, plus the checkpoint tables LangGraph creates for itself. The company database is untouched by this schema except for one small `blastproof` schema (below).
 
 | Table | Key columns | Purpose |
 | --- | --- | --- |
-| `users` | id, email, password\_hash, role (admin, member) | Dashboard logins |
+| `users` | id, email, display\_name, password\_hash, role (admin, member), is\_active, token\_version, created\_at | Dashboard logins. Other users only ever see `display_name`, never the email. Bumping `token_version` revokes every JWT for that user |
+| `login_attempts` | id, email, ip, succeeded, created\_at | Login rate limiting: 5 failures per 15 minutes per email and IP, plus 20 failures per hour per email from any IP (so rotating IPs doesn't help) |
 | `agents` | id, owner\_id, name, api\_key\_hash, key\_prefix, is\_active, created\_at | One row per agent, owned by one user; only the hash of the key is stored |
-| `systems` | id, name, kind (postgres), neon\_project\_id, neon\_main\_branch\_id | The company databases Blastproof protects; credentials stay in env vars for the MVP |
-| `actions` | id, user\_id, agent\_id, system\_id, session\_id, tool, sql, statement\_type, tables, status, decision, risk\_level, reason, impact (jsonb), summary, decided\_by, created\_at, decided\_at | One row per intercepted action; the heart of the system |
-| `audit_events` | id, action\_id, event\_type, data (jsonb), created\_at | Append-only timeline: received, classified, shadow\_done, decided, approved, committed, failed |
-| `before_images` | id, action\_id, table\_name, primary\_key (jsonb), row\_before (jsonb), row\_after (jsonb) | Saved at commit; powers the drift check now and undo later |
+| `systems` | id, name, kind (postgres), connection\_profile (neon, local), neon\_project\_id, neon\_parent\_branch\_id | The company databases Blastproof protects. `connection_profile` picks which set of env-var credentials and which `NeonClient` the system uses: `neon` for the real company database, `local` for the Compose `company-db` (seeded actions, tests). Credentials stay in env vars for the MVP |
+| `actions` | id, user\_id, agent\_id, system\_id, session\_id, retry\_of, tool, intent, sql, pinned\_sql, sql\_display, statement\_type, tables, status, decision, risk\_level, policy\_reason, reviewer\_note, matched\_rules (jsonb), judge (jsonb: provider, model, result), impact (jsonb: diff facts), cascade\_expectations (jsonb: per FK path, the count of child rows referencing the approved keys), impact\_report (jsonb: headline, key points, concerns), knowledge\_used (jsonb), preview\_ms, total\_ms, llm\_input\_tokens, llm\_output\_tokens, llm\_cost\_usd, decided\_by, created\_at, decided\_at, expires\_at | One row per intercepted MCP action; the heart of the system |
+| `audit_events` | id, action\_id, event\_type, data (jsonb), created\_at | Append-only timeline: received, classified, shadow\_done, decided, approved, committing, committed, drifted, expired, failed, fail\_closed |
+| `preview_rows` | action\_id, table\_name, primary\_key (jsonb), before\_hash, change (deleted, updated, inserted) | Written by the shadow run: one row per affected row. The drift check compares against these at commit |
+| `before_images` | id, action\_id, table\_name, primary\_key (jsonb), row\_before (jsonb), row\_after (jsonb) | Saved at commit from the locked rows; for undo later |
+| `hook_events` | id, user\_id, agent\_id, tool, summary (masked), decision (allow, deny), reason, rule, created\_at | One row per Claude Code hook call. Kept out of `actions` so Bash noise never floods the review queue |
 | `knowledge_chunks` | id, source, table\_name, content, created\_at | Source of truth for knowledge text and metadata, whichever vector store is used |
 | `chunk_embeddings` | chunk\_id, embedding (vector) | Used only by the pgvector store; Qdrant keeps vectors in its own collection |
 
-**Action status values:** `received` -> `classified` -> `previewing` -> `awaiting_review` -> `approved` or `rejected` or `blocked` -> `committed` or `failed`. Reads go `received` -> `executed`.
+**Column meanings that are easy to mix up:** `sql` is exactly what the agent sent and is never returned by the API. `pinned_sql` is `sql` with `now()` and similar values replaced by one fixed timestamp (step 8); it is what is previewed, approved and committed. `sql_display` is `pinned_sql` with PII-looking string literals masked; it is the only SQL that reaches the API, the UI, logs and prompts. `policy_reason` comes from rules; `reviewer_note` is the human's reject reason, which is sent to the agent.
 
-**Rules:** the app's database role cannot `UPDATE` or `DELETE` on `audit_events`, which makes it append-only. Add an HNSW index on `chunk_embeddings.embedding`.
+**Action status values (the one canonical state machine):**
+
+```text
+write:  received → classified → previewing → awaiting_review → approved → committing → committed
+                       │            │               │                         │
+                       └→ blocked   ├→ blocked      ├→ rejected               ├→ drifted → previewing (once)
+                                    └→ failed       └→ expired (timeout)      └→ failed
+fast lane or auto-allow:  classified (or previewing) → approved → committing → committed
+read:   received → executed | failed
+```
+
+"Pending" is only the word used in MCP replies for `awaiting_review`; it is never stored. `expired` actions have `decided_by` null.
+
+**Company database:** a `blastproof` schema with two tables. `applied_actions (action_id uuid primary key, committed_at)`: each commit inserts its row in the same transaction, which makes commits idempotent (step 16). `seed_info (anchor_date)`: the anchor the demo data's dates were last rebased to (step 3). Agent SQL that touches the `blastproof` schema is blocked.
+
+**Database roles and rules:** two roles on Blastproof's database. `blastproof_owner` owns the schema and runs migrations, including LangGraph's checkpointer `setup()`. `blastproof_app` is what the running app uses; it has only `SELECT` and `INSERT` on `audit_events`. The migration that runs the checkpointer `setup()` also grants `blastproof_app` `SELECT, INSERT, UPDATE, DELETE` on the checkpoint tables, and sets `ALTER DEFAULT PRIVILEGES FOR ROLE blastproof_owner` so tables added by future LangGraph migrations get the same grants. The app itself never calls `setup()`. A `BEFORE UPDATE OR DELETE` trigger on `audit_events` also raises an error, so even the owner cannot quietly rewrite history. Add an HNSW index on `chunk_embeddings.embedding`. Retention: `preview_rows` and `before_images` are deleted after 30 days by the background sweeper.
 
 **Ownership (access model for the MVP):** every agent key belongs to one user. When an agent calls Blastproof, the backend looks up its key, finds the agent and its owner, and stores the owner's `user_id` on the action. Each user sees and decides only actions with their own `user_id`; admins see everything and manage users. Ownership uses the user's ID, never their email, because IDs never change and emails are personal data. Team review, per-database scoping and "no approving your own agent" come later.
 
@@ -147,11 +169,26 @@ Three doors into the backend: MCP tools for agents, one hook endpoint for Claude
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `list_tables` | none | Table names with one-line descriptions |
-| `describe_table` | table name | Columns, types, notes from knowledge |
-| `query_database` | `sql`, `intent` (what the agent is trying to do) | Rows for reads; for writes, the final result, or `pending` with an `action_id` |
-| `get_action_status` | `action_id` | Status, decision and reason |
+| `describe_table` | table name | Columns and types; from step 11 on, also notes from knowledge |
+| `query_database` | `sql`, `intent` (what the agent is trying to do), optional `retry_of` (the action ID this query replaces) | Rows for reads; for writes, the final result, or `pending` with an `action_id` |
+| `get_action_status` | `action_id`, optional `wait_seconds` (0 to 50, default 30) | Status, decision and reason; waits until the action is decided or `wait_seconds` pass (long poll) |
 
-**Waiting rule (design decision):** `query_database` waits up to 20 seconds for a decision. Auto-approved or blocked writes finish inside that window. If human review is needed, it returns `pending` plus the `action_id`, and Claude checks back with `get_action_status`. Simple, and no long-held connections.
+**Waiting rule (design decision):** `query_database` waits up to 20 seconds for a decision. Fast-lane, auto-approved and blocked writes finish inside that window. If human review is needed, it returns `pending` plus the `action_id` and tells the agent to keep calling `get_action_status` until it is decided. Each call long-polls for up to 50 seconds, so the agent learns the outcome within seconds of the reviewer deciding, with no long-held connections. **Polling budget:** once an action has waited longer than `AGENT_POLL_BUDGET_MINUTES` (default 10), `get_action_status` returns the `still_waiting` message instead, which tells the agent to stop polling and tell the user. This stops a 24-hour review window from becoming about 1,700 tool calls that fill the agent's context and use up the user's budget. The MCP spike confirms Claude Code's MCP tool timeout allows this. `session_id` is the MCP session ID when the transport provides one, else null; `retry_of` links a rewritten query to the one it replaces, and the dashboard shows the chain.
+
+**What the agent is told** (`services/agent_messages.py`; one template per outcome, tested word for word):
+
+| Outcome | Message to the agent (shape) |
+| --- | --- |
+| committed | "Done: {n} rows {changed} in {table}." |
+| blocked | "Blocked: {policy_reason}. {suggestion, e.g. exclude rows where plan is pro or enterprise}. Do not retry the same statement." |
+| pending | "Held for human review (action {id}). Call get\_action\_status with this ID until it is decided. Do not try another route to the database." |
+| still\_waiting | "Still waiting for a reviewer (action {id}, {minutes} minutes so far). Stop polling. Tell the user this action is waiting for their review in the Blastproof dashboard, and call get\_action\_status once when they say it is decided." |
+| rejected | "Rejected by {reviewer display\_name}: {reviewer\_note}. If you write a safer query, pass retry\_of={id}." |
+| drifted | "The data changed after approval; the change was re-previewed and sent back for review (action {id})." |
+| expired | "No reviewer decided within {hours} hours; the action was cancelled." |
+| busy | "Blastproof is busy previewing other writes. Retry in about {seconds} seconds." |
+| ai\_unavailable | "Held for review: the AI risk check is unavailable right now (action {id})." |
+| failed | "Blastproof could not complete this safely, so nothing was changed. Reason: {reason_code}." |
 
 **Hook endpoint:**
 
@@ -177,11 +214,44 @@ Three doors into the backend: MCP tools for agents, one hook endpoint for Claude
 | GET | `/v1/systems` | Protected company databases | admin |
 | POST | `/v1/systems/{id}/scan` | Rescans the company schema into knowledge | admin |
 | GET | `/v1/agents` | Your agents, with key prefix and active state | own only (admin: all) |
-| POST | `/v1/agents` | Creates an agent owned by you; returns the API key once | signed in |
+| POST | `/v1/agents` | Creates an agent owned by you; returns the API key once, plus `mcp_url` and ready-made setup lines (`claude mcp add ...` and the `BLASTPROOF_AGENT_KEY` line), built from `PUBLIC_BASE_URL` | signed in |
 | POST | `/v1/agents/{id}/deactivate` | Disables one of your agent keys | owner or admin |
 | GET | `/v1/users` | All users | admin |
 | POST | `/v1/users` | Creates a user with an initial password | admin |
-| GET | `/health` | Liveness and database check | public |
+| GET | `/health` | Liveness only (the process is up) | public |
+| GET | `/ready` | Readiness: Blastproof DB, company DB and Neon API reachable | public |
+
+**Action detail contract.** `GET /v1/actions/{id}` returns this shape (`schemas/actions.py`); the dashboard is built against it, so changes go through the OpenAPI contract check.
+
+```python
+class ActionDetail(BaseModel):
+    id: str; status: ActionStatus; decision: Decision | None; risk_level: RiskLevel | None
+    agent: AgentRef                      # id, name
+    owner: UserRef                       # id, display_name
+    intent: str
+    sql_display: str                     # pinned and masked; raw SQL is never returned
+    pinned_values: dict[str, str]        # e.g. {"now()": "2026-10-24T12:00:00Z"}; empty if nothing pinned
+    original_sql_display: str | None     # masked original, shown only when pinning changed it
+    statement_type: str; tables: list[str]
+    impact_report: ImpactReport | None   # headline, key_points, concerns
+    table_changes: list[TableChange]     # table, deleted, updated, inserted, is_cascade
+    breakdowns: list[Breakdown]          # column, counts by value, e.g. plan: free 48,201, pro 9
+    derived_groups: list[DerivedGroup]   # name, count, definition, e.g. paying: 12
+    samples: list[SampleRow]             # table, change, masked row values (max 50)
+    judge: JudgeView | None              # provider, model, recommendation, risk_level, confidence, reason
+    matched_rules: list[MatchedRule]     # name, outcome, reason, pass ("pre" or "post")
+    knowledge_used: list[KnowledgeRef]   # chunk id, source, table_name, first line
+    policy_reason: str | None; reviewer_note: str | None
+    retry_of: str | None; retried_by: str | None
+    timeline: list[AuditEventView]       # event_type, created_at, short data
+    timings: Timings                     # preview_ms, total_ms
+    llm_cost_usd: float | None
+    decided_by: UserRef | None; created_at: datetime; decided_at: datetime | None
+    expires_at: datetime | None
+    can_decide: bool
+```
+
+The list endpoint returns a smaller `ActionSummary` (id, status, decision, risk\_level, agent, intent, headline, tables, created\_at, decided\_by).
 
 **Conventions shared with the dashboard:** every error, including validation errors (a custom handler replaces FastAPI's default 422 shape), uses `{"error": {"code": "...", "message": "..."}}`; list endpoints return `{"items": [...], "total": n, "limit": n, "offset": n}`; timestamps are ISO 8601 in UTC; IDs are UUID strings; a 409 on approve or reject names who already decided. Every route declares a Pydantic response model, because the dashboard generates its TypeScript types from `/openapi.json`, which also serves as the API reference at `/docs`.
 
@@ -193,59 +263,143 @@ Reads skip this graph and run directly with the read-only role. Every write runs
 
 Rules can block at two points, the judge can only make a decision stricter, and the human review node pauses the graph with its state saved in Postgres until a reviewer approves or rejects.
 
+**Fast lane:** after classification and the pre-shadow rules, a write that is fast-lane eligible (step 8), matches an `allow` rule with `fast_lane: true`, and matches no stricter rule skips the shadow run, the judge and the LLM summary. It gets a template summary and goes straight to commit, which checks the row count. It still runs through the graph and gets a full audit timeline.
+
+**Three principles behind the pipeline** (see `docs/decisions.md`):
+
+1. *Measure, don't predict:* the shadow run diffs whole tables on the branch instead of guessing effects from the SQL.
+2. *Approve exactly what was previewed:* non-deterministic values are pinned before the preview, and the commit must reproduce the approved diff or roll back.
+3. *No facts, block; facts but no AI opinion, review:* a failed shadow run blocks; a failed judge sends the write to review. Either way nothing is applied without rules or a human allowing it.
+
 ## 8. Build steps A: foundation
 
 Steps 1 to 7 give you a dumb pipe: Claude Code reads the company database through Blastproof, and every call is recorded. Each step ends with a test you can run.
 
-1. **Repo and skeleton.** `uv init`, add the libraries from section 3, create `main.py` with a `/health` route, `config.py` with pydantic-settings, structlog JSON logging, Ruff and pytest. Add `docker-compose.yml` with one service: Blastproof's Postgres using the `pgvector/pgvector:pg16` image.
+1. **Repo and skeleton.** `uv init`, add the libraries from section 3, create `main.py` with a `/health` route, `config.py` with pydantic-settings, structlog JSON logging, Ruff and pytest. Add `docker-compose.yml` with Blastproof's Postgres using the `pgvector/pgvector:pg16` image, and an init script in `docker/` that creates the `blastproof_owner` and `blastproof_app` roles (section 5). Startup must not call Neon or download models when `APP_ENV=test`.
    *Done when:* `docker compose up -d`, then `uv run uvicorn app.main:app --reload`, and `/health` returns `ok`.
 2. **CI.** A GitHub Actions workflow that runs `ruff check`, `ruff format --check` and `pytest`, with a Postgres service container for tests.
    *Done when:* a pull request shows a green check.
-3. **Demo company database.** In `demo_company/`, write `schema.sql` with about 10 tables: `users` (with plan `free/pro/enterprise` and `last_login_at`), `organizations`, `subscriptions`, `payments`, `invoices`, `products`, `orders`, `order_items`, `support_tickets`, `feature_flags`. Give orders an `ON DELETE CASCADE` to `users` so cascades exist. Write `seed.py` with Faker: about 50,000 users, deliberately including inactive paying customers (the trap in the demo). Load it into the Neon `blastproof-company` main branch. Create two Postgres roles: `blastproof_reader` (SELECT only) and `blastproof_writer` (SELECT, INSERT, UPDATE, DELETE). Write `schema_docs.md` describing each table and the business rules, e.g. "a plan in (pro, enterprise) means a paying customer; enterprise accounts have contracts and must never be deleted."
-   *Done when:* the seed runs, and a count query by plan on Neon returns sensible numbers.
-4. **Blastproof data model.** SQLAlchemy models for the eight tables in section 5. First Alembic migration also runs `CREATE EXTENSION vector` and revokes UPDATE and DELETE on `audit_events` from the app role.
-   *Done when:* `alembic upgrade head` creates all tables locally.
-5. **Auth.** Agent keys: generate `bp_` + `secrets.token_urlsafe(32)`, store only its SHA-256 hash and the first 8 characters, show the full key once. Add a CLI command `create-agent` and a FastAPI dependency `get_current_agent` that checks the bearer key. Dashboard users: a `create-user` CLI, argon2 password hashes, `/v1/auth/login` returning a JWT (8-hour expiry), and a `require_admin` dependency.
-   *Done when:* tests prove a wrong key or token returns 401 and an admin-only route rejects members with 403.
-6. **MCP server.** Create a FastMCP server with the four tools from section 6 and mount it at `/mcp` (follow the SDK README for mounting into FastAPI, including its lifespan). Add middleware that checks the agent key on `/mcp`. For now `query_database` runs reads with the `blastproof_reader` role (statement timeout 5 s, max 500 rows) and refuses writes with "not supported yet." Look up the key's agent and its owner, and record every call, with the owner's `user_id`, in `actions` and `audit_events`.
-   *Done when:* after `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>"` (check the Claude Code docs for exact syntax), Claude answers "how many pro users do we have?" through Blastproof, and the call appears in `actions`.
-7. **Remove direct access.** Create a separate demo workspace folder for Claude Code with no database URL anywhere: not in `.env`, not in shell variables. Only Blastproof's own environment holds the company database credentials.
-   *Done when:* searching the demo workspace and its environment for "postgres" finds nothing.
+3. **Demo company database and eval scenarios.** In `demo_company/`, write `schema.sql` with about 11 tables: `users` (with plan `free/pro/enterprise` and `last_login_at`), `organizations`, `subscriptions`, `payments`, `invoices`, `products`, `orders`, `order_items`, `support_tickets`, `feature_flags`, `customer_notes` (id, user\_id, body, created\_at; the fast-lane table for demo step 1). Every table has a primary key. Foreign keys, stated explicitly: `orders`, `subscriptions`, `payments` and `support_tickets` → `users` are `ON DELETE CASCADE`; `order_items` → `orders` is `ON DELETE CASCADE`; `customer_notes` → `users` is `ON DELETE CASCADE`; `invoices.user_id` → `users` is `ON DELETE SET NULL` (so the report shows a non-delete side effect); `users.organization_id` → `organizations` is `ON DELETE SET NULL`. No triggers. Also create the `blastproof` schema with `applied_actions` (section 5). Write `seed.py` with Faker (fixed seed): about 50,000 users, deliberately including inactive paying customers (the trap in the demo).
+   - **Stable numbers:** every timestamp is generated relative to a fixed `ANCHOR_DATE` (e.g. 2026-10-01), never relative to the real clock, so the same seed always gives the same data.
+   - **`rebase-dates` command:** shifts every timestamp column in every table by the same interval (today minus the anchor), and records the new anchor in `blastproof.seed_info`. Relative ages are unchanged, so "inactive for 6 months" counts (48,213, 12 paying) are reproduced exactly on any day. Run it on the long-lived Neon databases before a demo, or on a schedule. **Owner-run only:** it rewrites rows on a Neon main branch, so Claude Code never runs it (CLAUDE.md, "Safety while building"); the command asks for confirmation and prints the target project first. It changes every row's hash, so any action awaiting review drifts at commit and goes back through preview (step 16); run it when the review queue is empty.
+   - **Evals and tests** run with the classifier's `Clock` (step 8) frozen at the anchor, so expected counts never move. Create two Postgres roles: `blastproof_reader` (SELECT only) and `blastproof_writer` (SELECT, INSERT, UPDATE, DELETE on the company tables, plus INSERT and SELECT on `blastproof.applied_actions`). Load it into three places:
+   - The local `company-db` Compose service, via `uv run python demo_company/seed.py --target local` (run from the host or a CI step, not from a Postgres init script). It creates `company_template`, loads the schema and data into it, closes its connections, locks it (`ALTER DATABASE company_template ALLOW_CONNECTIONS false`), and clones `company_main` from it. The template is never connected to again; tests and seeded actions use `company_main`. See `FakeNeonClient` in step 10.
+   - The Neon `blastproof-company-dev` project (local dev).
+   - The Neon `blastproof-company` project (deployed demo). Write `schema_docs.md` with one `## table: <name>` heading per table plus a `## business rules` section, e.g. "a plan in (pro, enterprise) means a paying customer; enterprise accounts have contracts and must never be deleted."
+   **Eval scenarios first** (SPEC §18): write `backend/evals/scenarios/incidents.yaml` (the MVP incident replays from section 14) and a first `labeled.yaml` (about 20 of the 50 labeled actions). Each entry has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`. Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them.
+   *Done when:* the seed runs, a count query by plan returns sensible numbers on all three databases, and the scenario files load and validate against a Pydantic schema.
+4. **Blastproof data model.** SQLAlchemy models for the eleven tables in section 5. Migrations run as `blastproof_owner`. The first Alembic migration also runs `CREATE EXTENSION vector`, grants `blastproof_app` its privileges (only `SELECT` and `INSERT` on `audit_events`), and adds the `BEFORE UPDATE OR DELETE` trigger on `audit_events`.
+   *Done when:* `alembic upgrade head` creates all tables locally, and a test connected as `blastproof_app` fails to update or delete an audit event (and so does one connected as `blastproof_owner`, because of the trigger).
+5. **Auth.** Agent keys: generate `bp_` + `secrets.token_urlsafe(32)`, store only its SHA-256 hash and the first 8 characters, show the full key once. Add a CLI command `create-agent` and a FastAPI dependency `get_current_agent` that checks the bearer key. Dashboard users: a `create-user` CLI (email, display name, role), argon2 password hashes, `/v1/auth/login` returning a JWT (8-hour expiry) that carries `token_version`, and a `require_admin` dependency. Every request rejects inactive users and stale `token_version`s. Login is rate limited through `login_attempts`, both per email+IP and per email alone. Password change is deferred.
+   *Done when:* tests prove a wrong key or token returns 401, an inactive user or a bumped `token_version` returns 401, the sixth failed login in 15 minutes from one IP is refused, the 21st failed login in an hour for one email is refused across IPs, and an admin-only route rejects members with 403.
+6. **MCP server.** *Spike first* (WORKFLOW Part 3): the mount path (`streamable_http_app()` already serves at `/mcp`), the lifespan and `session_manager.run()`, stateless vs session mode, how a tool reads request data, and Claude Code's MCP tool timeout. Create a FastMCP server with the four tools from section 6 and mount it so the public path is `/mcp`. Add middleware that checks the agent key on `/mcp` and puts the agent and owner into a `contextvar` the tools read (or the SDK's own mechanism, if the spike shows a better one). For now `query_database` runs reads with the `blastproof_reader` role (statement timeout 5 s, max 500 rows) and refuses writes with "not supported yet." `describe_table` returns columns and types only until step 11. Record every call, with the owner's `user_id`, in `actions` and `audit_events`. Add `/ready`.
+   *Done when:* after `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>" --scope local` (check the Claude Code docs for exact syntax; `--scope local` keeps the key out of `.mcp.json`), Claude answers "how many pro users do we have?" through Blastproof, and the call appears in `actions`.
+7. **Remove direct access.** Create a separate demo workspace folder for Claude Code, **outside the repo**, with no database URL anywhere: not in `.env`, not in shell variables. Only Blastproof's own environment holds the company database credentials. Add the workspace's `.claude/settings.json` with `permissions.deny` rules for reading the repo's `backend/`, any `.env` and credential files (exact syntax from the hook spike). **Accepted dev limitation** (`docs/decisions.md`): on the dev machine, Claude Code could still reach the dev `.env` by some route the guardrails miss. Those credentials only unlock the dev company database, never the demo's. Full isolation is checked on the deployed demo (section 17).
+   *Done when:* searching the demo workspace and its environment for "postgres" finds nothing, and Claude's `Read` of the backend's `.env` path is denied.
 
 ## 9. Build steps B: the safety pipeline
 
 Steps 8 to 13 build the pieces that judge a write. Build and unit-test each one on its own; step 14 wires them together.
 
-8. **Classifier** (`services/classifier.py`). Parse with sqlglot (Postgres dialect) and return `kind` (read, write, ddl, unknown), statement types, tables, `has_where`, `multi_statement`, and `non_deterministic` (uses `now()`, `random()`, sequences). Walk the whole tree, so a DELETE hidden inside a CTE counts as a write. A parse error returns `unknown`, which is treated as a dangerous write. Side-effect functions like `pg_terminate_backend` count as writes.
-   *Done when:* about 30 table-driven unit tests pass, including the tricky cases.
-9. **Policy rules** (`services/policy.py`, `policies/rules.yaml`). Each rule has a name, conditions, an outcome (allow, review, block) and a reason. Evaluate every rule; the strictest outcome wins (block, then review, then allow). Any write that matches no rule defaults to review. Rules run twice: before the shadow run (decidable from SQL alone, like DROP TABLE) and after it (row counts, cascades). The same file lists `important_columns` per table (e.g. `users: [plan]`) for the impact breakdown. Load at startup; restart to apply changes.
-   *Done when:* unit tests cover each rule and the strictest-wins logic.
+8. **Classifier** (`services/classifier.py`). Reject input over 20 KB; parse with sqlglot (Postgres dialect) in a worker thread with a 2-second cap. Return `kind` (read, write, ddl, unknown), statement types, tables, schemas touched, `has_where`, `multi_statement`, `transaction_control` (BEGIN, COMMIT, ROLLBACK, SAVEPOINT, SET TRANSACTION), `non_deterministic`, `volatile_in_where`, `unordered_limit` (a LIMIT without ORDER BY anywhere in a write, which picks different rows between preview and commit), and `fast_lane_eligible`. Walk the whole tree, so a DELETE hidden inside a CTE counts as a write. A parse error or timeout returns `unknown`, which is treated as a dangerous write. Side-effect functions like `pg_terminate_backend` count as writes.
+   - **Pinning:** produce `pinned_sql` by replacing `now()`, `current_timestamp`, `current_date`, `localtimestamp`, `statement_timestamp()`, `clock_timestamp()` and `transaction_timestamp()` with one UTC timestamp literal taken at intercept time (cast to the original type), and return the `pinned_values` map. Everything after this step uses `pinned_sql`. The time comes from an injected `Clock` (the real clock in the app; frozen at `ANCHOR_DATE` in tests and evals).
+   - **Volatile values:** `random()`, `nextval()`, `gen_random_uuid()` and other volatile functions inside a WHERE (or a subquery feeding one) set `volatile_in_where` (blocked in step 9). Inside INSERT values they are allowed.
+   - **Fast lane:** `fast_lane_eligible` is true only for a single `INSERT … VALUES` with at most 10 rows (counted from the VALUES list), no SELECT, no `ON CONFLICT`, no CTE, no `RETURNING` beyond the primary key, and **only literals, `NULL`, `DEFAULT`, casts of literals and pinned timestamps** in the VALUES. Any function call makes it ineligible. Which tables may use the fast lane is decided only by rules (step 9), never here.
+   - **Display:** produce `sql_display` from `pinned_sql` with string literals that look like PII (email, phone) masked.
+   *Done when:* about 40 table-driven unit tests pass, including the tricky cases (CTE writes, `UPDATE … FROM`, `WHERE true`, pinning with a frozen clock, multi-statement, transaction control, `blastproof` schema access, unordered LIMIT, a function call inside fast-lane VALUES), and the classifier-relevant incident scenarios pass.
+9. **Policy rules** (`services/policy.py`, `policies/rules.yaml`). Each rule has a name, conditions (all must hold), an outcome (allow, review, block) and a reason.
+   - **Condition keys** (the complete list; unknown keys fail at startup): SQL-only keys `statement_in`, `kind_in`, `tables_any`, `schemas_any`, `has_where`, `multi_statement`, `transaction_control`, `volatile_in_where`, `unordered_limit`, `fast_lane`; diff keys `rows_affected_gt`, `rows_affected_lte`, `fraction_of_table_gt`, `fraction_of_table_gte`, `cascade_tables_any`, `derived_group_gt` (e.g. `{users.paying: 0}`; a group whose table was not affected counts as 0).
+   - **Two passes:** pass 1 runs before the shadow run, with only the SQL-only keys known. A rule that uses any diff key is *skipped* in pass 1, not treated as false. A pass-1 `block` ends the flow with no shadow run. A pass-1 `allow` on a fast-lane write sends it down the fast lane. Pass 2 runs after the shadow run with every key.
+   - **Outcome:** the strictest matching outcome wins (block, then review, then allow). **Auto-approve needs a positive `allow` match and no stricter match**; a write that matches no rule goes to review.
+   - **The fast lane's single source of truth** is an `allow` rule with `fast_lane: true` and `tables_any`. There is no separate table list.
+   - The same file defines, **per table**: `important_columns` (for the breakdown), `derived_groups` (named SQL conditions counted by code over that table's affected rows only, e.g. `users: {paying: "plan in ('pro','enterprise')"}`; startup validates that every column they name exists), and `sensitive_columns` (masked everywhere, combined with a name heuristic: email, phone, ssn, address, token, password). Load at startup; restart to apply changes.
+   *Done when:* unit tests cover each rule, the pass-1 skip semantics and the strictest-wins logic, and every incident scenario decidable from SQL alone is blocked in pass 1.
 
 ```yaml
 rules:
+  - name: No DDL
+    when: { kind_in: [ddl] }
+    then: block
+    reason: Schema changes by agents are not supported in this version.
   - name: No DROP or TRUNCATE
     when: { statement_in: [drop, truncate] }
     then: block
     reason: Dropping or truncating tables is never allowed for agents.
+  - name: One statement only
+    when: { multi_statement: true }
+    then: block
+    reason: Send one SQL statement per call.
+  - name: No transaction control
+    when: { transaction_control: true }
+    then: block
+    reason: Blastproof manages transactions; send the statement alone.
+  - name: Hands off Blastproof's schema
+    when: { schemas_any: [blastproof] }
+    then: block
+    reason: The blastproof schema belongs to the gateway.
+  - name: Volatile values in WHERE
+    when: { volatile_in_where: true }
+    then: block
+    reason: The rows this matches would differ between preview and commit.
+  - name: Unordered LIMIT
+    when: { unordered_limit: true }
+    then: block
+    reason: LIMIT without ORDER BY picks different rows each time; add ORDER BY a unique key.
   - name: Delete or update without WHERE
     when: { statement_in: [delete, update], has_where: false }
     then: block
     reason: Affects every row in the table.
+  - name: Every row of a table
+    when: { statement_in: [delete, update], fraction_of_table_gte: 1.0 }
+    then: block
+    reason: Would change every row in the table.
+  - name: Most of a table
+    when: { statement_in: [delete, update], fraction_of_table_gt: 0.5 }
+    then: review
+    reason: Would change more than half of the table's rows.
   - name: Large change
     when: { rows_affected_gt: 1000 }
     then: review
     reason: More than 1,000 rows would change.
+  - name: Touches paying customers
+    when: { derived_group_gt: { users.paying: 0 } }
+    then: review
+    reason: Affects paying customers.
+  - name: Fast-lane note
+    when: { fast_lane: true, tables_any: [customer_notes] }
+    then: allow
+    reason: Small insert into a notes table.
   - name: Small insert
     when: { statement_in: [insert], rows_affected_lte: 10 }
     then: allow
     reason: Small insert.
 important_columns:
   users: [plan]
+derived_groups:
+  users:
+    paying: "plan in ('pro', 'enterprise')"
+sensitive_columns:
+  users: [email, phone]
 ```
 
-10. **Neon client and shadow executor** (`services/neon.py`, `services/shadow.py`). The Neon client creates a branch from main named `shadow-<action_id>` with a read-write endpoint, waits until it is ready, returns its connection string, and deletes it afterward. The shadow run: count rows in every table, use sqlglot to add `RETURNING *` to the statement (for UPDATE, first select the matching rows to get the before values), execute it, count again, and compare. Tables whose counts changed beyond the target table are cascades. Output a `Diff`: per table, rows deleted, updated, inserted; affected primary keys; up to 50 sample rows. Always delete the branch in a `finally` block; on startup, delete any leftover `shadow-*` branches older than 15 minutes. Timeout: 30 seconds.
-    *Done when:* a DELETE of users inactive for 6 months returns exact counts, including cascaded `orders`.
-11. **Knowledge and RAG, with a swappable vector store** (`services/knowledge.py`). Three sources become chunks: an automatic schema scan (one chunk per table: columns, types, foreign keys), `schema_docs.md` split by heading, and uploads through `/v1/knowledge` using the same splitter. Chunk text and metadata (source, table name) always live in Postgres in `knowledge_chunks`, the source of truth; vectors go to whichever store `VECTOR_STORE` selects. Retrieval for an action: all chunks tagged with the affected tables (a plain SQL query), plus the top 5 by vector similarity to the agent's `intent`, de-duplicated.
+Two layers catch "affects every row". The classifier sets `has_where: false` when the WHERE simplifies to a constant true (`WHERE true`, `WHERE 1=1`; sqlglot's simplifier), which blocks in pass 1. The measured `fraction_of_table_gte: 1.0` then catches what syntax can't (`WHERE id > 0`). The demo's "clean up inactive users" (about 96% of users) is held for review, not blocked, by "Most of a table", "Large change" and "Touches paying customers".
+
+10. **Neon client and shadow executor** (`services/neon.py`, `services/shadow.py`). *Spike first:* the create-branch payload, waiting on `operations`, connection URIs for a non-owner role, branch `expires_at` (could replace startup cleanup), free-plan branch and compute caps, the default Postgres version (and whether PG18 is available), and **measured p50/p95 from create-branch to first query**. That number sets the latency target in SPEC §10.
+    - **`NeonClient` interface** with two implementations, picked per system by its `connection_profile`:
+      - `NeonApiClient` creates a branch from `NEON_PARENT_BRANCH_ID` named `shadow-<action_id>` with a read-write endpoint, waits until ready, returns its **direct (non-pooled)** connection string, and deletes it afterward. asyncpg's prepared statements and Neon's pooled (PgBouncer) endpoint may not mix; the spike confirms this. Commits on main also use the direct endpoint.
+      - `FakeNeonClient` (the `local` profile: tests, CI, seeded actions) "branches" with `CREATE DATABASE shadow_<id> TEMPLATE company_main` on the local `company-db`, which gives real copy semantics with no network. `CREATE DATABASE … TEMPLATE` fails if any session is connected to the source, so: the `local` profile opens company-database connections per operation (no pool); and before cloning, the fake terminates any remaining sessions on `company_main` with `pg_terminate_backend`, using a test-only superuser URL (`FAKE_NEON_ADMIN_URL`). Test setup recreates `company_main` from the never-connected `company_template`. Because that terminate step would abort an in-flight commit or a second clone, every `local`-profile operation on `company_main` (clone, read, commit) takes one shared lock (a Postgres advisory lock on `company-db`), so they run one at a time.
+    - **One row-hash expression, everywhere:** `ROW_HASH_SQL = "md5(row_to_json(t)::text)"`, defined once in code and used by both the shadow run and the commit (step 16). Hashes are always computed by Postgres, never in Python. Every company-database connection sets `TimeZone=UTC` and `extra_float_digits=1` explicitly, so the same row always hashes the same.
+    - **Shadow run, measured not predicted.** On one branch connection:
+      1. For every company table, `CREATE TEMP TABLE before_<t> AS SELECT <pk> AS pk, <ROW_HASH_SQL> AS h FROM <t> t`. The snapshot stays on the branch, so no table data travels to the backend.
+      2. `BEGIN`; run `pinned_sql` through asyncpg's prepared-statement path (`fetch`, never argument-less `execute`, which would run several statements). Then, per table, return only the differences: `SELECT coalesce(b.pk, a.pk), b.h, a.h FROM before_<t> b FULL OUTER JOIN (SELECT <pk> AS pk, <ROW_HASH_SQL> AS h FROM <t> t) a ON a.pk = b.pk WHERE b.h IS DISTINCT FROM a.h`. Missing after means deleted, missing before means inserted, a changed hash means updated. Also read up to 50 sample after-rows for inserts and updates. Tables other than the target that changed are cascades (including `SET NULL`).
+      3. `ROLLBACK`. The branch is back to its original state, so the before-rows exist again.
+      4. Read by key from the restored rows: the target table's breakdowns (`important_columns`), its `derived_groups` counts, total row counts per table (for `fraction_of_table_*`), and up to 50 masked sample before-rows.
+      5. Compute the **cascade expectations**: from `pg_constraint`, walk the FK paths leading to the target table (up to depth 3). For each path, count the child rows that reference the deleted or updated target keys (e.g. orders, order\_items via orders, invoices for `SET NULL`). These counts are stored in `actions.cascade_expectations`; the commit repeats the same queries on main (step 16).
+    - **Output** a `Diff`: per table deleted, updated, inserted and `is_cascade`; total row counts; breakdowns; derived groups; cascade expectations; masked samples. Write one `preview_rows` row per affected row (table, primary key, before hash, change) to Blastproof's database with `COPY`. That is what the drift check compares against.
+    - **Limits:** a table without a primary key fails the shadow run (so the write is blocked). At most `MAX_CONCURRENT_SHADOWS` (default 2) at once, via a semaphore; a write waits up to 10 seconds for a slot, then fails closed with the `busy` message. Timeout: 30 seconds. Always delete the branch in a `finally` block; on startup (under an advisory lock), delete any leftover `shadow-*` branches older than 15 minutes.
+    - **Scale note:** whole-table hashing is fine up to a few million rows; past that, limit it to FK-reachable tables or use logical decoding. Recorded in `docs/decisions.md`.
+    *Done when:* a DELETE of users inactive for 6 months (with the clock frozen at `ANCHOR_DATE`) returns exact counts, including cascaded `orders` and `order_items` and the `SET NULL` on `invoices`, plus correct breakdowns and derived groups, matching `incidents.yaml`. It runs with `FakeNeonClient` in CI (including two previews in a row of the same `company_main`) and with `NeonApiClient` once by hand. A test proves the same row hashes identically in the shadow run and in the commit query, with different session time zones.
+11. **Knowledge and RAG, with a swappable vector store** (`services/knowledge.py`). Three sources become chunks: an automatic schema scan (one chunk per table: columns, types, foreign keys), `schema_docs.md` split by heading (a `## table: <name>` heading tags the chunk with that table; other headings are untagged), and uploads through `/v1/knowledge` using the same splitter (the upload takes an optional `tables` field that tags every chunk from that file). The chunks used for an action are saved to `actions.knowledge_used`. Chunk text and metadata (source, table name) always live in Postgres in `knowledge_chunks`, the source of truth; vectors go to whichever store `VECTOR_STORE` selects. Retrieval for an action: all chunks tagged with the affected tables (a plain SQL query), plus the top 5 by vector similarity to the agent's `intent`, de-duplicated.
     - `Embedder` interface, `embed(texts) -> vectors`: fastembed (`BAAI/bge-small-en-v1.5`, 384 dimensions) by default. Stores never embed; they only store and search vectors.
     - `VectorStore` interface: `upsert(chunk_id, vector, metadata)`, `search(vector, k, tables=None) -> [(chunk_id, score)]`, `delete(chunk_ids)`. Results are chunk IDs; text is always read from Postgres, so every store behaves the same.
     - `PgVectorStore` (default): the `chunk_embeddings` table with an HNSW index.
@@ -253,32 +407,70 @@ important_columns:
     - `reindex` command: rebuilds the active store from `knowledge_chunks`. Run it after switching `VECTOR_STORE` or the embedding model.
     - Contract tests: one pytest suite runs against every `VectorStore` implementation, so a new store must pass the same checks.
     *Done when:* an action deleting users retrieves the "paying customer" and "enterprise contracts" rules; once the Qdrant store exists, switching `VECTOR_STORE` and running `reindex` gives the same results on the eval set.
-12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic counts of affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3). Then the summary model (Claude Haiku by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given. Guardrail: every number in the output must appear in the facts; if not, fall back to a plain template summary.
-    *Done when:* the report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade."
-13. **Risk judge, pluggable** (`services/judge.py`). One interface, `Judge.assess(context) -> JudgeResult`, where the context holds the SQL, intent, diff facts, impact report and retrieved rules, and the result has `risk_level` (low to critical), `recommendation` (allow, review, block), `confidence` (0 to 1) and a short `reason`. The `JUDGE_PROVIDER` setting picks the implementation; the workflow never knows which one ran. Whatever the provider, the judge can only make a decision stricter: it may raise allow to review, but never lower review or block. Prompt-injection guard: SQL, intent and sample rows are passed as clearly marked untrusted data, and a simple pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review.
+12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic facts from the diff: affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3), each derived group (paying: 12), cascades, and any percentage the summary may need (computed in code). Then the summary model (Claude Haiku by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given and to write numbers as digits. The prompt sees only `sql_display` and masked samples.
+    - **Number guardrail:** extract every number from the output with a regex (`\d[\d,]*(\.\d+)?%?`, commas stripped). Each must be in the allowed set: the facts, the numbers in the agent's intent, and the rule thresholds. Any other number means falling back to a plain template summary built from the facts.
+    - **Cost:** record input and output tokens from LangChain's `usage_metadata`; `llm_cost_usd` is tokens × a per-model price table in config (code counts, again).
+    - **Limits:** 20-second timeout and a max-token cap. On error or timeout, use the template summary.
+    *Done when:* the report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number.
+13. **Risk judge, pluggable** (`services/judge.py`). One interface, `Judge.assess(context) -> JudgeResult`, where the context holds the SQL, intent, diff facts, impact report and retrieved rules, and the result has `risk_level` (low to critical), `recommendation` (allow, review, block), `confidence` (0 to 1) and a short `reason`. The `JUDGE_PROVIDER` setting picks the implementation; the workflow never knows which one ran.
+    - **When it runs:** only on writes the rules did not block, and never on the fast lane.
+    - **What it can do:** only make a decision stricter. It may raise allow to review or block, and review to block, but never lower anything. A `confidence` below `JUDGE_MIN_CONFIDENCE` (default 0.6) on an allow recommendation counts as review; otherwise confidence is stored for calibration evals.
+    - **On error, timeout (20 s) or an unparseable result:** the decision becomes at least review, with the `ai_unavailable` message to the agent. The facts exist, so a human can still decide; a write is never allowed because the judge failed.
+    - **Prompt-injection guard:** SQL, intent and sample rows are passed as clearly marked untrusted data, and a simple pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review.
     - `LLMJudge` (MVP default): any chat model set in `JUDGE_MODEL` (Claude Sonnet by default), with structured output; writes the reason itself.
     - `JevJudge` (right after the MVP): calls Jev through Vercel AI Gateway's `/v1/evaluate` HTTP API with `httpx`, asking a few boolean questions (affects paying customers? matches the stated intent? touches sensitive tables?). Code turns the probabilities into a recommendation using thresholds from config, takes `confidence` from them, and builds the reason from the questions that scored high. Request zero data retention in the provider options.
     - Shadow judging: the optional `JUDGE_SHADOW_PROVIDER` runs a second judge on the same context and logs its result to LangSmith and `audit_events`, without affecting the decision. Real comparison data at no risk.
-    *Done when:* tests show the judge escalates a risky "allowed" action and cannot downgrade a blocked one, and switching `JUDGE_PROVIDER` needs no code change.
+    *Done when:* tests show the judge escalates a risky "allowed" action, cannot downgrade a blocked one, and a judge that raises or times out produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change.
 
 ## 10. Build steps C: approval, commit, hook and dashboard API
 
 Steps 14 to 20 connect the pieces into one flow and finish the MVP.
 
-14. **LangGraph workflow** (`workflow/graph.py`). Writes only; reads stay on a fast path outside the graph. The state holds the action ID, SQL, intent, classification, diff, knowledge, impact, judge result, decision and reviewer note. Nodes and edges follow the diagram in section 7. The human review node calls LangGraph's `interrupt()`, which pauses and saves the state. Use `AsyncPostgresSaver` as the checkpointer (call `setup()` at startup) with `thread_id = action_id`. Each node updates `actions.status` and writes an audit event. Any exception sets the action to failed and blocks it (fail closed).
-    *Done when:* a test runs one write through every branch: allow, review then approve, review then reject, block.
-15. **Workflow runner** (`workflow/runner.py`). `start(action)` launches the graph with `asyncio.create_task`. `wait_for_decision(action_id, 20s)` checks the `actions` row every half second. `resume(action_id, approved, note)` continues the paused graph with `Command(resume=...)`. A small background loop every 10 minutes auto-rejects reviews older than 24 hours and fails actions stuck in `previewing` for over 5 minutes.
-    *Done when:* restarting the server while an action awaits review, then approving it, still commits correctly.
-16. **Commit** (`services/commit.py`). Using the `blastproof_writer` role on the real main branch, in one transaction: lock the affected rows (`SELECT ... FOR UPDATE` by primary key) and compare them with the shadow run's before rows. If anything differs, roll back, mark the action drifted and send it back through preview. Otherwise save before-images to Blastproof's database, run the SQL, check the affected row count matches the shadow run (roll back if not), commit, and write the audit event. For the MVP, before-images cover the target table only; cascaded rows are recorded as counts.
-    *Done when:* an approved write commits with matching counts, and a test that changes a row between preview and commit triggers the drift path.
-17. **Wire up `query_database`.** Reads run directly. Writes create an action, start the workflow, wait up to 20 seconds, then reply in words written for the agent: committed (rows changed), blocked (reason and a suggestion, such as "exclude rows where plan is pro or enterprise"), or pending (action ID and "a human is reviewing; check back with get\_action\_status").
-    *Done when:* in Claude Code, "clean up inactive users" ends with the agent receiving a pending result.
-18. **Claude Code hook.** `claude_hook/pre_tool_use.py` reads the tool call JSON from stdin, posts it to `/v1/hook/pre-tool-use` with `BLASTPROOF_AGENT_KEY` (a Blastproof key, not a database credential), and on deny prints the reason to stderr and exits with code 2. If Blastproof is unreachable, it also exits 2 (fail closed). Register it in `.claude/settings.json` under `PreToolUse` with the matcher `Bash|Edit|Write`. Server-side `hook_rules.py`: deny database clients (`psql`, `pg_dump`), reading `.env` or credential files, `terraform apply` or `destroy`, `git push --force`, and `rm -rf` outside the workspace; deny edits to `.env` and to `.claude/settings*.json` so the agent cannot switch off its own hook; allow and log everything else. Check the Claude Code hooks docs for the current input format.
-    *Done when:* Claude trying `psql` or editing its settings file is blocked with a clear reason.
-19. **Dashboard API.** The routes in section 6, with pagination, approve and reject allowed only for the action's owner or an admin, every actions query going through the central visibility rule (someone else's action returns 404), a required reason on reject, `decided_by` recorded, a 409 response naming who already decided, admin-only routes for users, systems and knowledge changes, and no CORS in production, because the dashboard reaches the API server to server through its own proxy (see the frontend plan).
-    *Done when:* you can review and approve an action using only the `/docs` page, before any dashboard exists.
-20. **Bootstrap and dev commands.** `bootstrap` creates an admin user, an agent and the `systems` row, runs the schema scan and ingests `schema_docs.md`. `seed-demo-actions` creates two demo users, each with an agent, and sample actions for both in every status (pending, approved, rejected, blocked, committed) without calling Neon or an LLM, for dashboard development and the Playwright test. `export-openapi` writes the OpenAPI schema to `backend/openapi.json` for the frontend's contract check.
-    *Done when:* a fresh clone plus the setup steps gives a working demo.
+14. **LangGraph workflow** (`workflow/graph.py`). *Spike first:* psycopg 3 connection setup (`autocommit=True`, `dict_row`, plain `postgresql://` URL), running `setup()` from an Alembic migration as `blastproof_owner`, and the fact that on resume `interrupt()` re-runs its node from the start. Writes only; reads stay on a fast path outside the graph. The state holds the action ID, pinned SQL, intent, classification, diff, knowledge, impact, judge result, decision and reviewer note. Nodes and edges follow the diagram in section 7, plus the fast-lane edge. Review is **two nodes**: `request_review` sets `awaiting_review` and writes the audit event; then `human_review` contains only the `interrupt()` call and returns the decision. On resume, `interrupt()` re-runs its whole node, so if the status change sat in the same node, it would overwrite `approved` with `awaiting_review`. Use `AsyncPostgresSaver` as the checkpointer, with `thread_id = action_id`; its tables are created by a migration, not at app startup. Each node updates `actions.status` and writes an audit event. Any exception sets the action to failed and blocks it (fail closed). The commit node calls a stub in this step; step 16 replaces it.
+    *Done when:* a test runs one write through every branch: fast lane, allow, review then approve, review then reject, block, judge failure to review. Another test proves the status after resume is `approved`, not `awaiting_review`.
+15. **Workflow runner** (`workflow/runner.py`). `start(action)` launches the graph with `asyncio.create_task` and keeps the task in a module-level set until it finishes (so it isn't garbage-collected). `wait_for_decision(action_id, timeout)` checks the `actions` row every half second; `get_action_status` uses it for its long poll. `resume(action_id, approved, note)` first claims the decision with `UPDATE actions SET status='approved' (or 'rejected'), decided_by=… WHERE id=$1 AND status='awaiting_review' RETURNING id`. Zero rows means someone already decided, so return 409 and never call `Command(resume=...)`. A background loop every 10 minutes, holding a Postgres advisory lock so only one process runs it: expires reviews older than `REVIEW_TIMEOUT_HOURS` (status `expired`), fails actions stuck in `previewing` for over 5 minutes, and deletes `preview_rows` and `before_images` past retention.
+    - **Startup recovery** (under the advisory lock, before serving requests). There is one machine, so anything in flight at startup was interrupted by a restart:
+      - `received`, `classified` or `previewing`: fail at once with reason `restart` (the agent's next status call sees `failed`). Shadow branches are cleaned up by step 10's startup sweep.
+      - `approved` or `rejected`: read the thread's state with `graph.aget_state(config)` first. If it is still paused at `interrupt()`, the decision is already stored in the row, so resume it with `Command(resume=...)`; this covers a crash between the approve claim and the resume. If it has already moved past the interrupt (a crash after the resume but before `committing`), continue it from its last checkpoint with `ainvoke(None, config)`. If the thread is missing, fail the action with reason `restart`.
+      - `committing`: handed to the commit reconciler (step 16).
+    - **Graceful shutdown:** on SIGTERM, stop accepting new writes (they get the `busy` message), and wait up to 45 seconds for in-flight previews and commits. Anything still running is caught by startup recovery. `fly.toml` sets `kill_timeout = 60` so deploys don't cut this short. Actions awaiting review are safe: they are checkpointed.
+    *Done when:* tests prove two simultaneous approvals produce one commit and one 409, that an expired review cannot be approved, that an action approved but never resumed is resumed at startup, and that an action left in `previewing` is failed at startup. The restart-then-approve check runs at the end of step 16, which supplies the real commit.
+16. **Commit** (`services/commit.py`). Using the `blastproof_writer` role on the company database's main branch, in **one company-database transaction**:
+    1. Set the action to `committing` (Blastproof DB) before starting. On the company connection (direct endpoint, `TimeZone=UTC`): `BEGIN`, `SET LOCAL lock_timeout = '3s'`, `SET LOCAL statement_timeout = '30s'`.
+    2. `INSERT INTO blastproof.applied_actions (action_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING action_id`. No row returned means this action was already applied: roll back and mark it committed (idempotency).
+    3. **Row check:** `SELECT <pk>, <ROW_HASH_SQL>, row_to_json(t) FROM <target> t WHERE <pk> = ANY($approved) FOR UPDATE`, using the deleted and updated keys from `preview_rows`. The hash is computed by Postgres with the same expression as the shadow run, so identical rows always match. Compare with `before_hash`; any difference or missing row is drift. The returned JSON rows are the before-images.
+    4. **Cascade check:** run the same per-FK-path count queries as step 10 for the approved keys, and compare with `actions.cascade_expectations`. This covers `SET NULL` children, which no row count would reveal.
+    5. Run `pinned_sql` with `RETURNING <pk>`. For DELETE and UPDATE, the returned key set must equal the approved set, which catches new rows that now match the WHERE. For INSERT, compare the count, since new keys may differ.
+    6. On any mismatch, roll back, mark the action `drifted`, re-preview it once automatically, and send it back to review with what changed. A second drift fails the action with the `drifted` message. Never auto-approve after drift.
+    7. **Before-images first:** insert the before-images into Blastproof's database and commit that (replacing any left over from an earlier attempt for this action).
+    8. COMMIT the company transaction. If Postgres answers with an error, nothing was applied: delete the before-images and mark the action failed. If the connection drops or times out during COMMIT, the outcome is **unknown**: leave the action in `committing`, keep the before-images, and run the commit reconciler for it, which checks the marker row on a fresh connection. Otherwise set `committed` and write the audit event.
+    - **Crash recovery (commit reconciler)**, run by step 15's startup recovery for every action in `committing`. If its `applied_actions` row exists, the company commit happened: mark it committed (its before-images are already saved, because of step 7). If not, the company transaction died with the process and nothing was applied, so **re-run the whole commit procedure**. The marker table and the drift check make a re-run safe; a re-run that drifts follows step 6.
+    - For the MVP, before-images cover the target table only; cascaded rows are recorded as counts.
+    *Done when:* an approved write commits with matching counts; a test that changes a row between preview and commit triggers the drift path; a test that inserts a new matching row triggers it too; a test that nulls a child's FK (changing a `SET NULL` cascade) triggers it; committing the same action twice applies it once; a test that kills the process after the company commit is marked committed with its before-images on restart, and one killed before the company commit is re-run and committed once; a connection dropped during COMMIT is resolved by the reconciler, not marked failed; and restarting the server while an action awaits review, then approving it, still commits correctly.
+17. **Wire up `query_database`.** Reads run directly. Writes create an action (with `retry_of` if given), start the workflow, wait up to `REVIEW_WAIT_SECONDS`, then reply with the matching template from `agent_messages.py` (section 6). `get_action_status` long-polls as described in section 6.
+    *Done when:* in Claude Code, "clean up inactive users" ends with the agent receiving a pending result; after you reject it in `/docs`, the agent's next `get_action_status` call returns the reason within seconds, and its rewritten query carries `retry_of`.
+18. **Claude Code hook.** (The hook spike runs in Stage 1; see WORKFLOW.) `claude_hook/pre_tool_use.py` reads the tool call JSON from stdin, posts it to `/v1/hook/pre-tool-use` with `BLASTPROOF_AGENT_KEY` (a Blastproof key, not a database credential) and its own HTTP timeout, shorter than the hook timeout. On deny it prints the reason to stderr and exits with code 2. On allow it prints nothing and exits 0; it never emits a JSON `allow` decision, because that would skip Claude Code's own permission prompts. If Blastproof is unreachable or times out, the script retries once after 1 second (covering `--reload` restarts). If it still fails:
+    - **Bash, Edit, Write, MultiEdit and NotebookEdit** exit 2 (fail closed).
+    - **Read, Grep and Glob** fall back to a small local path deny-list shipped in the script (`.env*`, credential and key files, the backend directory, `.claude/settings*.json`). They are allowed otherwise, so a backend restart doesn't leave the agent unable to read code. Reading is not a write, and the hook is a guardrail (D-001), so this keeps the read guardrail without blinding the agent.
+    - An error response from Blastproof (5xx or unparseable) is treated the same as unreachable.
+
+    Register it in `.claude/settings.json` under `PreToolUse` with the matcher confirmed by the spike (at least `Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|Glob`).
+    - **Server side, `hook_rules.py`:** deny database clients (`psql`, `pg_dump`), reading `.env` or credential files (by Read, Grep, Glob or Bash), `terraform apply` or `destroy`, `git push --force`, and `rm -rf` outside the workspace. Deny edits to `.env` and to `.claude/settings*.json` so the agent cannot switch off its own hook. Allow everything else. Commands are split with `shlex`; paths are normalised (`..`, `~`, drive letters, case on Windows) before matching. These rules are best-effort guardrails, not the security boundary (`docs/decisions.md`), so they favour clear messages over trying to catch every trick.
+    - Every call writes a `hook_events` row with a masked summary; hook calls do not create `actions`.
+    *Done when:* Claude trying `psql`, reading the backend's `.env`, or editing its settings file is blocked with a clear reason. With the backend stopped, Bash and edits are denied, reading a normal source file still works, and reading `.env` is still denied.
+19. **Dashboard API.** The routes in section 6, with:
+    - pagination;
+    - approve and reject allowed only for the action's owner or an admin, through the conditional claim from step 15;
+    - every actions query going through the central visibility rule (someone else's action returns 404);
+    - a required reason on reject, `decided_by` recorded, and a 409 response naming who already decided (by `display_name`);
+    - admin-only routes for users, systems and knowledge changes;
+    - `POST /v1/agents` returning `mcp_url` and the setup lines;
+    - no CORS in production, because the dashboard reaches the API server to server through its own proxy (see the frontend plan).
+    *Done when:* you can review and approve an action using only the `/docs` page, before any dashboard exists, and the authorization matrix test passes.
+20. **Bootstrap, dev commands and README.** `bootstrap` creates an admin user, an agent and the `systems` row, runs the schema scan and ingests `schema_docs.md`. `seed-demo-actions` creates two demo users, each with an agent, and sample actions for both in every status (awaiting\_review, approved, rejected, expired, blocked, drifted, committed, failed). It runs the **real graph** with `FakeNeonClient` and a fake LLM, so pending seeded actions sit at a real `interrupt()` and can be approved or rejected.
+    - **Seeded actions never touch Neon.** They belong to a separate `systems` row, "Demo seed (local)", with `connection_profile = local`. Approving one previews and commits against the Compose `company-db`, even when the dev backend's main system points at Neon dev. As a second guard, the commit refuses any action whose system's profile doesn't match the connection it is about to use.
+    - **Timing:** it is pulled forward to Stage 3, right after step 15 (it needs steps 14 and 15 and the local `company-db`). Until step 16 exists, committed actions go through the stub commit, so **re-run the seed after step 16** to get real committed actions. `export-openapi` writes the OpenAPI schema to `backend/openapi.json` for the frontend's contract check. Write `README.md` and a setup guide: prerequisites, the three databases, `.env` setup, bootstrap, connecting Claude Code, and installing the hook (copying `claude_hook/` and the settings snippet into the demo workspace).
+    *Done when:* a fresh clone plus the README steps gives a working demo.
 
 ## 11. Configuration
 
@@ -287,13 +479,20 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | Variable | Example | Used for |
 | --- | --- | --- |
 | `APP_ENV` | `local` | local, test or production behavior |
-| `BLASTPROOF_DATABASE_URL` | `postgresql+asyncpg://...` | Blastproof's own database |
+| `BLASTPROOF_DATABASE_URL` | `postgresql+asyncpg://blastproof_app:...` | Blastproof's own database, as the runtime `blastproof_app` role |
+| `BLASTPROOF_MIGRATOR_URL` | `postgresql://blastproof_owner:...` | Migrations and the checkpointer `setup()` only; never used by the running app |
+| `CHECKPOINTER_DATABASE_URL` | `postgresql://blastproof_app:...` | Plain (psycopg 3) URL for LangGraph's checkpointer |
 | `COMPANY_DB_READER_URL` | `postgresql://blastproof_reader:...@.../neondb` | Reads on the company database |
 | `COMPANY_DB_WRITER_URL` | `postgresql://blastproof_writer:...@.../neondb` | Commits on the company database |
 | `COMPANY_DB_WRITER_PASSWORD` | secret | Connecting to shadow branches as `blastproof_writer` |
 | `NEON_API_KEY` | secret | Creating and deleting branches |
-| `NEON_PROJECT_ID` | `proud-sky-123` | The `blastproof-company` project |
-| `NEON_MAIN_BRANCH_ID` | `br-...` | Parent of every shadow branch |
+| `NEON_PROJECT_ID` | `proud-sky-123` | `blastproof-company-dev` locally, `blastproof-company` in production |
+| `NEON_PARENT_BRANCH_ID` | `br-...` | Parent of every shadow branch (that project's main branch) |
+| `NEON_CLIENT` | `api` | Client for the `neon` connection profile: `api` (real Neon), or `fake` in tests and CI, so nothing ever reaches Neon |
+| `LOCAL_COMPANY_READER_URL` / `LOCAL_COMPANY_WRITER_URL` | `postgresql://...@localhost:5433/company_main` | The `local` connection profile: the Compose `company-db` (seeded actions, tests) |
+| `FAKE_NEON_ADMIN_URL` | `postgresql://company:...@localhost:5433/postgres` | Test and local only: superuser connection `FakeNeonClient` uses to clone databases and end stray sessions. Refused at startup when `APP_ENV=production` |
+| `AGENT_POLL_BUDGET_MINUTES` | `10` | After this long waiting for review, `get_action_status` tells the agent to stop polling |
+| `PUBLIC_BASE_URL` | `http://localhost:8000` | The backend's public address, used to build the `mcp_url` and setup lines for new agents |
 | `ANTHROPIC_API_KEY` | secret | Claude calls (add the matching key, e.g. GOOGLE\_API\_KEY, for another provider) |
 | `SUMMARY_MODEL` / `JUDGE_MODEL` | `anthropic:\<haiku model>` / `anthropic:\<sonnet model>` | Any provider:model string, e.g. google\_genai:\<gemini model> |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embeddings |
@@ -303,7 +502,14 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `JWT_SECRET` | long random string | Signing dashboard tokens |
 | `CORS_ORIGINS` | `http://localhost:3000` | Only for a browser calling the API directly in local experiments; empty in production, since the dashboard uses its own proxy |
 | `REVIEW_WAIT_SECONDS` | `20` | How long `query_database` waits |
-| `REVIEW_TIMEOUT_HOURS` | `24` | Auto-reject unanswered reviews |
+| `STATUS_MAX_WAIT_SECONDS` | `50` | Longest long poll for `get_action_status` |
+| `REVIEW_TIMEOUT_HOURS` | `24` | Expire unanswered reviews |
+| `MAX_CONCURRENT_SHADOWS` | `2` | Shadow runs at once; extra writes wait 10 s, then get `busy` |
+| `LLM_TIMEOUT_SECONDS` / `LLM_MAX_TOKENS` | `20` / `1024` | Per-call limits for summary and judge |
+| `MAX_LLM_COST_PER_ACTION_USD` | `0.10` | Over budget: skip remaining LLM calls, use the template summary, and send to review |
+| `LLM_PRICES` | JSON per model | Price per million input and output tokens, for `llm_cost_usd` |
+| `JUDGE_MIN_CONFIDENCE` | `0.6` | Below this, an allow recommendation counts as review |
+| `RETENTION_DAYS` | `30` | `preview_rows` and `before_images` retention |
 | `JUDGE_PROVIDER` | `llm` | Which judge decides: llm or jev |
 | `JUDGE_SHADOW_PROVIDER` | `jev` (optional) | Second judge that only logs, for comparison |
 | `AI_GATEWAY_API_KEY` | secret | Calling Jev through Vercel AI Gateway |
@@ -318,15 +524,16 @@ The demo workspace where Claude Code runs gets only one variable, `BLASTPROOF_AG
 
 The MVP covers the essentials that matter most for a gateway holding credentials; a dedicated secrets vault and finer permissions come later.
 
-- **Fail closed:** any error, timeout or unknown SQL blocks the write. A global exception handler never lets a write through by accident.
-- **No credentials near the agent:** company database credentials exist only in Blastproof's environment; the agent gets a Blastproof key only.
+- **Fail closed:** any error, timeout or unknown SQL blocks the write; a failure of the AI judge alone sends it to review. Either way nothing is applied without rules or a human allowing it. A global exception handler never lets a write through by accident.
+- **No credentials near the agent (the real boundary):** company database credentials exist only in Blastproof's environment; the agent gets a Blastproof key only. Hooks and deny-lists are guardrails on top, not the boundary. In local development the boundary is weaker by choice: the dev `.env` sits on the same disk, guarded only by the hook and `permissions.deny`, and it unlocks only the dev company project. The deployed demo is fully isolated: its company credentials exist only in Fly.io secrets, and the machine running Claude Code never holds them.
 - **Least privilege:** reads use `blastproof_reader` (SELECT only), commits use `blastproof_writer` (no DDL, no role changes).
 - **Read limits:** 5-second statement timeout and a 500-row cap on results returned to agents.
 - **Keys and passwords:** agent keys stored as SHA-256 hashes; passwords hashed with argon2; JWTs expire after 8 hours.
 - **Untrusted text:** SQL, intents, uploaded documents and sample rows are wrapped as data in every prompt and never followed as instructions.
 - **Hook self-protection:** the agent cannot edit `.claude/settings*.json` or `.env`.
 - **Append-only audit:** the app role cannot update or delete audit events. Ownership: every actions query goes through one function, visible\_actions(user), which filters by user\_id unless the user is an admin; a request for someone else's action returns 404, so its existence is never revealed.
-- **No secrets in logs or traces:** never log connection strings or keys; mask columns tagged sensitive (email, phone) in sample rows before they reach logs, LLM prompts or LangSmith.
+- **No secrets in logs or traces:** never log connection strings or keys; mask `sensitive_columns` (plus the name heuristic) in sample rows, and PII-looking literals in SQL (`sql_display`), before they reach logs, LLM prompts, LangSmith or the API. Raw `sql` is never returned. LangSmith client-side masking (its input/output hiding or anonymizer hooks) is a second layer behind prompt masking. `before_images` are exempt from masking because they never leave the backend, and are deleted after `RETENTION_DAYS`.
+- **Input limits:** SQL up to 20 KB; parse capped at 2 seconds; commits use `lock_timeout` 3 s and `statement_timeout` 30 s.
 - **Abuse limits:** cap each agent at a sensible number of writes per minute (a simple counter in Postgres is enough).
 - **Dependencies:** pin versions in `uv.lock` and enable GitHub Dependabot alerts.
 
@@ -334,11 +541,11 @@ The MVP covers the essentials that matter most for a gateway holding credentials
 
 Two tools are enough for the MVP: LangSmith for everything AI, and structured logs for everything else. Grafana and OpenTelemetry come in phase 2.
 
-- **LangSmith:** set the three `LANGSMITH_*` variables and every LangChain call and LangGraph run is traced automatically. Tag each run with `action_id`, `agent_id` and `env` in its metadata, so one search shows an action's full AI trail, tokens and cost.
-- **Structured logs:** structlog JSON with `request_id` and `action_id` bound on every line. Log each stage with its duration: classify, shadow, retrieve, impact, judge, decide, commit.
+- **LangSmith:** set the three `LANGSMITH_*` variables and every LangChain call and LangGraph run is traced automatically, so every **write** has a trace. Tag each run with `action_id`, `agent_id` and `env` in its metadata, so one search shows an action's full AI trail, tokens and cost. Reads and hook calls have no LLM work and are covered by structured logs instead.
+- **Structured logs:** structlog JSON with `request_id` and `action_id` bound on every line. Log each stage with its duration: classify, shadow, retrieve, impact, judge, decide, commit. Every fail-closed block logs `event=fail_closed` with a reason code, so they can be counted and alerted on later.
 - **Request IDs:** middleware adds an `X-Request-ID` header to every response.
 - **A stats endpoint:** `GET /v1/stats` returns counts by status and decision, average shadow-run time and LLM cost today, computed from the `actions` table. This gives the dashboard a metrics page with no extra infrastructure.
-- **Health:** `/health` checks Blastproof's database; Fly.io uses it to restart the app if it fails.
+- **Health:** `/health` is liveness only; Fly.io uses it to restart the app if it fails. `/ready` also checks Blastproof's database, the company database and the Neon API.
 
 ## 14. Testing and evals
 
@@ -347,12 +554,12 @@ Tests prove the code works; evals prove the safety decisions are good. Both run 
 **Tests:**
 
 - **Unit:** classifier, policy rules, hook rules, number-check guardrail, auth helpers, and an authorization matrix test that calls every endpoint as the owner, as another user and as an admin, and checks the expected result. No network; LLM calls replaced with fakes.
-- **Integration:** API routes and the workflow against a real Postgres in Docker; Neon calls replaced with a local fake that copies a test database.
+- **Integration:** API routes and the workflow against real Postgres in Docker: `blastproof-db` for Blastproof's tables and `company-db` for the company database, with `FakeNeonClient` cloning `company_main` for each shadow run, and test setup recreating `company_main` from `company_template`. Evals and tests freeze the `Clock` at `ANCHOR_DATE`.
 - **End-to-end (manual, weekly):** the demo script in Claude Code against real Neon.
 
 **Evals** (`evals/`)
 
-- **Incident replays:** the Replit-style mass delete, a DROP TABLE, a delete without WHERE, a `psql` bypass attempt, a hook-settings edit. Every one must be caught.
+- **Incident replays (MVP set):** the Replit-style mass delete, a DROP TABLE, a delete without WHERE (and `WHERE true`), a `psql` bypass attempt, a hook-settings edit, and PocketOS-lite (the agent tries to read `.env` or credential files and is denied, and no company credential exists in its workspace). Every one must be caught. Written in step 3 (`evals/scenarios/incidents.yaml`) and used by tests from step 8 on. The real cloud-API (PocketOS), Terraform and injection replays come in Phase 2.
 - **Labeled actions:** start with 50 SQL statements labeled allow, review or block (aim for 200 after the MVP), including subtle cases such as a WHERE clause that matches far more rows than the intent suggests.
 - **Metrics:** catch rate (dangerous actions blocked or reviewed), false block rate (safe actions held), explanation accuracy (numbers correct, checked by code, plus an LLM-as-judge score in LangSmith), and added latency.
 - **Running them:** `uv run python -m evals.run` prints a results table and saves it as JSON. Upload the labeled set as a LangSmith dataset to compare variants as experiments: rules only vs rules plus judge, Claude judge vs Jev judge (catch rate, false blocks, latency, cost and calibration: when a judge says 90% sure, is it right about 90% of the time?), with vs without RAG context, and pgvector vs Qdrant (retrieval accuracy and latency).
@@ -361,7 +568,15 @@ Tests prove the code works; evals prove the safety decisions are good. Both run 
 
 ## 15. Local infra, CI and deployment
 
-Locally you run one Postgres container and the FastAPI app; in production the app runs on Fly.io and both databases live on Neon.
+Locally you run two Postgres containers and the FastAPI app; in production the app runs on Fly.io and both databases live on Neon.
+
+**Three company databases, never mixed:**
+
+| Environment | Company database | Shadow runs | Who uses it |
+| --- | --- | --- | --- |
+| test / CI | `company-db` container (`company_main`, cloned from the never-connected `company_template`) | `FakeNeonClient` (template clone) | pytest, evals, `seed-demo-actions`, Playwright |
+| local dev | Neon `blastproof-company-dev` | Neon branches | you, running Claude Code against your local backend |
+| production demo | Neon `blastproof-company` | Neon branches | only the deployed backend (credentials only in Fly.io secrets) |
 
 **Local:**
 
@@ -375,22 +590,32 @@ services:
       POSTGRES_PASSWORD: blastproof
       POSTGRES_DB: blastproof
     ports: ["5432:5432"]
-    volumes: [blastproof-data:/var/lib/postgresql/data]
+    volumes:
+      - blastproof-data:/var/lib/postgresql/data
+      - ./docker/blastproof-init:/docker-entrypoint-initdb.d   # creates blastproof_owner and blastproof_app
+  company-db:
+    image: postgres:16   # match the Neon Postgres version found in the Neon spike
+    environment:
+      POSTGRES_USER: company
+      POSTGRES_PASSWORD: company   # default database stays "postgres"
+    ports: ["5433:5432"]
+    volumes:
+      - ./docker/company-init:/docker-entrypoint-initdb.d      # reader and writer roles only
 volumes:
   blastproof-data:
 ```
 
-Run the app with `uv run uvicorn app.main:app --reload`; the company database stays on Neon even locally, because shadow runs need Neon branching.
+The Compose superuser is used only by the init scripts; the app connects as `blastproof_app`, and migrations as `blastproof_owner`. Run the app with `uv run uvicorn app.main:app --reload`.
 
-- **CI** (`.github/workflows/ci.yml`): on every pull request, install with uv, run Ruff, run Alembic migrations against a Postgres service container, run tests and rule-only evals. A second workflow runs the LLM evals nightly using the `ANTHROPIC_API_KEY` repository secret.
+- **CI** (`.github/workflows/ci.yml`): on every pull request, install with uv, run Ruff, start two Postgres service containers (Blastproof and `company-db`, with the same role init scripts), run `demo_company/seed.py --target local` to build `company_template` and `company_main`, run Alembic migrations, run tests and rule-only evals with `NEON_CLIENT=fake`. CI never talks to Neon. A second workflow runs the LLM evals nightly using the `ANTHROPIC_API_KEY` repository secret.
 
 **Deployment** (do this once Gate 1 passes)
 
 1. Write a multi-stage `Dockerfile`: install dependencies with uv in a build stage, copy into a slim Python image, run as a non-root user, start Uvicorn on port 8080. Download the embedding model at build time so startup is fast.
 2. In the Neon `blastproof-app` project, run `CREATE EXTENSION vector`. This becomes `BLASTPROOF_DATABASE_URL` in production.
-3. `fly launch --no-deploy` to create the app, choosing a region close to your Neon region. In `fly.toml`, set `release_command = "alembic upgrade head"` and an HTTP health check on `/health`.
+3. `fly launch --no-deploy` to create the app, choosing a region close to your Neon region. In `fly.toml`, set `release_command = "alembic upgrade head"` (using `BLASTPROOF_MIGRATOR_URL`), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1` and `kill_timeout = 60` (graceful drain, step 15), and scale to exactly one machine (`fly scale count 1`). Background tasks run in-process, so a stopped machine or a second one would break them; the advisory locks are a second safety net.
 4. `fly secrets set` for every secret in section 11.
-5. `fly deploy`, then run the bootstrap command once with `fly ssh console`.
+5. `fly deploy`, then run the bootstrap command once with `fly ssh console`. Before recording the demo, run `rebase-dates` against `blastproof-company` so the demo numbers match `incidents.yaml`.
 6. Add a deploy job to GitHub Actions that runs `flyctl deploy` on every merge to `main`, using a `FLY_API_TOKEN` repository secret.
 7. Point Claude Code at the deployed MCP URL (`https://<your-app>.fly.dev/mcp`) and update `BLASTPROOF_AGENT_KEY` for the hook.
 
@@ -408,16 +633,17 @@ Each week ends with a check you can demo. If a week runs long, cut scope inside 
 
 The backend MVP is done when every box below is ticked, on the deployed version, using Claude Code.
 
-- [ ] Claude Code reads the company database only through Blastproof; no credentials exist in its workspace.
+- [ ] Claude Code reads the company database only through Blastproof; no credentials exist in its workspace, and the machine running it holds no production company credentials (deployed demo).
+- [ ] "Add a note to customer 42" commits through the fast lane in under 300 ms of Blastproof time.
 - [ ] "Clean up inactive users" is held for review with an impact report naming the paying and enterprise customers affected.
 - [ ] Rejecting it sends the reason to Claude, which writes a safer query; the safer query is approved and committed with matching counts.
 - [ ] DROP TABLE and delete-without-WHERE are blocked instantly with clear reasons.
 - [ ] `psql` in the terminal and edits to `.claude/settings.json` are blocked by the hook.
-- [ ] A change made between preview and commit triggers the drift path.
+- [ ] A change made between preview and commit triggers the drift path; no action is ever applied twice.
 - [ ] A pending review survives a server restart.
-- [ ] Every action has a complete audit timeline and a LangSmith trace. Two users each see only their own agents' actions; an admin sees all.
+- [ ] Every action has a complete audit timeline, and every write has a LangSmith trace. Two users each see only their own agents' actions; an admin sees all.
 - [ ] Incident replays score 100% caught; catch rate and false block rate on the labeled set are recorded.
 - [ ] CI is green, and merges to `main` deploy to Fly.io automatically.
 - [ ] A fresh clone reaches a working demo by following the README.
 
-**Deferred to later phases:** the Jev judge and shadow judging (the pluggable interface is already in the MVP), the Qdrant vector store (its interface is also in the MVP), the undo button (before-images are already saved), cascaded-row before-images, Docker sandboxes for shell commands, memory of past decisions, email or Slack actions, session pattern detection, a policy editor in the dashboard, observe mode, Terraform, Grafana and OpenTelemetry, a secrets vault, Redis or a job queue.
+**Deferred to later phases:** full agent isolation on the dev machine (a devcontainer), per-agent system and tool scoping, password change, DDL previews, output-side injection checks, the real cloud-API, Terraform and injection incident replays, a dashboard view of hook events, the Jev judge and shadow judging (the pluggable interface is already in the MVP), the Qdrant vector store (its interface is also in the MVP), the undo button (before-images are already saved), cascaded-row before-images, Docker sandboxes for shell commands, memory of past decisions, email or Slack actions, session pattern detection, a policy editor in the dashboard, observe mode, Terraform, Grafana and OpenTelemetry, a secrets vault, Redis or a job queue.

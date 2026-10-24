@@ -6,7 +6,7 @@ This plan builds the Blastproof dashboard, where users review and approve their 
 
 ## 1. MVP scope
 
-One Next.js dashboard where reviewers see pending agent actions within seconds, read the plain-language impact, and approve or reject them, and where admins manage agents and knowledge. It holds no business logic: every decision and every piece of data comes from the backend.
+One Next.js dashboard where reviewers see pending agent actions within seconds, read the plain-language impact, and approve or reject them; where every user creates their own agent keys; and where admins manage users and knowledge. It holds no business logic: every decision and every piece of data comes from the backend.
 
 **In the MVP:**
 
@@ -45,7 +45,7 @@ A mainstream React stack with as few moving parts as possible: no global state l
 | --- | --- | --- |
 | Framework | Next.js (App Router) + React + TypeScript | Pages plus a small server-side proxy in one app |
 | Styling | Tailwind CSS | Utility classes; comes with `create-next-app` |
-| Components | shadcn/ui | Copy-in components (table, dialog, badge, toast, form); you own the code |
+| Components | shadcn/ui | Copy-in components (table, dialog, badge, sonner for toasts, form); you own the code. `toast` is deprecated in favour of `sonner`; check `form`'s current status in the shadcn docs |
 | Server data | TanStack Query | Fetching, caching, 5-second polling, mutations |
 | API types | openapi-typescript | Generates TypeScript types from the backend's OpenAPI schema |
 | API client | openapi-fetch | Tiny typed `fetch` wrapper that uses those types |
@@ -68,9 +68,9 @@ The dashboard uses the "backend for frontend" pattern: the browser only ever tal
 **A request, step by step:**
 
 1. **Login.** The login form posts to `/api/auth/login` on the dashboard. That route calls the backend's `/v1/auth/login`, receives the JWT, and stores it in an httpOnly cookie. The browser gets back only the user's name and role.
-2. **Navigation.** `middleware.ts` runs before every page under `/dashboard` (the landing page and /login stay public); with no session cookie, it redirects to `/login`.
+2. **Navigation.** `src/proxy.ts` (Next.js 16 renamed `middleware.ts` to `proxy.ts`; verify in F1) runs before every page under `/dashboard` (the landing page and /login stay public); with no session cookie, it redirects to `/login`. To avoid a name clash, this plan calls `src/proxy.ts` the **auth proxy** and the catch-all route handler below the **BFF route**.
 3. **Data.** A page calls, say, `api.GET("/v1/actions")`, which the typed client sends to `/api/blastproof/v1/actions`. The browser attaches the cookie automatically.
-4. **Proxy.** The route handler reads the cookie, calls `BLASTPROOF_API_URL + /v1/actions` with `Authorization: Bearer <jwt>`, and returns the backend's status and JSON unchanged.
+4. **BFF route.** The route handler reads the cookie, calls `BLASTPROOF_API_URL + /v1/actions` with `Authorization: Bearer <jwt>`, and returns the backend's status and JSON unchanged.
 5. **Backend.** FastAPI checks the JWT and the role, as it would for any client, and answers.
 6. **Expired or invalid session.** The backend answers 401; the proxy passes it through; the dashboard's global error handler sends the user to `/login`.
 
@@ -142,8 +142,8 @@ blastproof/
         api/
           auth/login/route.ts   # sets the session cookie
           auth/logout/route.ts  # clears it
-          blastproof/[...path]/route.ts  # proxy to the backend
-        middleware.ts         # /dashboard without a cookie -> /login
+          blastproof/[...path]/route.ts  # BFF route: forwards to the backend
+      proxy.ts               # auth proxy (Next 16): /dashboard without a cookie -> /login
       components/
         ui/                  # shadcn/ui components
         landing/             # hero, how-it-works, results, FAQ sections
@@ -182,26 +182,29 @@ Ten pages: two public, two admin-only, and six that show each user only their ow
 1. Header: status and risk badges, agent name, how long ago, and who decided (if decided).
 2. Plain-language impact: the headline in large text, key points and concerns underneath.
 3. Decision bar (only while pending, shown when the backend's can\_decide flag is true, meaning you own the action or are an admin): Approve, and Reject, which opens a dialog requiring a reason. After a decision, the page refreshes; a 409 shows "already decided by ...".
-4. Agent's intent, then the SQL in a monospace block.
+4. Agent's intent, then the SQL in a monospace block (`sql_display`). When values were pinned, show the original next to it and list the pinned values, e.g. `now()` → `2026-10-24 12:00 UTC`. If this action retries a rejected one (`retry_of`), link to it.
 5. Impact numbers: rows changed per table (cascades marked) and the breakdown by important columns, e.g. plan: free 48,201, pro 9, enterprise 3.
 6. Sample affected rows (sensitive columns arrive already masked from the backend).
 7. Judge result: recommendation, confidence, reason, which judge ran.
 8. Rules that matched, with their reasons.
-9. Audit timeline: every event with its time.
+9. Knowledge used: the chunks that informed the summary (source, table, first line).
+10. Audit timeline: every event with its time.
 
-**Agents page detail:** after creating an agent, show the key once with a copy button, plus the exact `claude mcp add` command and the `BLASTPROOF_AGENT_KEY` line for the hook, pre-filled with the backend URL and key. This turns setup into a copy-paste step and makes a strong demo moment.
+All of these fields come from the backend's `ActionDetail` schema (backend plan section 6).
+
+**Agents page detail:** after creating an agent, show the key once with a copy button, plus the exact `claude mcp add` command and the `BLASTPROOF_AGENT_KEY` line for the hook, exactly as returned by `POST /v1/agents` (the backend builds them from its `PUBLIC_BASE_URL`; the dashboard never knows or exposes `BLASTPROOF_API_URL`). Also link to the README's hook install steps. This turns setup into a copy-paste step and makes a strong demo moment.
 
 ## 8. Build steps A: setup, contract, auth, layout
 
 Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real backend through the proxy. Each step ends with a test you can run.
 
-1. **F1. Scaffold.** In the repo root, `pnpm create next-app frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `pnpm dlx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, form, toast, dropdown-menu, sidebar, skeleton). Add Prettier and a `typecheck` script.
+1. **F1. Scaffold.** In the repo root, `pnpm create next-app frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `pnpm dlx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, form, sonner, dropdown-menu, sidebar, skeleton). Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
    *Done when:* `pnpm dev` shows the starter page at `http://localhost:3000`.
 2. **F2. Typed API client.** Add `openapi-typescript` and `openapi-fetch`. A `gen:api` script reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts` (committed). `src/lib/api/client.ts` creates the client with base URL `/api/blastproof`. Set up TanStack Query's provider in the root layout, with `refetchOnWindowFocus` on and polling paused while the tab is hidden.
    *Done when:* hovering `api.GET("/v1/actions/{id}")` in your editor shows the backend's real response type.
-3. **F3. Proxy and login.** Build the three route handlers and the middleware from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
+3. **F3. Proxy and login.** Build the three route handlers and the auth proxy (`src/proxy.ts`) from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
    *Done when:* you can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`.
-4. **F4. Layout and navigation.** The `(dashboard)` layout has a sidebar (Overview, Review with a count badge, History, Knowledge, Settings) and a user menu with logout. The badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. Admin-only links (Knowledge, Users) are hidden from members (the backend still enforces roles).
+4. **F4. Layout and navigation.** The `app/dashboard/layout.tsx` layout (a real URL segment, not a route group) has a sidebar (Overview, Review with a count badge, History, Knowledge, Settings) and a user menu with logout. The badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. Admin-only links (Knowledge, Users) are hidden from members (the backend still enforces roles).
    *Done when:* creating a pending action with the backend's demo seed command makes the badge change within 5 seconds.
 5. **F5. Shared components.** `StatusBadge`, `RiskBadge`, `TimeAgo`, `SQLBlock`, `NumberBreakdown`, `AuditTimeline`, `DataTable` with pagination, and standard loading (skeleton), empty and error states. Number and date formatting live in `lib/format.ts`.
    *Done when:* Vitest tests pass for the badges and formatting helpers.
@@ -218,8 +221,8 @@ Steps F6 to F12 build the pages in order of importance, so the demo-critical flo
    *Done when:* changing filters updates the URL and the back button restores the previous view.
 9. **F9. Overview.** Count cards from `/v1/stats` and the latest 10 actions, refreshing every 15 seconds.
    *Done when:* numbers match a manual SQL count on Blastproof's database.
-10. **F10. Knowledge.** Source list; upload a `.md` or `.txt` file (multipart through the proxy) with a size limit of 1 MB; delete with a confirm dialog; "Rescan schema" button. The page is admin-only; members never see it.
-    *Done when:* an uploaded rule changes the next impact report that touches the related table.
+10. **F10. Knowledge.** Source list; upload a `.md` or `.txt` file (multipart through the BFF route) with a size limit of 1 MB and an optional list of tables it applies to; delete with a confirm dialog; "Rescan schema" button. The page is admin-only; members never see it.
+    *Done when:* a document uploaded with the table `users` appears in the "Knowledge used" list of the next action that touches `users` (checked with the seed command, so no Neon or real LLM is needed).
 11. **F11. Agents and rules.** Create agent: show the key once with a copy button and the pre-filled Claude Code setup lines; deactivate with confirmation. Users page (admin only) lists users and creates new ones with an initial password. Rules page renders `/v1/policies` as a read-only table.
     *Done when:* a newly created key works in Claude Code by copy-pasting the shown commands.
 12. **F12. Polish.** Keyboard focus and labels on every control, readable color contrast, dark mode (shadcn supports it), page titles, and a friendly 404 page. Check every page at a narrow width so it works on a laptop split screen.
@@ -249,7 +252,7 @@ The dashboard can approve changes to production data, so a stolen session is as 
 - **The backend is the real gatekeeper:** hiding buttons by role is for convenience only; every role check is enforced again by the backend.
 - **Untrusted text is shown as text:** SQL, intents, uploaded documents and sample rows are rendered as plain text (React escapes it by default). Never use `dangerouslySetInnerHTML` and never render Markdown from uploads as HTML.
 - **Masked data:** sensitive columns are masked by the backend before they reach the dashboard.
-- **Security headers:** set a Content Security Policy, `X-Frame-Options: DENY` and `Referrer-Policy` in `next.config`.
+- **Security headers:** `X-Frame-Options: DENY` and `Referrer-Policy` on every page in `next.config`. A nonce-based Content Security Policy forces dynamic rendering, so apply it to `/dashboard/*`, `/login` and `/api/*` only; the landing page stays static. The App Router emits inline scripts even on static pages (`self.__next_f.push`), so the landing page's CSP allows `script-src 'self' 'unsafe-inline'`. That is acceptable there because it renders no user or agent content and loads no third-party scripts. Verify the exact headers in F1, and try a hash-based CSP if the build makes it practical.
 - **Logout:** clears the cookie; tokens also expire after 8 hours.
 
 ## 12. Testing
@@ -294,7 +297,7 @@ Adding the dashboard moves the full MVP from four weeks to about five. The dashb
 
 &#91;embedded content: Combined schedule · backend and dashboard lanes over 5 weeks\]
 
-To make that start possible, pull three small backend pieces to the front of week 3: the auth routes (`/v1/auth/login`, `/v1/auth/me`), GET `/v1/actions` and `/v1/actions/{id}`, and the `seed-demo-actions` command. The rest of step 19 can follow later in the week. Week 5 doubles as buffer: if the backend slips, it absorbs it. The landing page (F13, about two days) also lands in week 5, once real eval numbers and a demo recording exist.
+To make that start possible, pull small backend pieces forward in week 3: the auth routes (`/v1/auth/login`, `/v1/auth/me`) and GET `/v1/actions` and `/v1/actions/{id}` at the start of the week, then the `seed-demo-actions` command right after backend step 15, because it runs the real graph. F1 to F3 and F5 don't need seeded data; F4's check does, so it finishes after the seed command exists. The rest of step 19 can follow later in the week. Week 5 doubles as buffer: if the backend slips, it absorbs it. The landing page (F13, about two days) also lands in week 5, once real eval numbers and a demo recording exist.
 
 ## 15. Done checklist and what is deferred
 
@@ -321,11 +324,13 @@ Writing this plan surfaced gaps between the two apps; all of them are now fixed 
 | --- | --- |
 | The dashboard had no way to learn the signed-in user's role | Added GET `/v1/auth/me` |
 | Pages needed endpoints the backend plan did not list | Added GET `/v1/stats` to the API table, plus GET `/v1/policies`, GET `/v1/systems`, GET `/v1/agents`, POST `/v1/agents/{id}/deactivate` and DELETE `/v1/knowledge/{id}` |
-| Roles only covered approve and reject | Agents, systems and knowledge changes are now admin-only |
+| Roles only covered approve and reject | Systems, knowledge changes and users are admin-only; every signed-in user creates and deactivates their own agents |
 | Upload format was unspecified | POST `/v1/knowledge` is a multipart upload of a .md or .txt file up to 1 MB |
 | No shared shapes for lists, dates or validation errors | Conventions added: `{"items", total, limit, offset}` lists, ISO 8601 UTC timestamps, one error shape including validation errors, a 409 that names who decided |
 | Types could drift between the apps | Every route declares a response model; new `export-openapi` command feeds the frontend's contract check in CI |
-| No data to build or test the dashboard before the full pipeline works | New `seed-demo-actions` command creates actions in every status without Neon or an LLM |
+| No data to build or test the dashboard before the full pipeline works | New `seed-demo-actions` command creates actions in every status without real Neon or a real LLM (it runs the real graph with fakes, so pending actions can be approved) |
+| The dashboard guessed the action detail shape (plan audit) | `ActionDetail` schema written into backend plan section 6 |
+| The setup lines needed the backend's public URL (plan audit) | `POST /v1/agents` returns `mcp_url` and the setup lines |
 | The backend plan configured CORS for the browser | Not needed: the browser only talks to the dashboard, whose proxy calls the backend server to server; `CORS_ORIGINS` stays empty in production |
 | The spec assumed OAuth (Auth.js) for dashboard login | Spec now says email and password with a backend-issued JWT in an httpOnly cookie; single sign-on later |
 | The repo layout and deployment steps had no place for the dashboard | `frontend/` added to the repo structure; backend deployment now points to this plan; spec lists the dashboard on Vercel |
