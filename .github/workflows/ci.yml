@@ -1,0 +1,59 @@
+# Backend CI (backend plan §8 step 2, §15). Guarded by backend/tests/test_ci_workflow.py.
+# No secrets on purpose: pull-request runs never hold credentials and never call Neon (TEST-01, TEST-04).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  APP_ENV: test
+  NEON_CLIENT: fake
+
+jobs:
+  backend:
+    # Pinned: ubuntu-latest moves to a new release on its own schedule (D-075).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          # Reads [tool.uv] required-version, so CI and dev run the same uv (D-073).
+          version-file: backend/pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      # --locked fails if uv.lock is out of date with pyproject.toml.
+      - run: uv sync --locked
+
+      # Includes TID251, the ban on importing demo_company (ARCH-21).
+      - run: uv run ruff check .
+
+      - run: uv run ruff format --check .
+
+      # The same Compose file, image digest and role init scripts as local dev (D-072).
+      - run: docker compose up -d --wait
+        working-directory: ${{ github.workspace }}
+
+      # Unit and integration tests; integration tests fail (not skip) if Postgres is down.
+      - run: uv run pytest
+
+      - if: failure()
+        run: docker compose logs
+        working-directory: ${{ github.workspace }}
