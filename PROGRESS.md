@@ -6,8 +6,8 @@ applied plan fixed (D-017 to D-029), all on 2026-10-24. Prompt 0B drafted `docs/
 Prompt 0C done: spot-check fixes applied, and all 26 "Implied, needs confirmation" items settled
 (23 from 0B plus 3 found in the spot-check; D-030 to D-055). Prompt 0D done: outside setup
 finished and checked, decisions D-056 to D-062 (Gemini, Postgres 18, prod Neon key at deploy,
-fastembed, Python 3.13, npm, Node 24). Next: Prompt 0E (commit and push the repo files, confirm
-Stage 0), then step 1.
+fastembed, Python 3.13, npm, Node 24). Prompt 0E done: repo files committed and pushed, Stage 0
+complete. Next: step 1 (repo and skeleton).
 
 ### Outside setup (Prompt 0D), done 2026-10-24
 Checked without printing secrets:
@@ -41,7 +41,6 @@ created at deploy time straight into Fly.io secrets (D-058).
   dev project (D-057); a project's version cannot change later.
 - Gemini tier (free or paid with a spend cap) not yet confirmed; the free tier's rate limits can
   skew eval runs.
-- Local `develop` is 2 commits ahead of `origin/develop` (push in 0E).
 
 ## Stage 0: setup
 - [x] Plan audit done (Prompt 0A): `docs/plan-audit.md`
@@ -49,7 +48,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] docs/REQUIREMENTS.md drafted (Prompt 0B)
 - [x] docs/REQUIREMENTS.md created and reviewed, IMP items settled (Prompt 0C)
 - [x] Outside setup done (backend plan section 2, frontend plan section 2) (Prompt 0D)
-- [ ] Repo files committed (CLAUDE.md, docs/, PROGRESS.md) (Prompt 0E)
+- [x] Repo files committed (CLAUDE.md, docs/, PROGRESS.md) (Prompt 0E)
 
 ## Stage 1: foundation
 - [ ] 1. Repo and skeleton
