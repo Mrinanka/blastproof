@@ -874,3 +874,18 @@ from step 19 (CONV-04); the 404 envelope stays in step 19.
 proxy error logs can keep it.
 **Rejected:** waiting for step 19; removing the length limits from `LoginRequest` (argon2 would then
 hash any size the client sends).
+
+## D-095 · 2026-10-25 · No self sign-up and no email verification in the MVP
+**Decision:** Dashboard accounts are created only by the owner (`create-user`) or, from step 19,
+by an admin (`POST /v1/users`), with an initial password handed over directly. Login is email and
+password only. Emails are login names; Blastproof never sends mail, so they are not verified. Try-it
+for visitors stays the landing page and demo video (F13). A read-only demo account and Google
+sign-in with an invite allowlist are candidates for after the MVP. Confirmed with the owner after
+step 5.
+**Why:** Every account's agents act on the one shared demo company database, every previewed write
+costs LLM calls, and capacity is small (2 shadow runs, the Neon free plan's 10 branches, one Fly
+machine). A stranger could approve a mass delete and break the demo for everyone. Safe self-serve
+would need a company database per user, per-user spend caps and abuse handling. And login is not
+the hard part of trying Blastproof: installing Claude Code, `claude mcp add` and the hook are.
+**Rejected:** an open sign-up page; open Google sign-in (both let strangers act on the shared
+database); email verification now (nothing sends mail, and accounts are admin-made).

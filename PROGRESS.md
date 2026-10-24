@@ -8,9 +8,10 @@ Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisio
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
 Step 2 (CI) done 2026-10-24, decisions D-072 to D-075.
 Step 3 (demo company database and eval scenarios) done 2026-10-24, decisions D-076 to D-081.
-Step 4 (Blastproof data model) done 2026-10-24, committed on `feat/step-4` and pushed for a PR
-into `develop`, decisions D-082 to D-087.
-Step 5 (Auth) done 2026-10-25 on `feat/step-5`, decisions D-088 to D-094.
+Step 4 (Blastproof data model) done 2026-10-24, merged into `develop` (PR #4), decisions D-082 to
+D-087.
+Step 5 (Auth) done 2026-10-25 on `feat/step-5`, PR #5 into `develop` (CI green), decisions D-088 to
+D-095.
 
 ### Step 5, done 2026-10-25
 - `app/core/security.py` (agent keys, argon2 via pwdlib, HS256 tokens), `app/core/auth.py`
@@ -37,6 +38,8 @@ Step 5 (Auth) done 2026-10-25 on `feat/step-5`, decisions D-088 to D-094.
   and `create-agent` worked, login and `/v1/auth/me` worked through uvicorn, a bad token and a
   wrong password got the envelope, and the server log held no password or token. This left a
   user `step5-check@example.com` (admin) and agent `step5-check` in the local dev database.
+- CI: PR #5's `backend` check passed on commit `af26ff7` (1 min 46 s), the first Linux run of the
+  auth tests and the CLI subprocess tests.
 - Fixed after the verify review: 422 responses use the envelope and never repeat the input (an
   over-long login password was echoed back; D-094); D-089 corrected (uvicorn trusts
   `X-Forwarded-For` from loopback by default); the tests no longer import `httpx2` directly.
@@ -167,6 +170,14 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Account admin has no tools yet (D-095): no route or command bumps `token_version` (log out
+  everywhere), fixes a mistyped email, deactivates a user or resets a password. Today these take SQL
+  on the dev database. Step 19 adds user routes; decide then which of these it covers.
+- Accounts are admin-created only and emails are never verified (D-095). Self sign-up, email-based
+  password reset or Google sign-in would each need verification or SSO first.
+- Step 6 and step 18 must use `authenticate_agent_key` / `get_current_agent` to finish SEC-33.
+- Local dev database still holds the step 5 manual-check user `step5-check@example.com` and agent
+  `step5-check` (owner to decide whether to delete them).
 - Login rate limit uses `request.client.host` (D-089). Locally uvicorn trusts `X-Forwarded-For`
   from loopback by default, so a local process can pick its IP. Behind the dashboard's login route
   (Vercel) and Fly's proxy, every user shares one IP. F3/Deploy: have the login route forward the browser IP and
