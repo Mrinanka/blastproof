@@ -889,3 +889,80 @@ would need a company database per user, per-user spend caps and abuse handling. 
 the hard part of trying Blastproof: installing Claude Code, `claude mcp add` and the hook are.
 **Rejected:** an open sign-up page; open Google sign-in (both let strangers act on the shared
 database); email verification now (nothing sends mail, and accounts are admin-made).
+
+## D-096 · 2026-10-25 · The MCP route goes into FastAPI's router; one MCP server per app
+**Decision:** Step 6 builds the `MCPServer` inside `create_app()`, calls `streamable_http_app()`
+and adds that app's single `/mcp` route to FastAPI's own router
+(`app.router.routes.extend(mcp_app.routes)`), not `app.mount`. Our lifespan enters
+`mcp.session_manager.run()` around the existing startup and shutdown. A test checks the SDK app
+still has exactly one route, so an SDK change cannot drop routes silently.
+**Why:** MCP spike (`spikes/mcp_mounting.md`, Q1, Q2): `app.mount("/", ...)` serves `POST /mcp`
+but takes every unmatched path, so FastAPI's 404 handling (and step 19's envelope) never runs;
+`app.mount("/mcp", ..., streamable_http_path="/")` answers `POST /mcp` with a 307 to `/mcp/`.
+Without `session_manager.run()` a request fails with "Task group is not initialized", and `run()`
+works once per server instance, while tests build many apps.
+**Rejected:** either `app.mount` form; a module-level MCP server.
+
+## D-097 · 2026-10-25 · `/mcp` runs stateless with SSE responses
+**Decision:** `streamable_http_app(stateless_http=True, json_response=False)`. No MCP sessions, so
+`actions.session_id` is null for Claude Code (BE §6 already allows null; the column stays for
+Phase 2). Server-to-client requests (sampling, elicitation) are not used.
+**Why:** Claude Code 2.1.310 speaks protocol 2026-07-28: every request had no `Mcp-Session-Id`,
+against stateful and stateless servers alike. In stateful mode, which only older clients use, a
+session opened with agent A's key accepted agent B's key (the tool saw B, but sessions were bound
+to nobody); stateless mode has no sessions to reuse. SSE mode sends `: ping` every 15 s while a tool
+runs (longest silence 15.4 s on a 35 s call); JSON mode sent nothing for 35.3 s. Fly's proxy drops
+connections idle for about 60 s, and `get_action_status` long-polls for up to 50 s. A call that
+ends within 15 s still gets a plain JSON response.
+**Rejected:** stateful mode (sessions not bound to agents); JSON responses (the spike's first
+draft: simpler to read in tests, but silent for the whole long poll).
+
+## D-098 · 2026-10-25 · How a tool knows the agent: middleware, contextvar, fail closed
+**Decision:** A pure-ASGI middleware on `/mcp` calls `authenticate_agent_key` (D-090) and answers
+401 with `WWW-Authenticate: Bearer` and the error envelope on failure. On success it sets a
+`contextvar` (the plan's mechanism) and also puts the agent in `scope["state"]`. Tools read the
+contextvar and refuse the call if it is unset. The SDK's `TokenVerifier`/`AuthSettings` are not
+used. Step 6's tests drive two agents' keys through the real middleware: interleaved, concurrent,
+and a key change between calls.
+**Why:** MCP spike Q4 and Q5: the contextvar, `ctx.request_context.request.state` and re-reading
+`ctx.headers` all saw the key sent on that request, in every mode, sequentially and concurrently.
+The contextvar reaching the tool depends on how the SDK schedules handlers, which its docs do not
+promise, so the tests guard it and a missing agent fails closed. With a wrong key, Claude Code
+reports `AUTH_HEADER_REJECTED, HTTP 401` with our message and does not try OAuth, because an
+`Authorization` header is configured.
+**Rejected:** the SDK's OAuth-style auth (adds resource-metadata routes we do not need); trusting
+`ctx.headers` alone (the SDK docs say headers are never an identity; the middleware has already
+checked the key).
+
+## D-099 · 2026-10-25 · MCP DNS-rebinding allowlist from config
+**Decision:** Step 6 passes `TransportSecuritySettings(allowed_hosts=[...], allowed_origins=[...])`
+built from config: `localhost:*` and `127.0.0.1:*`, plus the host of `PUBLIC_BASE_URL` (exactly as
+sent, without a port on 443). Step 6 adds `PUBLIC_BASE_URL` to `Settings` (BE §11 already lists it).
+In-process tests use the base URL `http://localhost:8000`.
+**Why:** MCP spike Q6: protection is on by default for a mounted app. Passes: `localhost:8000`,
+`127.0.0.1:8000`. Rejected with 421: `localhost` with no port, `testserver` (Starlette's TestClient
+default) and a fly.dev name until it is allowlisted. A foreign `Origin` gets 403.
+**Rejected:** turning protection off; hard-coding the Fly hostname.
+
+## D-100 · 2026-10-25 · MCP tools return their outcome text; unexpected errors never log raw text
+**Decision:** Tools catch their expected failures and return the `agent_messages.py` template as a
+normal result, not as `ToolError`. Unexpected exceptions are caught in the tool, logged through
+structlog as a masked `reason_code` with `action_id`, and the agent gets the `failed` template.
+Step 6 also stops the SDK's stdlib `mcp` logger from writing exception text (level raised or
+routed through masking), with a test that a raising tool leaves no raw value in the captured logs.
+**Why:** MCP spike Q9: a `ToolError` reaches the agent prefixed ("Error executing tool X: ..."),
+which breaks the word-for-word templates. An unexpected exception reaches the agent only as "Error
+executing tool X", but the SDK logs the full traceback at ERROR, and in the spike that held an email
+address and a URL with a password. This extends the Known issue on exception text in logs.
+**Rejected:** relying on the SDK's generic message (the leak is in our logs, not the reply).
+
+## D-101 · 2026-10-25 · Claude Code's MCP timeouts allow the 20 s wait and the 50 s long poll
+**Decision:** No change to `REVIEW_WAIT_SECONDS` (20) or the 50 s `get_action_status` maximum.
+Any future wait must stay well under Claude Code's 5-minute idle timeout for HTTP servers. The
+deploy step measures Fly's idle cut on the real machine with a 50 s long poll.
+**Why:** MCP spike Q7: through Claude Code, 25 s and 55 s tool calls returned in stateful, stateless
+and JSON modes. Claude Code's docs: tool wall-clock default about 28 hours (`MCP_TOOL_TIMEOUT`),
+idle timeout 5 minutes for HTTP servers (reset by progress notifications), calls over 2 minutes
+move to the background in interactive mode. The 60 s Fly figure comes from Fly's community forum,
+not its docs.
+**Rejected:** shortening the long poll now, without a measurement.

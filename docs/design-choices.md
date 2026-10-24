@@ -340,3 +340,57 @@ agent would keep writing actions under their name).
 be up for anything to work; that is fail-closed, which is what we want. Logout in the dashboard only
 deletes the cookie (D-041); the token itself stays valid until it expires unless `token_version` is
 bumped, and nothing bumps it automatically yet. There is no password change in the MVP.
+
+---
+
+## Spike: MCP mounting
+
+### 1. The agent's identity comes from the key on each request, and the server keeps no sessions
+
+**What I did.** Every call to `/mcp` passes through a small middleware that reads the bearer key,
+looks up the agent, and answers 401 if the key is wrong. If the key is right, it hands the agent to
+the tool. The MCP server runs in stateless mode, so it never creates a session the next call could
+reuse. The spike put two agents' keys through three possible hand-off methods: a context variable,
+the request's `state`, and re-reading the header. It tried them one call after another, both at
+once, and in every server mode. All three saw the right agent every time.
+
+**Why.** Ownership is the core of Blastproof: every action records whose agent made it, and each
+user sees only their own. An identity mix-up would be an authorisation bug, not a cosmetic one. The
+surprise was elsewhere. In the default stateful mode, a session opened with agent A's key happily
+accepted agent B's key. The tool still saw B, so nothing was misattributed, but sessions were not
+tied to anyone. Stateless mode removes sessions, so that whole class of problem cannot happen. It
+costs nothing: Claude Code already uses the new 2026-07-28 protocol, which has no sessions anyway.
+
+**What I rejected.** The SDK's own OAuth-style auth (`TokenVerifier`). It is built for OAuth
+servers and adds routes we don't need. Our middleware already gives Claude Code a clear 401, which
+it shows as "AUTH_HEADER_REJECTED". Stateful mode with session-to-agent binding (more code to guard
+a feature we don't use).
+
+**Trade-off and limits.** With no sessions, `session_id` on actions is always null for Claude Code.
+The plan allowed that, and the column stays for later. The context variable reaching the tool relies
+on how the SDK schedules work, which its docs don't promise. So step 6 keeps the two-agent tests
+running through the real middleware, and a tool that finds no agent refuses the call.
+
+### 2. Mount the MCP route inside FastAPI's router, and stream so slow calls stay alive
+
+**What I did.** The SDK hands back a tiny app with one route, `/mcp`. Instead of mounting that app,
+I add its route to FastAPI's own route list. I also keep the response streaming (SSE) instead of
+switching to plain JSON. The server is built inside `create_app()`, and our startup code starts its
+session manager.
+
+**Why.** Both obvious ways to mount it broke something. Mounting at `/` worked for `/mcp` but
+swallowed every unknown URL, so our JSON 404 errors became plain text. Mounting at `/mcp` redirected
+`POST /mcp` to `/mcp/`. Adding the route directly fixed both. Streaming came from measuring rather
+than guessing: our `get_action_status` long poll can take 50 seconds, and Fly's proxy drops a
+connection that sends nothing for about 60. In streaming mode the SDK sends a small ping every 15
+seconds (the longest silence measured was 15.4 s). In JSON mode the line was silent for the whole
+call, which is too close to that limit. The server is built per app because its session manager
+can only be started once, and the tests build many apps.
+
+**What I rejected.** `app.mount` in either form (the reasons above). JSON responses, which were my
+first draft and are simpler to read in tests, but leave long calls exposed to the proxy's idle cut.
+
+**Trade-off and limits.** Adding the SDK's route by hand only works because we don't use the SDK's
+auth: with auth turned on, its app has more routes and middleware. The step 6 tests guard this by
+checking the route list. The 60-second Fly figure comes from Fly's community forum, not its docs,
+so the deploy step should check it on the real machine.
