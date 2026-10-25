@@ -261,6 +261,8 @@ _TYPE_NAMES: dict[type[exp.Expression], str] = {
     exp.Revoke: "revoke",
     exp.Comment: "comment",
 }
+# Every value `Classification.statement_types` can hold, for the policy loader to check rule files.
+STATEMENT_TYPES: Final = frozenset(_TYPE_NAMES.values()) | frozenset(_TRANSACTION_TYPE.values())
 _DML = (exp.Insert, exp.Update, exp.Delete, exp.Merge, exp.TruncateTable)
 _DDL = (exp.Create, exp.Drop, exp.Alter, exp.Grant, exp.Revoke, exp.Comment)
 _UNSUPPORTED = (exp.Command, exp.Set, exp.Copy, exp.Lock, exp.Transaction)

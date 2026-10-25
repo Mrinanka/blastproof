@@ -24,6 +24,7 @@ from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
+from app.services.policy import load_policy
 
 logger = structlog.get_logger()
 
@@ -75,6 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Blastproof", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    # A bad rules file stops startup (PolicyFileError). Reads one local file: still offline.
+    app.state.policy = load_policy(settings.policy_file)
     # The engine connects lazily, on the first query, so startup stays offline (TEST-07).
     url = settings.blastproof_database_url
     app.state.engine = make_engine(url.get_secret_value()) if url is not None else None

@@ -313,11 +313,12 @@ Steps 8 to 13 build the pieces that judge a write. Build and unit-test each one 
    - **Display:** produce `sql_display` from `pinned_sql` with string literals that look like PII (email, phone) masked.
    *Done when:* about 40 table-driven unit tests pass, including the tricky cases (CTE writes, `UPDATE … FROM`, `WHERE true`, pinning with a frozen clock, multi-statement, transaction control, `blastproof` schema access, unordered LIMIT, a function call inside fast-lane VALUES), and the classifier-relevant incident scenarios pass.
 9. **Policy rules** (`services/policy.py`, `policies/rules.yaml`). Each rule has a name, conditions (all must hold), an outcome (allow, review, block) and a reason.
-   - **Condition keys** (the complete list; unknown keys fail at startup): SQL-only keys `statement_in`, `kind_in`, `tables_any`, `schemas_any`, `has_where`, `multi_statement`, `transaction_control`, `volatile_in_where`, `unordered_limit`, `fast_lane`; diff keys `rows_affected_gt`, `rows_affected_lte`, `fraction_of_table_gt`, `fraction_of_table_gte`, `cascade_tables_any`, `derived_group_gt` (e.g. `{users.paying: 0}`; a group whose table was not affected counts as 0).
+   - **Condition keys** (the complete list; unknown keys fail at startup): SQL-only keys `statement_in`, `kind_in`, `tables_any`, `schemas_any`, `has_where`, `multi_statement`, `transaction_control`, `volatile_in_where`, `unordered_limit`, `fast_lane`, `side_effect_function` (D-128); diff keys `rows_affected_gt`, `rows_affected_lte`, `fraction_of_table_gt`, `fraction_of_table_gte`, `cascade_tables_any`, `derived_group_gt` (e.g. `{users.paying: 0}`; a group whose table was not affected counts as 0).
    - **Two passes:** pass 1 runs before the shadow run, with only the SQL-only keys known. A rule that uses any diff key is *skipped* in pass 1, not treated as false. A pass-1 `block` ends the flow with no shadow run. A pass-1 `allow` on a fast-lane write sends it down the fast lane. Pass 2 runs after the shadow run with every key.
    - **Outcome:** the strictest matching outcome wins (block, then review, then allow). **Auto-approve needs a positive `allow` match and no stricter match**; a write that matches no rule goes to review.
    - **The fast lane's single source of truth** is an `allow` rule with `fast_lane: true` and `tables_any`. There is no separate table list.
-   - The same file defines, **per table**: `important_columns` (for the breakdown), `derived_groups` (named SQL conditions counted by code over that table's affected rows only, e.g. `users: {paying: "plan in ('pro','enterprise')"}`; startup validates that every column they name exists), and `sensitive_columns` (masked everywhere, combined with a name heuristic: email, phone, ssn, address, token, password). Load at startup; restart to apply changes.
+   - The same file defines, **per table**: `important_columns` (for the breakdown), `derived_groups` (named SQL conditions counted by code over that table's affected rows only, e.g. `users: {paying: "plan in ('pro','enterprise')"}`; startup validates the file; `check_columns` checks that every column they name exists, and the shadow run calls it, D-132), and `sensitive_columns` (masked everywhere, combined with a name heuristic: email, phone, ssn, address, token, password). Load at startup; restart to apply changes.
+   *Built in step 9 (D-128 to D-132):* the loader is strict (duplicate YAML keys, unknown keys and a mis-configured `fast_lane` all stop startup); `rows_affected` counts cascades; fractions are compared exactly; missing or negative diff facts raise `PolicyFactsError` for the caller to block on. Known limits are pinned by tests (D-131).
    *Done when:* unit tests cover each rule, the pass-1 skip semantics and the strictest-wins logic, and every incident scenario decidable from SQL alone is blocked in pass 1.
 
 ```yaml
@@ -329,7 +330,7 @@ rules:
   - name: Unparseable SQL
     when: { kind_in: [unknown] }
     then: block
-    reason: Blastproof could not parse this statement, or it is over 20 KB. Send one plain SQL statement.
+    reason: Blastproof could not parse or does not support this statement, or it is over 20 KB. Send one plain SQL statement.
   - name: No DROP or TRUNCATE
     when: { statement_in: [drop, truncate] }
     then: block
@@ -346,6 +347,10 @@ rules:
     when: { schemas_any: [blastproof] }
     then: block
     reason: The blastproof schema belongs to the gateway.
+  - name: No side-effect functions
+    when: { side_effect_function: true }
+    then: block
+    reason: Functions that act on the database server itself, such as ending connections, are not allowed.
   - name: Volatile values in WHERE
     when: { volatile_in_where: true }
     then: block

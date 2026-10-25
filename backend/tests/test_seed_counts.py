@@ -16,6 +16,8 @@ from pathlib import Path
 import asyncpg
 import pytest
 
+from app.config import DEFAULT_POLICY_FILE
+from app.services.policy import load_policy
 from evals.schema import SqlScenario, load_scenario_file
 from tests.conftest import company_url
 
@@ -23,8 +25,13 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("company_db_seede
 
 SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "evals" / "scenarios"
 
-# Mirrors rules.yaml's derived group (backend plan §9), which step 9 makes the single source.
-DERIVED_GROUPS = {"users.paying": ("users.plan", {"pro", "enterprise"})}
+# The derived groups come from policies/rules.yaml, the single source (step 9).
+POLICY = load_policy(DEFAULT_POLICY_FILE)
+DERIVED_GROUPS = {
+    f"{table}.{name}": (table, group.condition, group.columns)
+    for table, groups in POLICY.derived_groups.items()
+    for name, group in groups.items()
+}
 
 # The time functions step 8 pins. Scenario SQL with expected counts may use only now().
 TIME_FUNCTIONS = re.compile(
@@ -87,9 +94,12 @@ async def conn(scratch_copy: str) -> AsyncIterator[asyncpg.Connection]:
 
 
 async def measure(
-    conn: asyncpg.Connection, sql: str, breakdown_columns: set[str]
-) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]]:
-    """Run `sql` and roll back. Returns per-table changes and breakdowns of changed rows."""
+    conn: asyncpg.Connection, sql: str, breakdown_columns: set[str], groups: set[str]
+) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]], dict[str, int]]:
+    """Run `sql` and roll back. Returns per-table changes, breakdowns and derived-group counts
+    of the changed rows."""
+    group_columns = {f"{DERIVED_GROUPS[g][0]}.{c}" for g in groups for c in DERIVED_GROUPS[g][2]}
+    breakdown_columns = breakdown_columns | group_columns
     tables = [
         r["tablename"]
         for r in await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
@@ -131,7 +141,16 @@ async def measure(
                 + f" GROUP BY b.{column}"
             )
             breakdowns[qualified] = {r["value"]: r["n"] for r in rows}
-        return changes, breakdowns
+        counts_by_group: dict[str, int] = {}
+        for group in groups:
+            t, condition, _ = DERIVED_GROUPS[group]
+            row = await conn.fetchrow(
+                "SELECT count(*) AS n "
+                + diff.format(t=t).replace("WHERE", f"WHERE b.id IS NOT NULL AND ({condition}) AND")
+            )
+            assert row is not None
+            counts_by_group[group] = row["n"]
+        return changes, breakdowns, counts_by_group
     finally:
         await tr.rollback()
 
@@ -144,8 +163,9 @@ async def test_expected_impact_matches_the_seed(
 ) -> None:
     expected = scenario.expected_impact
     assert expected is not None
-    columns = set(expected.breakdowns) | {DERIVED_GROUPS[g][0] for g in expected.derived_groups}
-    changes, breakdowns = await measure(conn, pin_now(scenario.sql, anchor), columns)
+    changes, breakdowns, groups = await measure(
+        conn, pin_now(scenario.sql, anchor), set(expected.breakdowns), set(expected.derived_groups)
+    )
 
     assert changes == {
         t: c.model_dump(exclude_defaults=True) for t, c in expected.table_changes.items()
@@ -153,8 +173,7 @@ async def test_expected_impact_matches_the_seed(
     for qualified, counts in expected.breakdowns.items():
         assert breakdowns[qualified] == counts, qualified
     for group, count in expected.derived_groups.items():
-        column, values = DERIVED_GROUPS[group]
-        assert sum(n for v, n in breakdowns[column].items() if v in values) == count, group
+        assert groups[group] == count, group
 
 
 def test_there_are_measured_scenarios() -> None:
