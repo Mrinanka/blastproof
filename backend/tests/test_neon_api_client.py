@@ -303,6 +303,7 @@ def settings(**values: object) -> Settings:
         "neon_api_key": API_KEY,
         "neon_project_id": "proj-1",
         "neon_parent_branch_id": "br-parent",
+        "neon_client": "api",  # CI sets NEON_CLIENT=fake
     }
     return Settings(_env_file=None, app_env="test", **(base | values))  # type: ignore[arg-type]
 

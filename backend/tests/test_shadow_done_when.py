@@ -42,6 +42,16 @@ async def preview(frozen_clock: FrozenClock, sql: str | None = None) -> ShadowRe
     return await runner.run(action_id=uuid4(), profile="local", classification=classification)
 
 
+_FIRST: dict[str, ShadowResult] = {}
+
+
+async def cached_preview(frozen_clock: FrozenClock) -> ShadowResult:
+    """One real preview of the Replit delete shared by the tests that only read its result."""
+    if "replit" not in _FIRST:
+        _FIRST["replit"] = await preview(frozen_clock)
+    return _FIRST["replit"]
+
+
 def table_changes(diff: Diff) -> dict[str, dict[str, int]]:
     return {
         name: {
@@ -55,7 +65,7 @@ def table_changes(diff: Diff) -> dict[str, dict[str, int]]:
 
 
 async def test_the_replit_delete_is_measured_exactly(frozen_clock: FrozenClock) -> None:
-    result = await preview(frozen_clock)
+    result = await cached_preview(frozen_clock)
     diff, expected = result.diff, replit_impact()
     assert table_changes(diff) == {
         t: change.model_dump(exclude_defaults=True) for t, change in expected.table_changes.items()
@@ -75,7 +85,7 @@ async def test_the_replit_delete_is_measured_exactly(frozen_clock: FrozenClock) 
 
 
 async def test_cascade_expectations_follow_the_foreign_keys(frozen_clock: FrozenClock) -> None:
-    diff = (await preview(frozen_clock)).diff
+    diff = (await cached_preview(frozen_clock)).diff
     found = {
         (p.table, tuple(e.child for e in p.edges), p.on_delete): p.count
         for p in diff.cascade_expectations
@@ -96,7 +106,7 @@ async def test_pass_two_on_the_measured_facts_is_review(frozen_clock: FrozenCloc
     from app.config import DEFAULT_POLICY_FILE
     from app.services.policy import load_policy
 
-    result = await preview(frozen_clock)
+    result = await cached_preview(frozen_clock)
     classification = classify(
         "DELETE FROM users WHERE last_login_at < now() - interval '6 months'",
         now=frozen_clock.now(),
@@ -113,7 +123,7 @@ async def test_pass_two_on_the_measured_facts_is_review(frozen_clock: FrozenCloc
 
 
 async def test_samples_are_masked_and_capped(frozen_clock: FrozenClock) -> None:
-    diff = (await preview(frozen_clock)).diff
+    diff = (await cached_preview(frozen_clock)).diff
     users = [s for s in diff.samples if s.table == "users"]
     assert len(users) == 50 and {s.side for s in users} == {"before"}
     assert all(
@@ -142,7 +152,7 @@ async def test_company_main_is_unchanged_and_no_copy_is_left(frozen_clock: Froze
 
 
 async def test_two_previews_in_a_row_are_identical(frozen_clock: FrozenClock) -> None:
-    first, second = await preview(frozen_clock), await preview(frozen_clock)
+    first, second = await cached_preview(frozen_clock), await preview(frozen_clock)
     assert first.diff.tables == second.diff.tables
     assert first.diff.breakdowns == second.diff.breakdowns
     assert first.diff.derived_groups == second.diff.derived_groups

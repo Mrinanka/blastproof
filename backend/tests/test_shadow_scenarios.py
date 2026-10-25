@@ -4,7 +4,9 @@ The measured diff must equal the scenario's expected counts, and pass 2 on the m
 give the decision `test_policy_pass_two` expects from the expected counts.
 """
 
+import os
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -22,7 +24,25 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("company_db_seede
 POLICY = load_policy(DEFAULT_POLICY_FILE)
 
 
-@pytest.mark.parametrize("scenario", measured(), ids=lambda s: s.id)
+def scenarios_to_run() -> list[SqlScenario]:
+    """Every scenario locally; in CI (CI=true) one per statement type and decision.
+
+    Each preview takes 10 to 15 s, so CI keeps the shapes and drops the repeats. The Replit delete
+    is skipped here because test_shadow_done_when already previews it.
+    """
+    everything = measured()
+    if not os.environ.get("CI"):
+        return everything
+    first: dict[tuple[str | None, str], SqlScenario] = {}
+    for scenario in everything:
+        if scenario.id == "replit-clean-up-inactive-users":
+            continue
+        kind = classify(scenario.sql, now=datetime(2026, 10, 1, tzinfo=UTC)).statement_type
+        first.setdefault((kind, scenario.expected_decision), scenario)
+    return list(first.values())
+
+
+@pytest.mark.parametrize("scenario", scenarios_to_run(), ids=lambda s: s.id)
 async def test_the_measured_diff_equals_the_expected_impact(
     scenario: SqlScenario, frozen_clock: FrozenClock
 ) -> None:

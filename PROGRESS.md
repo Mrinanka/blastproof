@@ -347,8 +347,9 @@ created at deploy time straight into Fly.io secrets (D-058).
 ## Known issues
 - Step 10: a preview of a write that touches most of a table is slow: the Replit delete (246k rows) took 44 s on Neon (D-142, D-143). Most of it is downloading every changed
   row and computing both sides on a small compute. If typical writes turn out slow, stop downloading all rows (a change to what step 16 reads from `preview_rows`).
-- Step 10: the full suite takes about 6 minutes (it was about 3); each preview of the seed takes 10 to 15 s locally. Check CI time on the first PR; if too slow, run fewer of the
-  16 scenario previews in CI.
+- Step 10: each preview of the seed takes 10 to 15 s locally, so the suite is about 5.5 minutes locally (about 3 minutes in CI before this change). To cut it, the Replit preview is
+  shared between the done-when tests, and with `CI=true` the scenario test runs one scenario per statement type and decision (5 instead of 16). Locally all 16 still run.
+- CI sets `NEON_CLIENT=fake`, so any test that builds a production-like `Settings` must pin `neon_client="api"` (three test files do).
 - Step 10: the stale-copy sweep task started in the lifespan and the clients' close on shutdown are not tested directly (only `sweep_stale_shadows` is). `unknown_table` is also the
   reason code for a refused schema or a schema-qualified function such as `pg_catalog.length()`.
 - Step 10: `ShadowRunner` does not save its result or change an action's status; step 14 calls `save_preview`. BE-49 and BE-50 (commit side) are finished in step 16; TEST-05
