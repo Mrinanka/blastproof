@@ -204,3 +204,54 @@ def test_a_rejected_secret_is_not_in_the_error() -> None:
 def test_unknown_connection_profile_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, company_connection_profile="staging")
+
+
+# --- Step 10: shadow runs ----------------------------------------------------------------------
+
+STEP_10_SECRETS = [
+    "company_db_writer_url",
+    "local_company_writer_url",
+    "fake_neon_admin_url",
+    "neon_api_key",
+]
+
+
+def test_step_10_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("NEON_CLIENT", *(n.upper() for n in STEP_10_SECRETS)):
+        monkeypatch.delenv(name, raising=False)
+    s = Settings(_env_file=None)
+    assert s.neon_client == "api"
+    assert all(getattr(s, name) is None for name in STEP_10_SECRETS)
+
+
+def test_empty_step_10_values_mean_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("NEON_CLIENT", *(n.upper() for n in STEP_10_SECRETS)):
+        monkeypatch.setenv(name, "")
+    s = Settings(_env_file=None)
+    assert s.neon_client == "api"
+    assert all(getattr(s, name) is None for name in STEP_10_SECRETS)
+
+
+def test_neon_client_is_validated() -> None:
+    assert Settings(_env_file=None, neon_client="fake").neon_client == "fake"
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, neon_client="real")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("field", ["company_db_writer_url", "local_company_writer_url"])
+def test_channel_binding_is_refused_on_writer_urls(field: str) -> None:
+    url = "postgresql://blastproof_writer:pw-secret@host/db?sslmode=require&channel_binding=require"
+    with pytest.raises(ValidationError) as raised:
+        Settings(_env_file=None, **{field: url})  # type: ignore[arg-type]
+    assert "pw-secret" not in str(raised.value)
+
+
+def test_step_10_secrets_are_never_shown() -> None:
+    s = Settings(
+        _env_file=None,
+        company_db_writer_url="postgresql://w:pw-writer@host/db",
+        fake_neon_admin_url="postgresql://c:pw-admin@host/postgres",
+        neon_api_key="napi-secret-key",
+    )
+    text = repr(s) + str(s)
+    assert not any(secret in text for secret in ("pw-writer", "pw-admin", "napi-secret-key"))

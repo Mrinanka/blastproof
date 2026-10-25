@@ -3,8 +3,9 @@
 Run with: uv run uvicorn app.main:app --reload --log-config log_config.json
 """
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from functools import lru_cache
 
 import structlog
@@ -13,6 +14,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.api import auth, health, ready
 from app.config import Settings, get_settings
+from app.core.clock import SystemClock
 from app.core.errors import (
     ApiError,
     api_error_handler,
@@ -24,7 +26,9 @@ from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
+from app.services.neon import BRANCH_LIFETIME, build_neon_clients, sweep_stale_shadows
 from app.services.policy import load_policy
+from app.services.shadow import ShadowRunner
 
 logger = structlog.get_logger()
 
@@ -36,7 +40,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("startup", app_env=settings.app_env)
     # The MCP transport's task group lives as long as the app (D-096); it opens no connection.
     async with app.state.mcp.session_manager.run():
-        yield
+        # Clear shadow copies a crashed run left behind, after startup so that a Neon outage never
+        # stops the app from starting (tests skip it, TEST-07).
+        sweep = None
+        if settings.app_env != "test":
+            sweep = asyncio.create_task(
+                sweep_stale_shadows(
+                    app.state.neon_clients, app.state.engine, older_than=BRANCH_LIFETIME
+                )
+            )
+        try:
+            yield
+        finally:
+            if sweep is not None:
+                sweep.cancel()
+                with suppress(asyncio.CancelledError):
+                    await sweep
+    for client in app.state.neon_clients.values():
+        await client.aclose()
     if app.state.engine is not None:
         await app.state.engine.dispose()
     logger.info("shutdown")
@@ -54,12 +75,22 @@ def _check_production_settings(settings: Settings) -> None:
         raise MissingProductionSettingError(
             "APP_ENV=production needs COMPANY_CONNECTION_PROFILE=neon; refusing to start."
         )
+    # The fake client clones a local database with a superuser login: never in production (SEC-17).
+    if settings.fake_neon_admin_url is not None or settings.neon_client == "fake":
+        raise MissingProductionSettingError(
+            "APP_ENV=production refuses FAKE_NEON_ADMIN_URL and NEON_CLIENT=fake; "
+            "refusing to start."
+        )
     missing = [
         name
         for name, value in (
             ("BLASTPROOF_DATABASE_URL", settings.blastproof_database_url),
             ("JWT_SECRET", settings.jwt_secret),
             ("COMPANY_DB_READER_URL", settings.company_db_reader_url),
+            ("COMPANY_DB_WRITER_URL", settings.company_db_writer_url),
+            ("NEON_API_KEY", settings.neon_api_key),
+            ("NEON_PROJECT_ID", settings.neon_project_id),
+            ("NEON_PARENT_BRANCH_ID", settings.neon_parent_branch_id),
         )
         if value is None
     ]
@@ -78,6 +109,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     # A bad rules file stops startup (PolicyFileError). Reads one local file: still offline.
     app.state.policy = load_policy(settings.policy_file)
+    # Building the Neon clients and the shadow runner opens no connection (httpx opens none).
+    app.state.neon_clients = build_neon_clients(settings, SystemClock())
+    app.state.shadow_runner = ShadowRunner(
+        policy=app.state.policy,
+        clients=app.state.neon_clients,
+        max_concurrent=settings.max_concurrent_shadows,
+        timeout_seconds=settings.shadow_timeout_seconds,
+    )
     # The engine connects lazily, on the first query, so startup stays offline (TEST-07).
     url = settings.blastproof_database_url
     app.state.engine = make_engine(url.get_secret_value()) if url is not None else None

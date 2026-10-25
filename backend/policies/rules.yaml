@@ -81,4 +81,4 @@ derived_groups:
 
 # Masked everywhere, on top of the name heuristic (email, phone, ssn, address, token, password).
 sensitive_columns:
-  users: [email, phone]
+  users: [email, phone, full_name]

@@ -2,10 +2,15 @@
 
     uv run python -m app.cli create-user --email you@example.com --display-name "You" --role admin
     uv run python -m app.cli create-agent --owner-email you@example.com --name claude-code
+    uv run python -m app.cli preview-sql --sql "DELETE FROM ..." --confirm-project <project name>
 
-Both connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a command-line
-argument (it would land in shell history): create-user asks for it, or reads one line from stdin
-with --password-stdin. create-agent prints the new key once; only its hash is stored.
+The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
+command-line argument (it would land in shell history): create-user asks for it, or reads one
+line from stdin with --password-stdin. create-agent prints the new key once; only its hash is
+stored.
+preview-sql is the one manual Neon run (step 10): it makes a real branch of the Neon project, runs
+the statement there in a rolled-back transaction and prints counts and timings only (no rows, no
+SQL). It refuses unless the project's name equals --confirm-project.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -13,12 +18,18 @@ import argparse
 import asyncio
 import getpass
 import sys
+import uuid
 
 from app.config import Settings
+from app.core.clock import SystemClock
 from app.db.enums import UserRole
 from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
+from app.services.classifier import Kind, classify
+from app.services.neon import NeonApiClient, neon_client_for
+from app.services.policy import load_policy
+from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowRunner
 
 
 class CliError(Exception):
@@ -40,6 +51,12 @@ def _parser() -> argparse.ArgumentParser:
     agent = commands.add_parser("create-agent", help="Create an agent and print its key once")
     agent.add_argument("--owner-email", required=True)
     agent.add_argument("--name", required=True)
+
+    preview = commands.add_parser("preview-sql", help="Preview one write on a real Neon branch")
+    preview.add_argument("--sql", required=True)
+    preview.add_argument(
+        "--confirm-project", required=True, help="The Neon project's name; it must match exactly"
+    )
     return parser
 
 
@@ -78,12 +95,59 @@ async def _run(args: argparse.Namespace, database_url: str, password: str | None
         await engine.dispose()
 
 
+async def _preview(settings: Settings, sql: str, confirm_project: str) -> str:
+    """Counts and timings of one write on a real branch; never rows, SQL or secrets."""
+    if settings.company_connection_profile != "neon" or settings.neon_client != "api":
+        raise CliError("preview-sql needs COMPANY_CONNECTION_PROFILE=neon and NEON_CLIENT=api.")
+    clock = SystemClock()
+    client = neon_client_for("neon", settings, clock)
+    if not isinstance(client, NeonApiClient):
+        raise CliError("Neon is not configured (API key, project, parent branch, writer URL).")
+    try:
+        name = await client.project_name()
+        if name != confirm_project:
+            raise CliError(f"The Neon project is not named {confirm_project!r}; refusing to run.")
+        classification = classify(sql, now=clock.now())
+        if classification.kind != Kind.WRITE:
+            raise CliError(f"That is not a write (classified as {classification.kind.value}).")
+        runner = ShadowRunner(
+            policy=load_policy(settings.policy_file),
+            clients={"neon": client},
+            max_concurrent=1,
+            timeout_seconds=settings.shadow_timeout_seconds,
+        )
+        result = await runner.run(
+            action_id=uuid.uuid4(), profile="neon", classification=classification
+        )
+    except (ShadowBusyError, ShadowFailedError) as exc:
+        raise CliError(f"The preview failed: {exc.reason_code}.") from None
+    finally:
+        await client.aclose()
+    lines = [
+        f"Project: {name}",
+        f"Preview took {result.preview_ms} ms (targets: 20000 typical, 60000 mass delete)",
+    ]
+    for table, t in result.diff.tables.items():
+        if t.changed:
+            lines.append(
+                f"{table}: deleted {t.deleted}, updated {t.updated}, inserted {t.inserted}"
+                f" (of {t.rows_before}){' [cascade]' if t.is_cascade else ''}"
+            )
+    for key, count in result.diff.derived_groups.items():
+        lines.append(f"{key}: {count}")
+    lines.append(f"Row changes recorded: {len(result.diff.changes)}")
+    return chr(10).join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = Settings()
     # Logs go to stderr, so stdout holds only the result (and the key, for create-agent).
     configure_logging(settings.log_level, stream=sys.stderr)
     try:
+        if args.command == "preview-sql":
+            print(asyncio.run(_preview(settings, args.sql, args.confirm_project)))
+            return 0
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."

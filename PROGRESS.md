@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: step 10 (Neon client and shadow executor). The Neon branching spike is done on `feat/step-9` (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
+Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
 (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6 (MCP server) is done on `feat/step-6`.
 
@@ -33,6 +33,30 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Step 10, done 2026-10-25
+- New: `app/services/company_schema.py` (`ROW_HASH_SQL`, `pk_json_sql`, `read_schema`), `app/services/neon.py` (`NeonClient`, `NeonApiClient`,
+  `FakeNeonClient`, `neon_client_for`, `build_neon_clients`, `sweep_stale_shadows`), `app/services/shadow.py` (`ShadowRunner`, `Diff`, `fk_paths`, `mask_row`),
+  `app/db/preview.py` (`save_preview`). Changed: `config.py`, `main.py`, `company_db.py` (hash settings, `connect_writer`, `connect_target`, clone lock),
+  `api/ready.py` (`neon_api`), `cli.py` (`preview-sql`), `rules.yaml` (`full_name` is sensitive), `.env.example`. No new dependency. Empty names appended to `backend/.env`:
+  `LOCAL_COMPANY_WRITER_URL`, `FAKE_NEON_ADMIN_URL`, `NEON_CLIENT` (fill the first two with the local Compose values for the local profile).
+- Tests: about 200 new in 15 files (1,190 pass in total, 1 skipped, 5 minutes). Done-when, automated: the Replit delete on `FakeNeonClient` gives exactly the `incidents.yaml` counts, breakdowns, `users.paying = 12`,
+  245,677 `preview_rows`, cascade expectations (orders 48,500, order_items 121,364, invoices SET NULL 4,382 ...), `company_main` unchanged, no copy left, two previews in a row
+  identical, pass 2 on the measured facts is `review`. All 16 scenarios with `expected_impact` measure equal to their files. A row hashes the same on a copy with other
+  time zone and date style as on `company_main`; a raw connection in another zone does not (the test can fail). Removing each of 17 guards in turn turned a test red
+  (schema check, table check, hash settings, primary key check, policy columns, delete in `finally`, slot, clone lock, old preview rows, production refusals, `channel_binding`,
+  branch cap, `expires_at`, delete after a failed create, FK action filter, masking). One guard (the schema check) first survived and got its own test case.
+- Decisions D-135 to D-141. Two places differ from the plan, both because the scenario files or the foreign keys disagreed with it: derived groups and breakdowns use the state
+  before the write for updated rows (D-139), and cascade expectations count deleted keys only (D-140).
+- Changed existing tests (necessary consequences): `test_ready.py` (message now names `neon_api`, `neon_client="api"` pinned), `test_db_session.py` (production needs the Neon settings),
+  `test_policy_loading.py` (`full_name`). Plan 6.6 and 6.11 were taken as approved by "implement the plan".
+- Timing, local Docker Desktop: a preview of the 273k-row seed takes 10 to 15 s (the clone is 0.3 s; hashing and diffing are the rest). The full suite now takes about 5 minutes
+  (it was about 3). CI will be slower too; watch it.
+- Requirements ticked: BE-05, BE-23, BE-42, BE-45, BE-46, BE-48, BE-51 to BE-58, SEC-17, TEST-04. Also ticked after the manual Neon run: BE-47, DW-B10, NFR-03 (relaxed, D-143). Left open: BE-49 and BE-50
+  (commit side, step 16), TEST-05 (no test mutates `company_main`; recreate it from `company_template` when one does), ARCH-01/03/06/17, EVAL-05, OBS-05 (steps 12 to 16), OPS-07 (Deploy).
+- **Manual Neon run done 2026-10-25** (`blastproof-company-dev`, branches only): counts match the fake's shape (48,299 users, 121,653 order items, 4,648 invoices set to NULL ...), no branch left behind, but the Replit delete took 44 s (49 s before D-142), over the old 20 s target, so NFR-03 was relaxed (D-143: 60 s for writes touching most of a table; shadow timeout is now `SHADOW_TIMEOUT_SECONDS`, default 60). Next lever: do not download every changed row.
+- (Original instruction, now done): `uv run python -m app.cli preview-sql --sql "<the Replit delete>" --confirm-project <exact project name>` with `COMPANY_CONNECTION_PROFILE=neon`,
+  `NEON_CLIENT=api` and the dev project's key; compare counts with the fake, check the branch is gone, record the time against NFR-03 (done).
 
 ### Step 9, done 2026-10-25
 - `app/services/policy.py` (`load_policy`, `check_columns`, `evaluate_pass_one`, `evaluate_pass_two`, `Policy.is_sensitive`,
@@ -321,6 +345,17 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Step 10: a preview of a write that touches most of a table is slow: the Replit delete (246k rows) took 44 s on Neon (D-142, D-143). Most of it is downloading every changed
+  row and computing both sides on a small compute. If typical writes turn out slow, stop downloading all rows (a change to what step 16 reads from `preview_rows`).
+- Step 10: each preview of the seed takes 10 to 15 s locally, so the suite is about 5.5 minutes locally (about 3 minutes in CI before this change). To cut it, the Replit preview is
+  shared between the done-when tests, and with `CI=true` the scenario test runs one scenario per statement type and decision (5 instead of 16). Locally all 16 still run.
+- CI sets `NEON_CLIENT=fake`, so any test that builds a production-like `Settings` must pin `neon_client="api"` (three test files do).
+- Step 10: the stale-copy sweep task started in the lifespan and the clients' close on shutdown are not tested directly (only `sweep_stale_shadows` is). `unknown_table` is also the
+  reason code for a refused schema or a schema-qualified function such as `pg_catalog.length()`.
+- Step 10: `ShadowRunner` does not save its result or change an action's status; step 14 calls `save_preview`. BE-49 and BE-50 (commit side) are finished in step 16; TEST-05
+  needs a `company_main` rebuild fixture the first time a test writes to it. Cascade expectations count deleted keys only (D-140); step 16 may need ON UPDATE paths.
+- Step 10: a failed delete after a good measurement is only logged (D-141); a leaked Neon branch counts against the cap of 10 until `expires_at` or the sweep removes it.
+- Fill `LOCAL_COMPANY_WRITER_URL` and `FAKE_NEON_ADMIN_URL` in `backend/.env` with the Compose values from `.env.example` to use the local profile by hand.
 - Step 6: company reads open one connection per call (D-109). Measured on Neon dev from the dev
   machine: connect 1.45 s, query 0.5 s, close 0.24 s, so a tool call takes about 3 s. A pool for
   the `neon` profile would save about 1.7 s per call.
@@ -490,7 +525,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 8. Classifier
 - [x] 9. Policy rules
 - [x] Spike: Neon branching
-- [ ] 10. Neon client and shadow executor
+- [x] 10. Neon client and shadow executor
 - [ ] 11. Knowledge and RAG, swappable vector store
 - [ ] 12. Impact engine
 - [ ] 13. Risk judge, pluggable

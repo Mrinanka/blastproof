@@ -28,7 +28,7 @@ BE_44_RULES = [
     "Fast-lane note",
     "Small insert",
 ]
-SEED_COLUMNS = {"users": {"id", "plan", "email", "phone", "name"}}
+SEED_COLUMNS = {"users": {"id", "plan", "email", "phone", "full_name"}}
 
 
 def write(tmp_path: Path, text: str) -> Path:
@@ -53,7 +53,7 @@ def test_the_shipped_file_loads_in_plan_order() -> None:
     policy = load_policy(DEFAULT_POLICY_FILE)
     assert [r.name for r in policy.rules] == BE_44_RULES
     assert policy.important_columns == {"users": ["plan"]}
-    assert policy.sensitive_columns == {"users": ["email", "phone"]}
+    assert policy.sensitive_columns == {"users": ["email", "phone", "full_name"]}
     assert policy.derived_groups["users"]["paying"].columns == {"plan"}
 
 

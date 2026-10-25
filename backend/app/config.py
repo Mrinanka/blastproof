@@ -46,9 +46,17 @@ class Settings(BaseSettings):
     # endpoint, sslmode=require and no channel_binding (asyncpg would send it as a setting).
     company_db_reader_url: SecretStr | None = None
     local_company_reader_url: SecretStr | None = None
-    # Stored on the system row; the Neon client itself comes in step 10.
+    # The shadow executor's login (step 10): blastproof_writer, direct endpoint, no channel_binding.
+    company_db_writer_url: SecretStr | None = None
+    local_company_writer_url: SecretStr | None = None
+    # A superuser on the Compose company-db that clones `company_main` for shadow runs. Tests and
+    # CI only; production refuses it (SEC-17).
+    fake_neon_admin_url: SecretStr | None = None
+    neon_api_key: SecretStr | None = None
     neon_project_id: str | None = None
     neon_parent_branch_id: str | None = None
+    # `api`: real Neon branches. `fake`: local `CREATE DATABASE ... TEMPLATE` clones (CI).
+    neon_client: Literal["api", "fake"] = "api"
 
     # The write rules (step 9), read once at startup. Optional: tests point it at a bad file.
     policy_file: Path = DEFAULT_POLICY_FILE
@@ -59,6 +67,7 @@ class Settings(BaseSettings):
     review_timeout_hours: int = 24
     agent_poll_budget_minutes: int = 10
     max_concurrent_shadows: int = 2
+    shadow_timeout_seconds: int = 60
     llm_timeout_seconds: int = 20
     llm_max_tokens: int = 1024
     max_writes_per_minute_per_agent: int = 30
@@ -76,6 +85,10 @@ class Settings(BaseSettings):
         "jwt_secret",
         "company_db_reader_url",
         "local_company_reader_url",
+        "company_db_writer_url",
+        "local_company_writer_url",
+        "fake_neon_admin_url",
+        "neon_api_key",
         "neon_project_id",
         "neon_parent_branch_id",
         mode="before",
@@ -85,7 +98,7 @@ class Settings(BaseSettings):
         # backend/.env holds empty placeholders until the owner fills them in.
         return None if value == "" else value
 
-    @field_validator("public_base_url", "company_connection_profile", mode="before")
+    @field_validator("public_base_url", "company_connection_profile", "neon_client", mode="before")
     @classmethod
     def _empty_is_default(cls, value: object, info: ValidationInfo) -> object:
         assert info.field_name is not None
@@ -101,7 +114,12 @@ class Settings(BaseSettings):
             raise ValueError("PUBLIC_BASE_URL must be scheme and host only, e.g. https://x.fly.dev")
         return value.rstrip("/")
 
-    @field_validator("company_db_reader_url", "local_company_reader_url")
+    @field_validator(
+        "company_db_reader_url",
+        "local_company_reader_url",
+        "company_db_writer_url",
+        "local_company_writer_url",
+    )
     @classmethod
     def _no_channel_binding(cls, value: SecretStr | None) -> SecretStr | None:
         # asyncpg passes unknown URL parameters to Postgres as settings, and the connection fails.
