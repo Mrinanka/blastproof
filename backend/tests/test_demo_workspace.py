@@ -93,6 +93,10 @@ def test_deny_rules_exact_list() -> None:
         "Edit(.mcp.json)",
         "Edit(//**/.env)",
         "Edit(//**/.env.*)",
+        "Bash(docker)",
+        "Bash(docker *)",
+        "PowerShell(docker)",
+        "PowerShell(docker *)",
     ]
 
 
@@ -112,7 +116,8 @@ def test_generated_files_shape() -> None:
         "permissions": {
             "deny": ws_mod.deny_rules(REPO),
             "blockReadsOutsideWorkingDirectories": True,
-        }
+        },
+        "disableClaudeAiConnectors": True,
     }
     local = json.loads(files[".claude/settings.local.json"])
     assert local == {"env": {"BLASTPROOF_AGENT_KEY": KEY}, "enabledMcpjsonServers": ["blastproof"]}
@@ -123,6 +128,12 @@ def test_generated_files_shape() -> None:
     for name, text in files.items():
         if name != ".claude/settings.local.json":
             assert KEY not in text
+
+
+@pytest.mark.parametrize("name", ["NEON_API_KEY", "NEON_API_KEY_DEV"])
+def test_scan_flags_a_neon_api_key_variable(name: str, tmp_path: Path) -> None:
+    found = ws_mod.scan(tmp_path, {name: "napi_x", "PATH": "/bin"})
+    assert [(f.kind, f.where) for f in found] == [("env", name)]
 
 
 def test_no_generated_file_matches_a_scan_pattern() -> None:

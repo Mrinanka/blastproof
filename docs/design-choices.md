@@ -531,3 +531,25 @@ fills the header from the settings file) with a fake key before building on it.
 **Limits.** The two deny checks use Sonnet because Haiku declines to attempt the read, which proves
 nothing. `verify` needs a Claude login, so it runs by hand and not in CI. A Bash redirect or a
 Python one-liner can still get past the rules; step 18's server-side rules cover part of that.
+
+## Gate audit after step 7 (fixes, D-121)
+
+**Choice 1: audit against the code, then fix only what matches how the app is used.**
+The audit ignored the ticks in PROGRESS.md and asked one question: can the agent reach the company
+data without going through Blastproof? It found a route nobody had written down: `docker exec`
+into the local database container gives a superuser shell with no password. We closed it with a
+deny rule in the agent's workspace, and we did not pretend that makes it a security boundary.
+Dev-machine problems got dev-machine guardrails. The real isolation is still checked on the
+deployed demo, where the agent's machine holds no credential at all.
+*Rejected:* random Compose passwords now (bigger change, belongs to Deploy), and ticking the gate
+because the tests were green.
+
+**Choice 2: the read check is a first layer, so we block more of what runs SQL, but no allowlist yet.**
+`check_read` runs in production, so its gaps matter more than the dev ones. A SELECT can hide a
+second query inside text, for example `query_to_xml('select pg_advisory_lock(1)', ...)`. We now
+refuse those and the file-reading functions. We kept `pg_sleep` allowed because the 5 second
+timeout already stops it, and a test depends on it. Behind this check, the read-only database
+role and the read-only transaction still stop writes on their own. A blocklist always lags behind
+new functions, so step 8's classifier should use an allowlist instead.
+*Rejected:* building the allowlist now (step 8 owns it), and blocking `pg_sleep` (it would break
+the timeout test for no extra safety).

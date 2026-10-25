@@ -24,11 +24,34 @@ MAX_ROWS = 500
 MAX_SQL_BYTES = 20 * 1024
 
 # Functions with a side effect even inside a SELECT (ending sessions, taking locks, changing
-# settings, moving sequences, sending notifications, reaching other servers or large objects).
+# settings, moving sequences, sending notifications, reaching other servers or large objects),
+# that run SQL given as text (`query_to_xml('select pg_advisory_lock(1)', ...)`) or that read the
+# server's files. The step 8 classifier should move to an allowlist of functions; until then
+# this list is the first layer (D-121). `pg_sleep` stays allowed: the 5 s timeout stops it.
 _SIDE_EFFECT_FUNCTIONS = frozenset(
-    {"pg_terminate_backend", "pg_cancel_backend", "set_config", "nextval", "setval", "pg_notify"}
+    {
+        "pg_terminate_backend",
+        "pg_cancel_backend",
+        "set_config",
+        "nextval",
+        "setval",
+        "pg_notify",
+        "cursor_to_xml",
+        "cursor_to_xmlschema",
+        "query_to_xml",
+        "query_to_xmlschema",
+        "query_to_xml_and_xmlschema",
+        "pg_stat_file",
+    }
 )
-_SIDE_EFFECT_PREFIXES = ("pg_advisory_", "pg_try_advisory_", "dblink", "lo_")
+_SIDE_EFFECT_PREFIXES = (
+    "pg_advisory_",
+    "pg_try_advisory_",
+    "dblink",
+    "lo_",
+    "pg_read_",
+    "pg_ls_",
+)
 
 # Anywhere in the tree, these mean "not a plain read": data-modifying CTEs, SELECT INTO,
 # FOR UPDATE/SHARE, and statements sqlglot could only parse as an opaque command.

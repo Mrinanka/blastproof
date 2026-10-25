@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: the gate audit, then step 8. Step 7 (remove direct access) is done on `feat/step-7`. The Claude Code hook spike is done on `spike/claude-hook`; step 6
+Next: step 8 (the gate audit passed, fixes in D-121). Step 7 (remove direct access) is merged (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6
 (MCP server) is done on `feat/step-6`, PR into `develop`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
@@ -15,6 +15,15 @@ D-095.
 Spike: MCP mounting done 2026-10-25 on `spike/mcp-mounting`, decisions D-096 to D-101.
 Step 6 (MCP server) done 2026-10-25 on `feat/step-6`, decisions D-102 to D-112.
 Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 to D-116.
+
+### Gate audit (Stage 1), fixes applied 2026-10-25, D-121
+- Baseline: 488 tests passed, 1 skipped; ruff, format and `alembic check` clean; CI green for PRs #1 to #9.
+- Fixed: Docker denied in the workspace (F1), `disableClaudeAiConnectors` (F2), `NEON_API_KEY` scan (F3), `check_read` refuses
+  SQL-running and file-reading functions (F4). Now 495 pass. Left: F5 (shell writes to `settings.local.json`, step 18 input).
+- Live, after the fixes: `verify` PASS (environment, canary, real `.env` denied); `claude -p` from the workspace answered 459 with
+  `list_tables`, `describe_table`, `query_database` recorded as `executed`; `docker ps` was denied; the only server the agent sees is `blastproof`.
+  GATE-01 is ticked below.
+- Run `workspace.py create --force` again, or edit `settings.json` by hand, on workspaces made before this change.
 
 ### Step 7, done 2026-10-25
 - `claude_hook/workspace.py` (`create`, `check`, `verify`; stdlib only) and `claude_hook/README.md`. Workspace at
@@ -383,7 +392,7 @@ created at deploy time straight into Fly.io secrets (D-058).
   `shadow_*` database, as `seed.py` does for `company_main`.
 - Step 6 onward: asyncpg sends unknown URL query parameters to Postgres as settings, so Neon's
   `channel_binding=require` must stay out of the company URLs (keep `sslmode=require`).
-- Step 7: local Docker databases stay reachable from agent code (D-119).
+- Step 7: local Docker databases stay reachable from agent code by `python -c` (D-119); `docker` itself is denied (D-121).
 - Step 7: `workspace.py verify` needs a Claude login and Sonnet, so it runs by hand, never in CI (D-120). A model that
   declines to attempt the Read makes it fail closed.
 - Step 7: the workspace has no `PreToolUse` hook yet (step 18). A Bash redirect or `python -c` can still read files that
@@ -422,7 +431,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 6. MCP server
 - [x] Spike: Claude Code hook
 - [x] 7. Remove direct access
-- [ ] GATE AUDIT: Claude Code reads the demo DB only through Blastproof
+- [x] GATE AUDIT: Claude Code reads the demo DB only through Blastproof
 
 ## Stage 2: judging parts
 - [ ] 8. Classifier
