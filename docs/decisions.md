@@ -966,3 +966,153 @@ idle timeout 5 minutes for HTTP servers (reset by progress notifications), calls
 move to the background in interactive mode. The 60 s Fly figure comes from Fly's community forum,
 not its docs.
 **Rejected:** shortening the long poll now, without a measurement.
+
+## D-102 · 2026-10-25 · The first tool call creates the main `systems` row
+**Decision:** `ensure_main_system()` gets or creates one row named `company` with the configured
+`COMPANY_CONNECTION_PROFILE` (`neon` by default, `local` for tests) and the optional
+`NEON_PROJECT_ID`/`NEON_PARENT_BRANCH_ID`, using `INSERT ... ON CONFLICT (name) DO NOTHING` so two
+first calls at once are safe. If the stored row's profile differs from the configuration, the call
+fails closed (`event=system_profile_mismatch`, the agent gets `failed: internal_error`, no action is
+recorded). Step 20's bootstrap reuses the row. Production refuses to start with the `local`
+profile or without `COMPANY_DB_READER_URL`.
+**Why:** `actions.system_id` is NOT NULL from step 4, but bootstrap is step 20. Attributing actions
+from one company database to another database's row would corrupt the audit trail.
+**Rejected:** creating the row at startup (startup must stay offline, TEST-07); a migration that
+inserts it (the profile is runtime configuration).
+
+## D-103 · 2026-10-25 · A temporary read check refuses anything but one plain SELECT
+**Decision:** Until the step 8 classifier, `reads.check_read()` (sqlglot, Postgres dialect) accepts
+exactly one `SELECT` or set operation (WITH, UNION, comments and a trailing `;` are fine) and
+refuses the rest with the `not_supported` message ("Blastproof can only run a single SELECT for
+now; writes are not supported yet. Nothing was changed."): writes, data-modifying CTEs,
+`SELECT INTO`, `FOR UPDATE/SHARE`, `EXPLAIN` (ANALYZE runs the statement), opaque commands (`DO`,
+`CALL`, `SET`, `BEGIN`, `COPY`, `TABLE x`), several statements, empty or unparseable SQL, more than
+20 KB, and side-effect functions (`pg_terminate_backend`, `pg_cancel_backend`, `pg_advisory_*`,
+`pg_try_advisory_*`, `set_config`, `nextval`, `setval`, `pg_notify`, `dblink*`, `lo_*`). It runs in
+a worker thread capped at 2 s; a timeout or crash is a refusal. The refusal is recorded as `failed`
+with `failure_reason=not_supported` and a short code (`check`) in the audit event, never the SQL.
+Behind it, each on its own: the `blastproof_reader` role (SELECT only, no sequence rights), a
+`READ ONLY` transaction and the 5 s statement timeout. `retry_of` is left out of `query_database`
+until step 17 stores it, so the tool never accepts a link it drops.
+**Why:** The plan says "refuses writes", which needs some classification before step 8. A test
+calls `run_read` directly with an INSERT and with `nextval`, and Postgres refuses both.
+**Rejected:** relying on the reader role alone (side-effect functions such as advisory locks need no
+table privilege); a regex check.
+
+## D-104 · 2026-10-25 · Read errors tell the agent what Postgres said; logs get the code only
+**Decision:** A Postgres error on a read returns `query_error`: "The query failed: {primary
+message} (SQLSTATE {code}). Nothing was changed." (no DETAIL, capped at 500 characters). The text
+goes to the agent only; the action stores `failure_reason=query_error_<sqlstate>` and the log has
+the same code. The statement timeout is `failed: statement_timeout`; a company database that is
+unset, unreachable or refuses the login is `failed: company_db_unavailable` (the exception class is
+logged, never its text). `describe_table` for an unknown name, or one outside `public` (such as
+`blastproof.applied_actions`), returns `table_not_found`: "No table {name} was found. Call
+list_tables to see the tables you can read." Read results go back to the agent unmasked and made
+JSON-safe (timestamps ISO 8601; numeric, UUID and interval as text; bytea as hex; NaN as text);
+masking covers logs, prompts and the UI (CLAUDE.md), and the reader role can read the rows anyway.
+**Why:** The `failed` template carries only a reason code, so an agent could not fix a typo in a
+table name. Postgres messages can quote values (`invalid input syntax ...: "<value>"`), which is
+fine for the agent that sent the query but not for logs.
+**Rejected:** `failed: query_error` with no text (the agent would guess); logging the message.
+
+## D-105 · 2026-10-25 · `/ready` checks the two databases now; Neon joins in step 10
+**Decision:** `GET /ready` checks Blastproof's database (`SELECT 1` through the app engine, so the
+role check runs too) and the company database (a reader connection), at the same time, each with a
+3 s timeout. All up: 200 `{"status": "ready", "checks": {"blastproof_db": "ok", "company_db":
+"ok"}}`. Otherwise 503 with the envelope `not_ready` and a message naming the failed checks; the
+log line `not_ready` has each check's exception class, never its text. BE-23 stays open until step
+10 adds the Neon API check.
+**Why:** There is no Neon client before step 10; a check of something unused would only add a
+failure mode.
+**Rejected:** calling the Neon API with httpx directly now (duplicates step 10's client).
+
+## D-106 · 2026-10-25 · `get_action_status` is an owner-scoped lookup with no waiting yet
+**Decision:** It looks the ID up through `visible_actions(owner_id, is_admin=False)` (D-055) and
+returns `{action_id, status, decision, message}`. A failed action carries its `failed` message; an
+unknown, malformed or another owner's ID gets `not_found`. `wait_seconds` (0 to 50, default 30) is
+validated by the SDK but has no effect: in step 6 every action is final when its call returns. It
+records nothing; `tool_called` is logged. `visible_actions` is a minimal `Select` builder in
+`app/db/actions.py`, so the CLAUDE.md rule holds from the first action query.
+**Why:** The long poll needs the workflow runner (step 15) and the remaining templates (step 17).
+**Rejected:** leaving the tool out until step 17 (Claude Code would see the tool list change).
+
+## D-107 · 2026-10-25 · The `/mcp` middleware: exact path, the same 401 as routes, 503 when it cannot check
+**Decision:** `AgentAuthMiddleware` guards the path `/mcp` exactly (the spike matched
+`startswith("/mcp")`, which would also catch `/mcpx`). A missing, malformed, unknown or deactivated
+key, or a deactivated owner, gets 401 `invalid_agent_key` with "The agent key is invalid or
+deactivated." and `WWW-Authenticate: Bearer`, the same code and text as `get_current_agent` (one
+shared constant). No database configured, or any error while checking, gets 503 `unavailable`
+(fail closed); the log has the exception class only. The session used for the check is closed
+before the tool runs, and each tool opens its own short transactions. It is added before
+`RequestIdMiddleware`, so the request ID stays outermost and auth failures carry `X-Request-ID`.
+**Why:** One door, one answer for a bad key (D-088). A long read must not hold a Blastproof
+connection.
+**Rejected:** the spike's `not_authenticated` code (that is the dashboard token's code).
+
+## D-108 · 2026-10-25 · Step 6 tests speak raw JSON-RPC; the real client is the manual check
+**Decision:** Tests post raw 2026-07-28 `tools/call` requests (the `_meta` protocol fields and the
+`mcp-protocol-version`, `mcp-method`, `mcp-name` headers, as in the spike) through Starlette's
+`TestClient` with `base_url="http://localhost:8000"`, and parse the reply from SSE or JSON
+(`tests/conftest.py`). The concurrency test runs nine overlapping calls with `asyncio.gather` over
+`httpx.ASGITransport` (one event loop, as uvicorn serves them) and asserts they really overlapped
+(under 2 s for nine 0.3 s calls), instead of threads. Which agent a tool saw is read back from the
+`actions` row it recorded.
+**Why:** Step 5 removed the direct `httpx2` import that the SDK `Client` needs. Threads sharing one
+`TestClient` still funnel into one portal loop, and would not prove overlap.
+**Rejected:** adding `httpx2` as a direct dependency for tests.
+
+## D-109 · 2026-10-25 · Company reads open one connection per call
+**Decision:** `company_db.connect_reader()` opens one asyncpg connection per tool call (no pool),
+with `TimeZone=UTC`, `extra_float_digits=1` and `statement_timeout=5s` as startup settings and a 10 s
+connect timeout, plus a 20 s backstop over the whole read. `COMPANY_CONNECTION_PROFILE` picks
+`COMPANY_DB_READER_URL` (`neon`) or `LOCAL_COMPANY_READER_URL` (`local`). URLs holding
+`channel_binding` are refused at startup.
+**Why:** It matches D-019 for `local` and keeps step 6 small. On Neon each call pays for TLS and a
+possible cold start; pooling for `neon` can come later (Known issue).
+**Rejected:** a pool now (lifecycle, Neon's idle closes and per-connection settings to reset, for a
+dev-only latency gain).
+
+## D-110 · 2026-10-25 · No library writes raw values into our logs
+**Decision:** The JSON log handler carries a filter for `mcp.*` records: it keeps the bare format
+string, drops arguments, traceback (`exc_info`, `exc_text`) and `stack_info`, and adds `exc_type`.
+The `mcp` logger is set to WARNING (its INFO "Tool %r failed: %r" carries the error text) and
+`sqlglot` to ERROR: sqlglot warns "'<sql>' contains unsupported syntax" with up to 100 characters
+of the agent's SQL (found in step 6). Our tools log exception classes only. `Settings` now uses
+`hide_input_in_errors=True`, because Pydantic's errors echo the rejected value: a too-short
+`JWT_SECRET` or a reader URL with `channel_binding` would have been printed at startup (found in
+step 6). `MCPServer()`'s `logging.basicConfig(RichHandler)` does nothing, because `create_app`
+installs our handler first; a test checks no RichHandler is left on the root logger.
+**Why:** D-100 and SEC-14. Each guard has a test that fails without it.
+**Rejected:** masking the text with patterns (keeping an allowlist of fields is safer than a list
+of what to hide).
+
+## D-111 · 2026-10-25 · MCP tool result shapes and argument limits
+**Decision:** Each tool returns a Pydantic model (`app/schemas/mcp.py`), which the SDK sends as
+structured content plus the same JSON as text: `QueryDatabaseResult{action_id, status, columns,
+rows, row_count, truncated, message}`, `TableList{action_id, status, tables[{name, description}],
+message}`, `TableDescription{action_id, status, table, description, columns[{name, type, nullable,
+description}], message}` and `ActionStatusResult{action_id, status, decision, message}`. `status` is
+`executed` or `failed` for the three recorded tools. `action_id` is null only when nothing was
+recorded (no agent in context, or the Blastproof database failed). Argument limits checked by the
+SDK before our code: `sql` 1 to 100,000 characters (the real 20 KB cap is `check_read`'s, so that
+refusal is recorded), `intent` 1 to 2,000, a table name 1 to 200, an action ID up to 100. A call
+that fails SDK validation never reaches our code and is not recorded. The three read-only tools
+carry `readOnlyHint`.
+**Why:** Rows as lists keep the reply small; the agent gets the column names once.
+**Rejected:** rows as objects (each column name repeated up to 500 times).
+
+## D-112 · 2026-10-25 · `visible_actions` scopes reads made for someone; status repeats the original message
+**Decision:** The CLAUDE.md rule "all action queries go through `visible_actions(user)`" covers every
+read of actions made on behalf of a user or an agent (the dashboard, `get_action_status`, `retry_of`).
+Internal writes that act on an action by the ID the same code path created or was handed by the
+workflow (`create_action`, `set_status`, later the runner and commit) address it by primary key and
+are not filtered by owner. Also, refining D-106: `get_action_status` on a failed action repeats the
+message the agent got when it ran (`not_supported`, `table_not_found` with the stored table name);
+a query error comes back as `failed: query_error_<sqlstate>`, because its Postgres text is never
+stored (D-104). The longest `wait_seconds` is `STATUS_MAX_WAIT_SECONDS` (default 50), not a literal.
+**Why:** Found in the step 6 self-review. An owner filter on an internal update protects nothing (the
+ID did not come from a caller) and would get in the way of later system actors (the reconciler,
+expiry, an admin approving). The leak `visible_actions` guards against is a caller reading another
+user's action.
+**Rejected:** passing an owner ID into every internal update; leaving the literal 50 next to an
+existing setting.

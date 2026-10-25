@@ -117,3 +117,90 @@ def test_empty_values_count_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     s = Settings(_env_file=None)
     assert s.blastproof_database_url is None
     assert s.jwt_secret is None
+
+
+# --- Step 6 -----------------------------------------------------------------------------------
+
+
+def test_step_6_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("PUBLIC_BASE_URL", "COMPANY_CONNECTION_PROFILE", "COMPANY_DB_READER_URL"):
+        monkeypatch.delenv(name, raising=False)
+    s = Settings(_env_file=None)
+    assert s.public_base_url == "http://localhost:8000"
+    assert s.company_connection_profile == "neon"
+    assert s.company_db_reader_url is None
+    assert s.local_company_reader_url is None
+
+
+@pytest.mark.parametrize(
+    ("url", "host", "origin"),
+    [
+        ("http://localhost:8000", "localhost:8000", "http://localhost:8000"),
+        ("https://blastproof.fly.dev", "blastproof.fly.dev", "https://blastproof.fly.dev"),
+        ("https://blastproof.fly.dev:443/", "blastproof.fly.dev", "https://blastproof.fly.dev"),
+        ("http://example.com:80", "example.com", "http://example.com"),
+        ("https://example.com:8443", "example.com:8443", "https://example.com:8443"),
+    ],
+)
+def test_public_host_is_parsed_from_public_base_url(url: str, host: str, origin: str) -> None:
+    s = Settings(_env_file=None, public_base_url=url)
+    # The Host header a client sends: no port when it is the scheme's default (D-099).
+    assert s.public_host == host
+    assert s.public_origin == origin
+
+
+@pytest.mark.parametrize(
+    "url", ["localhost:8000", "ftp://example.com", "https://example.com/api", "https://"]
+)
+def test_public_base_url_must_be_an_origin(url: str) -> None:
+    with pytest.raises(ValidationError, match="PUBLIC_BASE_URL"):
+        Settings(_env_file=None, public_base_url=url)
+
+
+def test_empty_step_6_values_mean_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The owner's .env gets these names with empty values first.
+    for name in (
+        "PUBLIC_BASE_URL",
+        "COMPANY_CONNECTION_PROFILE",
+        "COMPANY_DB_READER_URL",
+        "LOCAL_COMPANY_READER_URL",
+        "NEON_PROJECT_ID",
+    ):
+        monkeypatch.setenv(name, "")
+    s = Settings(_env_file=None)
+    assert s.public_base_url == "http://localhost:8000"
+    assert s.company_connection_profile == "neon"
+    assert s.company_db_reader_url is None
+    assert s.local_company_reader_url is None
+    assert s.neon_project_id is None
+
+
+@pytest.mark.parametrize("field", ["company_db_reader_url", "local_company_reader_url"])
+def test_channel_binding_is_refused_without_showing_the_url(field: str) -> None:
+    url = "postgresql://blastproof_reader:reader-pw-value@ep-x.neon.tech/neondb?channel_binding=require"
+    with pytest.raises(ValidationError, match="channel_binding") as caught:
+        Settings(_env_file=None, **{field: url})
+    assert "reader-pw-value" not in str(caught.value)
+
+
+def test_reader_urls_are_never_shown() -> None:
+    s = Settings(
+        _env_file=None,
+        company_db_reader_url="postgresql://blastproof_reader:neon-pw-value@h/db?sslmode=require",
+        local_company_reader_url="postgresql://blastproof_reader:local-pw-value@h/db",
+    )
+    for hidden in ("neon-pw-value", "local-pw-value"):
+        assert hidden not in repr(s)
+        assert hidden not in str(s.model_dump())
+
+
+def test_a_rejected_secret_is_not_in_the_error() -> None:
+    # hide_input_in_errors: a too-short JWT secret must not be printed at startup either.
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None, jwt_secret="short-secret-value")
+    assert "short-secret-value" not in str(caught.value)
+
+
+def test_unknown_connection_profile_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, company_connection_profile="staging")

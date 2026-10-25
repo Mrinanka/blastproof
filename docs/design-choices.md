@@ -394,3 +394,65 @@ first draft and are simpler to read in tests, but leave long calls exposed to th
 auth: with auth turned on, its app has more routes and middleware. The step 6 tests guard this by
 checking the route list. The 60-second Fly figure comes from Fly's community forum, not its docs,
 so the deploy step should check it on the real machine.
+
+---
+
+## Step 6: MCP server
+
+### 1. Write the record first, then do the work, and make every ending a record too
+
+**What I did.** Each recorded tool call (`query_database`, `list_tables`, `describe_table`) starts
+by saving an `actions` row with status `received`, under the agent owner's user ID, and commits
+it before touching the company database. Only then does the read run. It ends in a second short
+transaction that sets the status to `executed` or `failed`, with the total time, and adds the
+matching audit event. Every expected failure has a short reason code: the read was refused, the
+5-second timeout hit, Postgres rejected the query, or the company database was down. Anything I
+didn't expect is caught, logged as just the exception's class name, saved as
+`failed: internal_error`, and the agent gets the standard "could not complete this safely" message.
+
+**Why.** Blastproof's value is the audit trail: "every call is recorded with its owner". If I
+recorded the action only after a successful read, the cases that matter most would leave no trace:
+a timeout, a crash, a query the agent shouldn't have sent. Committing first means even a process
+that dies mid-read leaves a `received` row. Someone looking at it can see the call happened and
+never finished. Logging only class names was a deliberate choice. A Postgres error can quote the
+value it choked on (an email, say), and a connection error can include the database URL, so the
+exception's text never goes into a log. The agent does get Postgres's message for a failed query,
+so it can fix a typo. The agent already has access to that data.
+
+**What I rejected.** One transaction around everything (a crash would roll back the record of the
+crash). Recording only successful reads. Letting exceptions reach the MCP SDK, which logs the full
+traceback, text and all. That was the leak the spike found.
+
+**Trade-off and limits.** Two transactions per call instead of one, which adds a little latency.
+A call that fails the SDK's own argument checks (a `wait_seconds` of 51, say) never reaches our
+code, so it isn't recorded. If Blastproof's own database is down, nothing can be recorded, and the
+middleware answers 503 before any tool runs.
+
+### 2. Reads are guarded by four independent layers, not one clever check
+
+**What I did.** Writes come in step 17, so for now `query_database` must refuse anything that isn't
+a plain read. A small sqlglot check in front accepts exactly one SELECT (WITH and UNION are fine).
+It refuses writes, a DELETE hidden inside a WITH, `SELECT INTO`, `FOR UPDATE`, `EXPLAIN ANALYZE`,
+several statements at once, and functions with side effects such as `pg_terminate_backend` or
+advisory locks. Behind that check, three things stop a write each on their own. The query runs as
+`blastproof_reader`, a role that can only SELECT. It runs inside a `READ ONLY` transaction. And it
+has a 5-second statement timeout. The reply is capped at 500 rows: we fetch 501 to know whether to
+add the "showing the first 500 rows" note.
+
+**Why.** A parser is a heuristic, and SQL has many corners. If the check were the only guard, one
+missed case would be a write on the company database. With layers, a missed case has to get past a
+role with no write rights and a read-only transaction too. A test hands `INSERT` and `nextval`
+straight to the read function, skipping the check, and Postgres refuses both. The check still
+earns its place. It catches things the database would allow a read-only role to do, such as
+taking advisory locks or ending other sessions. It also gives the agent a clear "only SELECT for
+now" answer instead of a cryptic permission error.
+
+**What I rejected.** Relying on the reader role alone, which lets side-effect functions through.
+A regex check, which comments and quoting defeat. Waiting for the real classifier in step 8, which
+would leave step 6 unable to say no.
+
+**Trade-off and limits.** The check is stricter than it needs to be: a SELECT wrapped in brackets,
+or `TABLE users`, is refused. That's the right direction for a safety tool, and step 8 replaces the
+check anyway. Rows go back to the agent unmasked. Masking covers logs, prompts and the dashboard,
+and the reader role could read those rows regardless. Each call opens a fresh connection, which on
+Neon costs about 1.7 s of the roughly 3 s a call takes; a pool would fix that.
