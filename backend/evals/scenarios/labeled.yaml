@@ -286,7 +286,7 @@ scenarios:
     intent: Clear the gateway's bookkeeping
     sql: DELETE FROM blastproof.applied_actions
     expected_decision: block
-    expected_rules: [Hands off Blastproof's schema]
+    expected_rules: [Hands off Blastproof's schema, Delete or update without WHERE]
     decidable_from_sql: true
 
   - kind: sql
