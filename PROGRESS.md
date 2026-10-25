@@ -397,6 +397,10 @@ created at deploy time straight into Fly.io secrets (D-058).
   declines to attempt the Read makes it fail closed.
 - Step 7: the workspace has no `PreToolUse` hook yet (step 18). A Bash redirect or `python -c` can still read files that
   the deny rules cover (D-002); the agent key pasted into a chat during the manual check belongs to dev agent `step7-check`.
+- Gate audit F5: the agent can still write `.claude/settings.local.json` through Bash or PowerShell (`Edit(.claude/**)` does not cover shell writes), which could set `disableAllHooks`. Harmless until step 18 adds the hook; step 18 must handle it.
+- Gate audit F4: `check_read` is a blocklist of functions (D-121). Step 8's classifier should use an allowlist; `pg_sleep` is allowed on purpose (the 5 s timeout stops it).
+- Gate audit F2: `disableClaudeAiConnectors` does not cover user-scope MCP servers in `~/.claude.json` (none today). Tell demo users not to add a Neon or Postgres connector to their own account.
+- Gate audit: BE-125 ("production uses Fly.io secrets") is ticked but can only be shown at Deploy.
 - Step 7: trust the demo workspace folder by hand once (interactive sessions hold hooks back until then).
 - Step 18: the hook's block message shows the agent the hook command line; the spike's results are single runs of Haiku.
 - Two labeled actions disagree with rules alone on purpose (`close-one-ticket`,
