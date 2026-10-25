@@ -31,8 +31,8 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-08 | Rules run before the judge. | CL; SPEC §13; BE §7 | B9, B13, B14 | DW-B14 |
 | [ ] | ARCH-09 | The judge can only make a decision stricter, never looser. | CL; SPEC §13; BE B13; D-008 | B13 | DW-B13 |
 | [ ] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
-| [ ] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
-| [ ] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
+| [x] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
+| [x] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
 | [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
 | [ ] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
 | [ ] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
@@ -123,7 +123,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-25 | The classifier does not parse SQL over 20 KB (it returns `unknown`) and parses the rest with sqlglot (Postgres dialect) in a worker thread capped at 2 seconds. | BE B8, §12; D-040 | B8 | DW-B08 |
 | [x] | BE-26 | The classifier returns `kind` (read, write, ddl, unknown), statement types, tables, schemas, `has_where`, `multi_statement`, `transaction_control`, `non_deterministic`, `volatile_in_where`, `unordered_limit` and `fast_lane_eligible`. | BE B8 | B8 | DW-B08 |
 | [x] | BE-27 | The classifier walks the whole tree, so a write inside a CTE counts as a write; side-effect functions like `pg_terminate_backend` count as writes. | BE B8 | B8 | DW-B08 (CTE case) |
-| [ ] | BE-28 | A parse error, parse timeout or SQL over 20 KB returns `unknown`, which the "Unparseable SQL" rule blocks in pass 1; the agent gets the `blocked` template with that rule's reason. | BE B8, B9; D-040 | B8, B9 | DW-B08; DW-B09 |
+| [x] | BE-28 | A parse error, parse timeout or SQL over 20 KB returns `unknown`, which the "Unparseable SQL" rule blocks in pass 1; the agent gets the `blocked` template with that rule's reason. | BE B8, B9; D-040 | B8, B9 | DW-B08; DW-B09 |
 | [x] | BE-29 | `has_where` is false when the WHERE simplifies to a constant true (`WHERE true`, `WHERE 1=1`). | BE B9 note; D-009 | B8 | DW-B08 (`WHERE true` case) |
 | [x] | BE-30 | `unordered_limit` is set for a LIMIT without ORDER BY anywhere in a write. | BE B8 | B8 | DW-B08 |
 | [x] | BE-31 | Pinning replaces `now()`, `current_timestamp`, `current_date`, `localtimestamp`, `statement_timestamp()`, `clock_timestamp()` and `transaction_timestamp()` with one UTC literal from intercept time (cast to the original type), and returns `pinned_values`. | BE B8; D-005 | B8 | DW-B08 (frozen clock) |
@@ -131,15 +131,15 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-33 | Volatile functions (`random()`, `nextval()`, `gen_random_uuid()` and others) in a WHERE or a subquery feeding one set `volatile_in_where`; inside INSERT values they are allowed. | BE B8 | B8 | DW-B08 |
 | [x] | BE-34 | `fast_lane_eligible` is true only for a single `INSERT … VALUES` of at most 10 rows, with no SELECT, ON CONFLICT, CTE or RETURNING beyond the PK, and only literals, NULL, DEFAULT, casts of literals and pinned timestamps in VALUES. | BE B8; D-024 | B8 | DW-B08 (function in VALUES case) |
 | [x] | BE-35 | `sql_display` is `pinned_sql` with PII-looking string literals (email, phone) masked; it is the only SQL that reaches the API, UI, logs and prompts. | BE §5, B8 | B8 | *unit test* |
-| [ ] | BE-36 | Policy rules live in `policies/rules.yaml`; each has a name, conditions (all must hold), an outcome (allow, review, block) and a reason; they load at startup and changes need a restart. | BE B9 | B9 | DW-B09 |
-| [ ] | BE-37 | Condition keys are a closed list (SQL-only and diff keys in BE B9); an unknown key fails at startup. | BE B9; D-009 | B9 | DW-B09 |
-| [ ] | BE-38 | Pass 1 runs before the shadow run with SQL-only keys; a rule using any diff key is skipped, not treated as false. | BE B9; D-009 | B9 | DW-B09 |
+| [x] | BE-36 | Policy rules live in `policies/rules.yaml`; each has a name, conditions (all must hold), an outcome (allow, review, block) and a reason; they load at startup and changes need a restart. | BE B9 | B9 | DW-B09 |
+| [x] | BE-37 | Condition keys are a closed list (SQL-only and diff keys in BE B9); an unknown key fails at startup. | BE B9; D-009 | B9 | DW-B09 |
+| [x] | BE-38 | Pass 1 runs before the shadow run with SQL-only keys; a rule using any diff key is skipped, not treated as false. | BE B9; D-009 | B9 | DW-B09 |
 | [ ] | BE-39 | A pass-1 `block` ends the flow with no shadow run; a pass-1 `allow` on a fast-lane write sends it down the fast lane; pass 2 runs after the shadow run with every key. | BE B9 | B9, B14 | DW-B09, DW-B14 |
-| [ ] | BE-40 | The strictest matching outcome wins (block > review > allow); auto-approve needs a positive allow match and no stricter match; no match means review. | BE B9; D-009 | B9 | DW-B09 |
-| [ ] | BE-41 | The fast lane's only table list is an `allow` rule with `fast_lane: true` and `tables_any`; there is no separate list. | BE B9; D-024 | B9 | DW-B09 |
+| [x] | BE-40 | The strictest matching outcome wins (block > review > allow); auto-approve needs a positive allow match and no stricter match; no match means review. | BE B9; D-009 | B9 | DW-B09 |
+| [x] | BE-41 | The fast lane's only table list is an `allow` rule with `fast_lane: true` and `tables_any`; there is no separate list. | BE B9; D-024 | B9 | DW-B09 |
 | [ ] | BE-42 | The rules file defines per-table `important_columns`, `derived_groups` (counted over that table's affected rows only; an unaffected table counts as 0) and `sensitive_columns`; startup validates that every column a derived group names exists. | BE B9; D-023 | B9 | DW-B09 |
-| [ ] | BE-43 | Sensitive columns are the configured ones plus a name heuristic (email, phone, ssn, address, token, password). | BE B9, §12 | B9 | *unit test* |
-| [ ] | BE-44 | `rules.yaml` ships with the rules in BE §9: No DDL, Unparseable SQL, No DROP or TRUNCATE, One statement only, No transaction control, Hands off Blastproof's schema, Volatile values in WHERE, Unordered LIMIT, Delete or update without WHERE, Every row of a table, Most of a table, Large change, Touches paying customers, Fast-lane note, Small insert. | BE B9 | B9 | DW-B09 |
+| [x] | BE-43 | Sensitive columns are the configured ones plus a name heuristic (email, phone, ssn, address, token, password). | BE B9, §12 | B9 | *unit test* |
+| [x] | BE-44 | `rules.yaml` ships with the rules in BE §9: No DDL, Unparseable SQL, No DROP or TRUNCATE, One statement only, No transaction control, Hands off Blastproof's schema, Volatile values in WHERE, Unordered LIMIT, Delete or update without WHERE, Every row of a table, Most of a table, Large change, Touches paying customers, Fast-lane note, Small insert. | BE B9 | B9 | DW-B09 |
 | [ ] | BE-45 | The demo "clean up inactive users" delete (about 96% of users) is held for review, not blocked. | BE B9 note; D-009 | B9, B10 | MVP-B03; EVAL scenarios |
 | [ ] | BE-46 | A `NeonClient` interface has `NeonApiClient` and `FakeNeonClient`, chosen per system by `systems.connection_profile` (`neon` or `local`). | BE §5, B10; D-027 | B10 | DW-B10 |
 | [ ] | BE-47 | `NeonApiClient` creates `shadow-<action_id>` from `NEON_PARENT_BRANCH_ID` with a read-write endpoint, waits until ready, returns the direct (non-pooled) connection string, and deletes the branch afterward; commits on main also use the direct endpoint. | BE B10 | B10 | DW-B10 (once by hand) |
@@ -242,8 +242,8 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-07 | `require_admin` rejects members with 403 on admin-only routes. | BE B5 | B5 | DW-B05 |
 | [x] | SEC-08 | `blastproof_app` has only SELECT and INSERT on `audit_events`, and a `BEFORE UPDATE OR DELETE` trigger rejects changes even by the owner. | BE §5, B4; D-013 | B4 | DW-B04 |
 | [ ] | SEC-09 | `BLASTPROOF_MIGRATOR_URL` (owner role) is used only for migrations and checkpointer `setup()`, never by the running app. | BE §11; D-013 | B4, B14 | *code review* |
-| [ ] | SEC-10 | Agent SQL that touches the `blastproof` schema is blocked. | BE §5, B9 | B8, B9 | DW-B08 (`blastproof` schema case) |
-| [ ] | SEC-11 | All DDL from agents is blocked in the MVP. | SPEC §8; BE B9 | B9 | DW-B09; MVP-B05 |
+| [x] | SEC-10 | Agent SQL that touches the `blastproof` schema is blocked. | BE §5, B9 | B8, B9 | DW-B08 (`blastproof` schema case) |
+| [x] | SEC-11 | All DDL from agents is blocked in the MVP. | SPEC §8; BE B9 | B9 | DW-B09; MVP-B05 |
 | [ ] | SEC-12 | SQL, intents, uploaded documents and sample rows are wrapped as untrusted data in every prompt and never followed as instructions. | SPEC §13; BE B13, §12 | B12, B13 | *unit test on prompt construction* |
 | [ ] | SEC-13 | A prompt-injection pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review. | SPEC §7 (module 6, MVP); BE B13 | B13 | *unit test* |
 | [ ] | SEC-14 | Connection strings and keys are never logged; sensitive columns are masked in sample rows and PII-looking literals in SQL before they reach logs, LLM prompts, LangSmith or the API. | BE §12; SPEC §13, §15 | B8-B13, Security | *Security pass review; unit tests* |
@@ -385,7 +385,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B06 | After `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>" --scope local`, Claude answers "how many pro users do we have?" through Blastproof and the call appears in `actions`. | BE B6 | B6 | Manual in Claude Code |
 | [x] | DW-B07 | Searching the demo workspace and its environment for "postgres" finds nothing, and Claude's `Read` of the backend's `.env` path is denied. | BE B7 | B7 | Manual in Claude Code |
 | [x] | DW-B08 | About 40 table-driven classifier tests pass, including CTE writes, `UPDATE … FROM`, `WHERE true`, pinning with a frozen clock, multi-statement, transaction control, `blastproof` schema access, unordered LIMIT and a function call in fast-lane VALUES; classifier-relevant incident scenarios pass. | BE B8 | B8 | Unit tests |
-| [ ] | DW-B09 | Unit tests cover each rule, pass-1 skip semantics and strictest-wins; every incident scenario decidable from SQL alone is blocked in pass 1. | BE B9 | B9 | Unit tests |
+| [x] | DW-B09 | Unit tests cover each rule, pass-1 skip semantics and strictest-wins; every incident scenario decidable from SQL alone is blocked in pass 1. | BE B9 | B9 | Unit tests |
 | [ ] | DW-B10 | A DELETE of users inactive 6 months (clock frozen at `ANCHOR_DATE`) returns exact counts incl. cascaded `orders`/`order_items` and the SET NULL on `invoices`, with correct breakdowns and derived groups matching `incidents.yaml`; runs with `FakeNeonClient` in CI (incl. two previews in a row) and with `NeonApiClient` once by hand; a test proves identical row hashes in shadow run and commit across session time zones. | BE B10 | B10 | Integration tests + manual Neon run |
 | [ ] | DW-B11 | An action deleting users retrieves the "paying customer" and "enterprise contracts" rules. | BE B11 | B11 | Integration test |
 | [ ] | DW-B12 | The report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number. | BE B12 | B12 | Unit tests + manual read |

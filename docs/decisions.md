@@ -1188,3 +1188,26 @@ existing setting.
 ## D-127 · 2026-10-25 · Known limits of the classifier
 **Decision:** Recorded, not fixed: (a) an `ORDER BY` on a non-unique key with `LIMIT` still picks tied rows differently each time, which needs the schema, so step 16's key-set check catches it as drift; (b) names without a schema resolve to `public` (safe because every call opens a new connection and `SET` is refused); (c) `COMMIT PREPARED` and `RELEASE SAVEPOINT` do not parse in sqlglot, so they are `unknown` and blocked; (d) the actions inside a MERGE are not counted as a DELETE or UPDATE with no WHERE.
 **Why:** Each is either safe in the blocking direction or needs data the classifier does not have.
+
+## D-128 · 2026-10-25 · A "No side-effect functions" rule
+**Decision:** `rules.yaml` gains the SQL key `side_effect_function` and the block rule "No side-effect functions", placed after "Hands off Blastproof's schema". The scenario `terminate-backends` is now `decidable_from_sql: true` with `expected_rules: [No side-effect functions]`. The shipped file is the plan's 15 rules plus this one.
+**Why:** No rule in backend plan section 9 blocked `pg_terminate_backend`, so it would have gone to review and been shadow-run (D-124). The classifier already records the function; a rule is the only place an outcome comes from.
+**Rejected:** a code-level block outside the rules file (outcomes come only from rules); leaving the scenario to the judge.
+
+## D-129 · 2026-10-25 · The file is checked hard at load
+**Decision:** `load_policy` rejects duplicate YAML keys (PyYAML silently keeps the last), unknown keys and fields, strings where a bool or number belongs, unknown statement types and kinds, repeated rule names, empty reasons, and a `fast_lane: true` rule that is not an allow with `tables_any` or that also uses a diff key (pass 1 would skip it forever). A derived-group condition must be one boolean expression of bare columns, literals, comparisons, IN, IS [NOT] NULL, AND/OR/NOT and parentheses: no functions, subqueries, casts or `;`. Errors name the rule and key and never repeat the input value.
+**Why:** The file decides what reaches a customer database. A typo that silently drops a block rule is the same as removing it. Derived-group SQL is later run against the company database, so it is limited to what is safe to run.
+**Rejected:** accepting YAML as parsed; sandboxing derived-group SQL further (the file is trusted owner config).
+
+## D-130 · 2026-10-25 · How each condition is read
+**Decision:** `statement_in` matches any statement type in the tree (a CTE DELETE counts). `tables_any` and `schemas_any` match any listed name using the classifier's labels. `rows_affected` sums deleted, updated and inserted over every changed table, cascades included. `fraction_of_table` is (deleted + updated) / `rows_before` per table, the maximum over changed tables, compared exactly with `Fraction` (500 of 1000 is not above 0.5). `derived_group_gt` needs every entry to hold; a group on an unchanged table counts 0; a changed table with no count raises `PolicyFactsError`. Pass 1 gives `FAST_LANE` only if the write is eligible, a matched allow rule has `fast_lane: true`, and no review matched. Pass 2: block over review over allow, and no match means review.
+**Why:** Each takes the stricter reading when the plan was silent. Bad or missing facts raise so the caller blocks (fail closed); the policy never queries a database.
+
+## D-131 · 2026-10-25 · Known limits of the rules, and the MERGE gap closed
+**Decision:** "Every row of a table" and "Most of a table" now list `merge` as well as `delete` and `update`, so a MERGE that deletes or rewrites rows is held to the same fractions (a test covers both). Still recorded, not fixed, and pinned by tests: (a) there is no code backstop, so removing a block rule such as "Unparseable SQL" from `rules.yaml` removes that block (the shipped-file test fails if a rule goes missing); (b) "Small insert" matches a CTE DELETE feeding an INSERT of 10 rows or fewer (allow, then the judge runs; deleted rows count toward the 10, the other rules still apply, and only the fast lane skips the judge and it cannot hold a CTE).
+**Why:** The MERGE hole was one word to close and only made the rules stricter. A backstop would put outcomes outside the rules file, against "outcomes come only from rules"; the CTE case is bounded by the row total and the judge.
+**Rejected:** a code backstop for block rules; a negation key to exclude CTE deletes.
+
+## D-132 · 2026-10-25 · Column check is a pure function; startup does not query
+**Decision:** `check_columns(policy, columns_by_table)` raises `PolicyFileError` naming a missing table or column in `important_columns`, `derived_groups` or `sensitive_columns`. Startup stays offline (TEST-07), so it only validates the file's shape; step 10's shadow run reads `information_schema` and calls `check_columns`, failing closed. An integration test runs it against `company_main`.
+**Why:** The plan said "startup validates that every column exists", but startup must not touch the network or a database. The check is the same; it runs where the connection already exists.

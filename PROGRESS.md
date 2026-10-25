@@ -1,8 +1,9 @@
 # Progress
 
 ## Current focus
-Next: step 9 (policy rules). Step 8 (classifier) is done on `fix/gate-audit` (decisions D-122 to D-127), not yet committed. Step 7 (remove direct access) is merged (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6
-(MCP server) is done on `feat/step-6`, PR into `develop`.
+Next: spike Neon branching, then step 10 (Neon client and shadow executor). Step 9 (policy rules) is done on `feat/step-9`
+(decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
+(PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6 (MCP server) is done on `feat/step-6`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
@@ -24,6 +25,24 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `list_tables`, `describe_table`, `query_database` recorded as `executed`; `docker ps` was denied; the only server the agent sees is `blastproof`.
   GATE-01 is ticked below.
 - Run `workspace.py create --force` again, or edit `settings.json` by hand, on workspaces made before this change.
+
+### Step 9, done 2026-10-25
+- `app/services/policy.py` (`load_policy`, `check_columns`, `evaluate_pass_one`, `evaluate_pass_two`, `Policy.is_sensitive`,
+  `PolicyFileError`, `PolicyFactsError`), `backend/policies/rules.yaml` (the 15 rules of backend plan section 9 plus
+  "No side-effect functions", D-128), `STATEMENT_TYPES` in the classifier, `policy_file` in `Settings` (`POLICY_FILE`, optional).
+  `create_app` loads the file into `app.state.policy`; a bad file stops startup. Pure code with no I/O at evaluation time.
+- Tests: `test_policy_loading.py` (75), `test_policy.py` (147), `test_policy_scenarios.py` and `test_policy_pass_two.py` (50,
+  the pass-2 file needs Docker). `test_classifier_scenarios.py` and `test_seed_counts.py` now read `rules.yaml` instead of
+  their own mirrors. Removing each of 14 guards in turn (duplicate-key loader, closed keys, pass-1 skip, strictest wins,
+  positive allow, fast-lane checks, missing facts, exact fraction, cascades, unique names, condition allowlist) turned a test red;
+  one test passed for the wrong reason and was fixed.
+- Done-when: each rule, the pass-1 skip and strictest-wins have tests; every SQL-decidable incident is blocked in pass 1;
+  the Replit delete is `review` (BE-45's rule side) in pass 2. By hand: uvicorn starts with the shipped file and refuses a copy
+  with a misspelled key, naming the rule and key.
+- Requirements ticked: BE-28, BE-36, BE-37, BE-38, BE-40, BE-41, BE-43, BE-44, SEC-10, SEC-11, ARCH-11, ARCH-12, DW-B09. Left open
+  (the rules half is done): BE-39 (graph routing, step 14), BE-42 (the shadow run calls `check_columns`, step 10), BE-45
+  (measured diff, step 10), EVAL-05 (steps 10, 12, 13), OBS-07 (steps 13, 14), ARCH-17 and SEC-14 (masking reaches logs, prompts
+  and the API in steps 10 to 17).
 
 ### Step 8, done 2026-10-25
 - `app/core/clock.py` (`Clock`, `SystemClock`, `FrozenClock`), `app/services/classifier.py` (`classify`, pure and
@@ -400,20 +419,16 @@ created at deploy time straight into Fly.io secrets (D-058).
 - `FastAPI(version="0.1.0")` duplicates the version in `pyproject.toml`.
 - Step 8: `sql_display` and `pinned_sql` stay null on reads until step 17 wires the classifier in; reads also stay on
   `check_read` until then. When they switch, a read using a function that is not on the allowlist is refused (D-124).
-- Step 9 proposals from step 8 (D-124): a `side_effect_function: true` key that blocks (no section 9 rule blocks
-  `terminate-backends` today), and a clearer reason for `unknown` than "Unparseable SQL".
+- Step 9 known limits (D-131, pinned by tests): removing a
+  block rule from `rules.yaml` removes that block (no code backstop); "Small insert" matches a CTE DELETE feeding an INSERT of
+  10 rows or fewer. Step 10 must call `check_columns` with the company database's columns and supply `rows_before` per table
+  and derived-group counts for inserted rows (D-132).
 - Step 8: `ORDER BY` on a non-unique key with `LIMIT` still picks tied rows differently; step 16's key-set check catches it as
   drift. A bare `'now'` with no cast in a comparison is not detected (D-122). `COMMIT PREPARED` and `RELEASE SAVEPOINT` do not
   parse in sqlglot, so they are blocked as unknown.
 - Step 8: the frozen `Clock` must pin to exactly 2026-10-01T00:00:00Z. Only `last_login_at` has
   a margin around its cutoff; other expected counts (e.g. tickets closed a year ago) are exact
   only at that instant (D-079).
-- Steps 8-9: no rule in backend plan §9 blocks a side-effect function such as
-  `pg_terminate_backend`; as written it would go to review and be shadow-run. `labeled.yaml`
-  (`terminate-backends`) expects block. Step 6's temporary `check_read` refuses them (D-103); keep
-  that list when the classifier replaces it.
-- Step 9: `tests/test_seed_counts.py` repeats the `users.paying` derived group in
-  `DERIVED_GROUPS`; switch it to read `policies/rules.yaml`.
 - Step 10: `CREATE DATABASE ... TEMPLATE` does not copy database-level rights, so
   `FakeNeonClient` must grant CONNECT (reader) and CONNECT, TEMPORARY (writer) on each
   `shadow_*` database, as `seed.py` does for `company_main`.
@@ -466,7 +481,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 
 ## Stage 2: judging parts
 - [x] 8. Classifier
-- [ ] 9. Policy rules
+- [x] 9. Policy rules
 - [ ] Spike: Neon branching
 - [ ] 10. Neon client and shadow executor
 - [ ] 11. Knowledge and RAG, swappable vector store
