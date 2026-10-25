@@ -22,13 +22,17 @@ from app.core.errors import (
     validation_error_handler,
 )
 from app.core.request_id import RequestIdMiddleware
+from app.db.models import EMBEDDING_DIMENSIONS
 from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
+from app.services.embeddings import EmbeddingError, build_embedder
+from app.services.knowledge import KnowledgeService
 from app.services.neon import BRANCH_LIFETIME, build_neon_clients, sweep_stale_shadows
 from app.services.policy import load_policy
 from app.services.shadow import ShadowRunner
+from app.services.vectorstores import build_vector_store
 
 logger = structlog.get_logger()
 
@@ -49,13 +53,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     app.state.neon_clients, app.state.engine, older_than=BRANCH_LIFETIME
                 )
             )
+        # Load the embedding model after startup, so the first retrieval does not wait for it.
+        warm_up = None
+        if settings.app_env != "test":
+            warm_up = asyncio.create_task(app.state.embedder.warm_up())
         try:
             yield
         finally:
-            if sweep is not None:
-                sweep.cancel()
-                with suppress(asyncio.CancelledError):
-                    await sweep
+            for task in (sweep, warm_up):
+                if task is not None:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
     for client in app.state.neon_clients.values():
         await client.aclose()
     if app.state.engine is not None:
@@ -121,6 +130,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     url = settings.blastproof_database_url
     app.state.engine = make_engine(url.get_secret_value()) if url is not None else None
     app.state.sessionmaker = make_sessionmaker(app.state.engine) if app.state.engine else None
+
+    # Building the embedder and store loads no model and opens no connection. Only the model's
+    # vector size is checked (from fastembed's list, no download): a mismatch stops startup.
+    app.state.embedder = build_embedder(settings)
+    if app.state.embedder.dimensions != EMBEDDING_DIMENSIONS:
+        raise EmbeddingError(
+            f"EMBEDDING_MODEL {settings.embedding_model!r} makes {app.state.embedder.dimensions}"
+            f"-dimension vectors, but the database column holds {EMBEDDING_DIMENSIONS}."
+        )
+    store = build_vector_store(settings, app.state.sessionmaker)
+    app.state.knowledge = (
+        KnowledgeService(app.state.sessionmaker, app.state.embedder, store)
+        if store is not None and app.state.sessionmaker is not None
+        else None
+    )
 
     # One MCP server per app (D-096). Its single /mcp route joins FastAPI's own router, so unknown
     # paths still get FastAPI's 404 and /mcp stays out of the OpenAPI schema.

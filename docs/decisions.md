@@ -1260,3 +1260,28 @@ existing setting.
 **Decision:** Previewed writes target under 20 s when they touch a few thousand rows, and under 60 s when they touch most of a table. `SHADOW_TIMEOUT_SECONDS` stays 60. The 246k-row Replit delete measured 44 s on Neon (D-142).
 **Why:** Over half of that time is moving 246k rows across the network and computing both sides on a small Neon compute, which only a plan change (not downloading every changed row) would cut. Small writes are not affected. Revisit when step 16 shows what the commit reads from `preview_rows`.
 **Rejected for now:** not downloading every changed row (changes what the drift check reads).
+
+## D-144 · 2026-10-26 · Chunks carry several table tags (migration 0002)
+**Decision:** `knowledge_chunks.table_name` became `table_names text[]` with a GIN index; retrieval uses `table_names && :tables`.
+**Why:** An upload can be about several tables; one column forced a choice.
+
+## D-145 · 2026-10-26 · VectorStore takes batches and has `clear()`
+**Decision:** `upsert(items)` takes a list of `VectorItem`; `clear()` supports reindex. `PgVectorStore` ignores item metadata (Postgres is the source of truth) and sets `hnsw.iterative_scan = strict_order` for filtered searches.
+**Why:** One round trip per chunk was wasteful; a filtered HNSW scan can return fewer than `k` rows (pgvector docs).
+
+## D-146 · 2026-10-26 · Embedding model: lazy load, cache folder, startup check
+**Decision:** The model loads on first use (and in a background warm-up outside tests); `EMBEDDING_CACHE_DIR` defaults to `backend/.cache/fastembed` (git-ignored). Startup checks the model's dimension from fastembed's static list and fails on a mismatch. `fastembed` stays at 0.9.0.
+**Why:** Offline startup (TEST-07); the system temp folder can be wiped.
+
+## D-147 · 2026-10-26 · Retrieval failure raises `RetrievalError`; retrieval is capped at 10 s
+**Decision:** Any embedder, store or database failure (or the cap) raises `RetrievalError` with the exception class only; tagged chunks are not returned alone. Step 14 should route it to at least review, like a judge failure.
+**Why:** Fail closed; messages can hold raw values.
+
+## D-148 · 2026-10-26 · Retrieval returns the top 10 similar chunks, not 5 (plan changed)
+**Finding:** With the real model, the business-rules chunk ranked 5th for "Clean up inactive users" but 6th and 7th for "Delete the test account test@example.com" and "Remove the test users". The plan's "same for every scenario that deletes from users" failed at k=5.
+**Decision:** `SIMILAR_CHUNKS = 10`. All eight users-delete scenarios now retrieve the rules (worst rank 7). Tagged chunks are still all returned.
+**Why:** Cheapest fix; the judge reads a few more short chunks. **Rejected:** a global-rules tag (needs source-specific logic) and a richer query (changes the retrieve interface). Revisit if the knowledge base grows and the rules fall below rank 10.
+
+## D-149 · 2026-10-26 · Knowledge text is untrusted input to prompts
+**Decision:** Steps 12 and 13 mask retrieved chunks with `mask_text` and wrap them as quoted data before any prompt; step 19 checks upload size before reading the body.
+**Why:** Uploads can contain instructions aimed at the judge. Step 11 stores text as written.

@@ -117,7 +117,7 @@ def build_mcp_server(
             Field(description="A name from list_tables.", min_length=1, max_length=MAX_NAME_CHARS),
         ],
     ) -> TableDescription:
-        """Show one table's columns, their types and whether they can be null."""
+        """Show one table's columns, their types, whether they can be null, and any notes."""
         return await guarded(
             "describe_table",
             lambda ctx: agent_calls.describe_table(ctx, table),

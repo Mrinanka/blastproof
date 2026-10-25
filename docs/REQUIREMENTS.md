@@ -40,7 +40,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
 | [ ] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
 | [ ] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
-| [ ] | ARCH-20 | Knowledge text lives in Postgres (`knowledge_chunks`); vector stores hold only vectors. | CL; BE §5, B11 | B11 | TEST-12 |
+| [x] | ARCH-20 | Knowledge text lives in Postgres (`knowledge_chunks`); vector stores hold only vectors. | CL; BE §5, B11 | B11 | TEST-12 |
 | [x] | ARCH-21 | The backend never imports from `demo_company/`. | CL; BE B1; D-047 | B1 (config), All | Ruff TID251 (banned imports) in CI |
 | [ ] | ARCH-22 | The dashboard holds no business logic; the backend enforces every permission. | CL; FE §1, §11 | All F steps, B19 | TEST-03; MVP-F06 |
 
@@ -81,7 +81,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | TEST-09 | A Playwright e2e test runs against the real local backend with `seed-demo-actions` data: log in as demo user 1, open the seeded pending action, see headline and numbers, reject with a reason, find it in History as rejected with your name, then as demo user 2 confirm it is absent and its URL shows "not found". | FE §12 | F7-F9 (after B20) | OPS-06 (nightly/manual workflow) |
 | [ ] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
 | [ ] | TEST-11 | No snapshot tests and no mocking of the whole backend in the frontend. | FE §12 | F steps | *code review* |
-| [ ] | TEST-12 | One contract test suite runs against every `VectorStore` implementation. | BE B11 | B11 | pytest |
+| [x] | TEST-12 | One contract test suite runs against every `VectorStore` implementation. | BE B11 | B11 | pytest |
 | [ ] | TEST-13 | A manual weekly end-to-end run of the demo in Claude Code against real Neon, reviewed in the dashboard. | BE §14; FE §12 | from B17 / F7 | Manual |
 | [ ] | TEST-14 | The Claude Code hook has integration tests (hook format changes across versions). | SPEC §19 | B18 | DW-B18 |
 
@@ -102,7 +102,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-09 | Company roles: `blastproof_reader` (SELECT only) and `blastproof_writer` (SELECT, INSERT, UPDATE, DELETE on company tables, plus INSERT and SELECT on `blastproof.applied_actions`; no DDL, no role changes). | BE B3, §12 | B3 | *integration test of each role's privileges* |
 | [x] | BE-10 | `seed.py --target local` (run from host or CI, not an init script) builds `company_template`, closes its connections, locks it (`ALLOW_CONNECTIONS false`) and clones `company_main` from it. | BE B3; D-019 | B3 | DW-B03 |
 | [ ] | BE-11 | Step 3 loads the seed into local `company-db` and Neon `blastproof-company-dev` (Claude asks before the dev load); the owner loads Neon `blastproof-company` at deploy time, after the command prints the target and asks for confirmation; Claude Code never runs that load. | BE B3, §15; D-003, D-054 | B3, Deploy | DW-B03; OPS-11 |
-| [ ] | BE-12 | `schema_docs.md` has one `## table: <name>` heading per table and a `## business rules` section (e.g. paying = pro or enterprise; enterprise must never be deleted). | BE B3 | B3 | DW-B11 (rules retrieved) |
+| [x] | BE-12 | `schema_docs.md` has one `## table: <name>` heading per table and a `## business rules` section (e.g. paying = pro or enterprise; enterprise must never be deleted). | BE B3 | B3 | DW-B11 (rules retrieved) |
 | [x] | BE-13 | SQLAlchemy models for the eleven tables in BE §5 (`users`, `login_attempts`, `agents`, `systems`, `actions`, `audit_events`, `preview_rows`, `before_images`, `hook_events`, `knowledge_chunks`, `chunk_embeddings`) with the listed columns. | BE §5, B4 | B4 | DW-B04 |
 | [x] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
 | [x] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
@@ -154,11 +154,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-56 | A table without a primary key fails the shadow run, so the write is blocked. | BE B10; D-004 | B10 | *integration test* |
 | [x] | BE-57 | At most `MAX_CONCURRENT_SHADOWS` (2) shadow runs at once; a write waits up to 10 s for a slot, then fails closed with the `busy` message; each run times out at 30 s. | BE B10 | B10 | *integration test* |
 | [x] | BE-58 | The shadow branch is always deleted in a `finally`; on startup, under an advisory lock, leftover `shadow-*` branches older than 15 minutes are deleted. | BE B10 | B10 | *unit test with FakeNeonClient* |
-| [ ] | BE-59 | Knowledge chunks come from an automatic schema scan (one chunk per table: columns, types, FKs), `schema_docs.md` split by heading (`## table: <name>` tags the table), and uploads split the same way with an optional `tables` tag. | BE B11 | B11 | DW-B11 |
-| [ ] | BE-60 | Retrieval returns all chunks tagged with the affected tables plus the top 5 by vector similarity to the intent, de-duplicated; the chunks used are saved to `actions.knowledge_used`. | BE B11 | B11 | DW-B11 |
-| [ ] | BE-61 | `Embedder.embed(texts)` defaults to fastembed `BAAI/bge-small-en-v1.5` (384 dims); stores never embed. | BE B11 | B11 | *unit test with fake embedder* |
-| [ ] | BE-62 | `VectorStore` has `upsert`, `search(vector, k, tables=None) -> [(chunk_id, score)]` and `delete`; results are chunk IDs and text is read from Postgres; `PgVectorStore` is the default (`VECTOR_STORE`). | BE B11 | B11 | TEST-12 |
-| [ ] | BE-63 | A `reindex` command rebuilds the active vector store from `knowledge_chunks`. | BE B11 | B11 | *integration test* |
+| [x] | BE-59 | Knowledge chunks come from an automatic schema scan (one chunk per table: columns, types, FKs), `schema_docs.md` split by heading (`## table: <name>` tags the table), and uploads split the same way with an optional `tables` tag. | BE B11 | B11 | DW-B11 |
+| [x] | BE-60 | Retrieval returns all chunks tagged with the affected tables plus the top 10 by vector similarity (D-148) to the intent, de-duplicated; the chunks used are saved to `actions.knowledge_used`. | BE B11 | B11 | DW-B11 |
+| [x] | BE-61 | `Embedder.embed(texts)` defaults to fastembed `BAAI/bge-small-en-v1.5` (384 dims); stores never embed. | BE B11 | B11 | *unit test with fake embedder* |
+| [x] | BE-62 | `VectorStore` has `upsert`, `search(vector, k, tables=None) -> [(chunk_id, score)]` and `delete`; results are chunk IDs and text is read from Postgres; `PgVectorStore` is the default (`VECTOR_STORE`). | BE B11 | B11 | TEST-12 |
+| [x] | BE-63 | A `reindex` command rebuilds the active vector store from `knowledge_chunks`. | BE B11 | B11 | *integration test* |
 | [ ] | BE-64 | The impact engine computes deterministic facts in code: affected rows by important column, derived groups, cascades and any percentage needed. | BE B12 | B12 | DW-B12 |
 | [ ] | BE-65 | The summary model (`SUMMARY_MODEL`, Gemini Flash by default) writes an `ImpactReport` (headline, key points, concerns) via structured output from the facts and retrieved knowledge, told to use only the given numbers, as digits. | BE B12 | B12 | DW-B12 |
 | [ ] | BE-66 | Summary and judge prompts see only `sql_display` and masked samples. | BE B12, §12 | B12, B13 | *unit test on prompt contents* |
@@ -387,7 +387,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B08 | About 40 table-driven classifier tests pass, including CTE writes, `UPDATE … FROM`, `WHERE true`, pinning with a frozen clock, multi-statement, transaction control, `blastproof` schema access, unordered LIMIT and a function call in fast-lane VALUES; classifier-relevant incident scenarios pass. | BE B8 | B8 | Unit tests |
 | [x] | DW-B09 | Unit tests cover each rule, pass-1 skip semantics and strictest-wins; every incident scenario decidable from SQL alone is blocked in pass 1. | BE B9 | B9 | Unit tests |
 | [x] | DW-B10 | A DELETE of users inactive 6 months (clock frozen at `ANCHOR_DATE`) returns exact counts incl. cascaded `orders`/`order_items` and the SET NULL on `invoices`, with correct breakdowns and derived groups matching `incidents.yaml`; runs with `FakeNeonClient` in CI (incl. two previews in a row) and with `NeonApiClient` once by hand; a test proves identical row hashes in shadow run and commit across session time zones. | BE B10 | B10 | Integration tests + manual Neon run |
-| [ ] | DW-B11 | An action deleting users retrieves the "paying customer" and "enterprise contracts" rules. | BE B11 | B11 | Integration test |
+| [x] | DW-B11 | An action deleting users retrieves the "paying customer" and "enterprise contracts" rules. | BE B11 | B11 | Integration test |
 | [ ] | DW-B12 | The report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number. | BE B12 | B12 | Unit tests + manual read |
 | [ ] | DW-B13 | Tests show the judge escalates a risky allowed action, cannot downgrade a blocked one, a raising or timing-out judge produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change. | BE B13 | B13 | Unit tests |
 | [ ] | DW-B14 | A test runs one write through every branch (fast lane, allow, review→approve, review→reject, block, judge failure→review, LLM cost cap exceeded→review); another proves the status after resume is `approved`, not `awaiting_review`. | BE B14 | B14 | Integration tests |

@@ -3,6 +3,9 @@
     uv run python -m app.cli create-user --email you@example.com --display-name "You" --role admin
     uv run python -m app.cli create-agent --owner-email you@example.com --name claude-code
     uv run python -m app.cli preview-sql --sql "DELETE FROM ..." --confirm-project <project name>
+    uv run python -m app.cli knowledge-scan
+    uv run python -m app.cli knowledge-ingest --file ../demo_company/schema_docs.md [--tables a,b]
+    uv run python -m app.cli reindex
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -11,6 +14,9 @@ stored.
 preview-sql is the one manual Neon run (step 10): it makes a real branch of the Neon project, runs
 the statement there in a rolled-back transaction and prints counts and timings only (no rows, no
 SQL). It refuses unless the project's name equals --confirm-project.
+The knowledge commands (step 11) fill and rebuild the knowledge base: knowledge-scan reads the
+company database's schema, knowledge-ingest splits one Markdown file into chunks (the source is
+the file name unless --source is given), reindex recomputes every vector. They print counts only.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -18,7 +24,9 @@ import argparse
 import asyncio
 import getpass
 import sys
+import time
 import uuid
+from pathlib import Path
 
 from app.config import Settings
 from app.core.clock import SystemClock
@@ -27,9 +35,12 @@ from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
 from app.services.classifier import Kind, classify
+from app.services.embeddings import build_embedder
+from app.services.knowledge import DocumentError, KnowledgeService
 from app.services.neon import NeonApiClient, neon_client_for
 from app.services.policy import load_policy
 from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowRunner
+from app.services.vectorstores import build_vector_store
 
 
 class CliError(Exception):
@@ -57,6 +68,13 @@ def _parser() -> argparse.ArgumentParser:
     preview.add_argument(
         "--confirm-project", required=True, help="The Neon project's name; it must match exactly"
     )
+
+    commands.add_parser("knowledge-scan", help="Read the company schema into the knowledge base")
+    ingest = commands.add_parser("knowledge-ingest", help="Add one Markdown file as knowledge")
+    ingest.add_argument("--file", required=True, type=Path)
+    ingest.add_argument("--source", help="Name of the source (default: the file name)")
+    ingest.add_argument("--tables", default="", help="Comma-separated tables to tag every chunk")
+    commands.add_parser("reindex", help="Recompute every vector from the stored chunk text")
     return parser
 
 
@@ -139,6 +157,39 @@ async def _preview(settings: Settings, sql: str, confirm_project: str) -> str:
     return chr(10).join(lines)
 
 
+async def _knowledge(settings: Settings, args: argparse.Namespace) -> str:
+    """Counts only: no chunk text, file content, URL or key reaches the terminal."""
+    url = settings.blastproof_database_url
+    if url is None:
+        raise CliError(
+            "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
+        )
+    engine = make_engine(url.get_secret_value())
+    try:
+        sessionmaker = make_sessionmaker(engine)
+        store = build_vector_store(settings, sessionmaker)
+        assert store is not None
+        service = KnowledgeService(sessionmaker, build_embedder(settings), store)
+        started = time.perf_counter()
+        if args.command == "knowledge-scan":
+            count = await service.scan(settings)
+            what = f"Scanned the company schema: {count} table chunks"
+        elif args.command == "knowledge-ingest":
+            try:
+                data = args.file.read_bytes()
+            except OSError:
+                raise CliError("The file could not be read.") from None
+            tables = [t for t in args.tables.split(",") if t.strip()]
+            count = await service.ingest(args.source or args.file.name, data, tables)
+            what = f"Ingested {count} chunks"
+        else:
+            count = await service.reindex()
+            what = f"Reindexed {count} chunks"
+        return f"{what} in {round(time.perf_counter() - started, 1)} s."
+    finally:
+        await engine.dispose()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = Settings()
@@ -148,6 +199,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "preview-sql":
             print(asyncio.run(_preview(settings, args.sql, args.confirm_project)))
             return 0
+        if args.command in ("knowledge-scan", "knowledge-ingest", "reindex"):
+            print(asyncio.run(_knowledge(settings, args)))
+            return 0
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
@@ -156,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             asyncio.run(_run(args, settings.blastproof_database_url.get_secret_value(), password))
         )
-    except (CliError, auth_service.AccountError, WrongAppRoleError) as exc:
+    except (CliError, DocumentError, auth_service.AccountError, WrongAppRoleError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:  # one line, never the message: it may hold a URL

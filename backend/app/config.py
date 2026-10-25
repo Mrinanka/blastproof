@@ -12,6 +12,8 @@ from app.core.security import MIN_SECRET_BYTES
 
 DEFAULT_POLICY_FILE = Path(__file__).resolve().parent.parent / "policies" / "rules.yaml"
 
+DEFAULT_EMBEDDING_CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "fastembed"
+
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
@@ -61,6 +63,12 @@ class Settings(BaseSettings):
     # The write rules (step 9), read once at startup. Optional: tests point it at a bad file.
     policy_file: Path = DEFAULT_POLICY_FILE
 
+    # Knowledge and RAG (step 11). The model is downloaded once into the cache folder (outside the
+    # system temp folder, which can be wiped). Only pgvector exists until QdrantStore is built.
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_cache_dir: Path = DEFAULT_EMBEDDING_CACHE_DIR
+    vector_store: Literal["pgvector"] = "pgvector"
+
     # Tunables from backend plan §11. URLs, secrets and providers come with the step that uses them.
     review_wait_seconds: int = 20
     status_max_wait_seconds: int = 50
@@ -98,7 +106,15 @@ class Settings(BaseSettings):
         # backend/.env holds empty placeholders until the owner fills them in.
         return None if value == "" else value
 
-    @field_validator("public_base_url", "company_connection_profile", "neon_client", mode="before")
+    @field_validator(
+        "public_base_url",
+        "company_connection_profile",
+        "neon_client",
+        "embedding_model",
+        "embedding_cache_dir",
+        "vector_store",
+        mode="before",
+    )
     @classmethod
     def _empty_is_default(cls, value: object, info: ValidationInfo) -> object:
         assert info.field_name is not None

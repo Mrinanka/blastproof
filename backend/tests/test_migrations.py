@@ -96,6 +96,24 @@ def test_embeddings_have_a_cosine_hnsw_index(migrated_db: str) -> None:
     assert "USING hnsw (embedding vector_cosine_ops)" in indexdef[0]
 
 
+def test_knowledge_tags_are_an_array_with_a_gin_index(migrated_db: str) -> None:
+    with psycopg.connect(on_database(BLASTPROOF_ADMIN_URL, migrated_db)) as conn:
+        indexdef = conn.execute(
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'knowledge_chunks'"
+            " AND indexname = 'ix_knowledge_chunks_table_names'"
+        ).fetchone()
+        columns = dict(
+            conn.execute(
+                "SELECT column_name, data_type FROM information_schema.columns"
+                " WHERE table_name = 'knowledge_chunks'"
+            ).fetchall()
+        )
+    assert indexdef is not None
+    assert "USING gin (table_names)" in indexdef[0]
+    assert columns["table_names"] == "ARRAY"
+    assert "table_name" not in columns
+
+
 def test_append_only_trigger_is_installed(migrated_db: str) -> None:
     with psycopg.connect(on_database(BLASTPROOF_ADMIN_URL, migrated_db)) as conn:
         row = conn.execute(
