@@ -632,3 +632,36 @@ is the project's "fail closed" rule applied to configuration: when unsure, refus
 
 **What I rejected and the limits.** Checking at startup that the columns exist in the real database:
 startup has to work offline, so that check is a pure function that step 10's preview will call.
+
+## Spike: Neon branching
+
+### 1. Measure first, and measure the whole preview, not just the branch
+
+**What I did.** Before writing the Neon client I ran 20 real create, connect, query, delete cycles on the
+dev project and timed each stage. Five of them also ran a preview-shaped workload: hash all 11 tables,
+run the delete in a transaction, diff, roll back. The branch is usable at about 5 s (p50 4.99, p95 5.16),
+but a whole preview is about 14 s.
+
+**Why.** "Branches are fast" is true and misleading: the branch is only a third of the wait. If I had
+only timed the create call, the latency target in the spec would have been wrong by a factor of three.
+The measurement shows where the time really goes (hashing), so step 10 optimises the right thing.
+
+**What I rejected and the limits.** A warm, pre-created branch to hide the 5 s; it adds cost, cap pressure
+and stale data, and the MVP does not need it. Timings are from a dev laptop; Fly in the same region
+should be quicker, so the numbers are an upper bound.
+
+### 2. Build the connection ourselves, use the direct endpoint, and keep two cleanups
+
+**What I did.** Neon does not return a connection string when the parent has several roles, so the client
+builds one from the branch's host plus our own writer role, password and database. It uses the direct
+endpoint, not the pooled one, because a shadow run needs session state and a multi-statement transaction.
+Each shadow branch gets an `expires_at` of 15 minutes (the API accepts it) and the startup cleanup stays.
+
+**Why.** The free plan allows 10 branches, and a leaked one counts until it is really gone. If leaks fill
+the cap, every write fails closed, which is safe but makes the product useless. Two independent cleanups
+(Neon's expiry and our own sweep) mean one failing does not do that. Using our own role also keeps the
+credential rule: only the backend knows the writer password.
+
+**What I rejected and the limits.** Relying on `expires_at` alone: its deletion delay is not documented
+and I did not measure it. I also could not prove that the pooled endpoint breaks session state, because
+the test endpoint had pooling off; I chose direct on design grounds, not on a failed test.

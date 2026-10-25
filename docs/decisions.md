@@ -1211,3 +1211,13 @@ existing setting.
 ## D-132 · 2026-10-25 · Column check is a pure function; startup does not query
 **Decision:** `check_columns(policy, columns_by_table)` raises `PolicyFileError` naming a missing table or column in `important_columns`, `derived_groups` or `sensitive_columns`. Startup stays offline (TEST-07), so it only validates the file's shape; step 10's shadow run reads `information_schema` and calls `check_columns`, failing closed. An integration test runs it against `company_main`.
 **Why:** The plan said "startup validates that every column exists", but startup must not touch the network or a database. The check is the same; it runs where the connection already exists.
+
+## D-133 · 2026-10-25 · Neon branching: how step 10 talks to Neon, and the latency target
+**Decision:** Build the shadow DSN ourselves from the branch's `endpoints[0].host` and the writer role of `COMPANY_DB_WRITER_URL` (the API returns no `connection_uris` when the parent has several roles). Poll the create response's operations, then retry the first connect briefly (about 2 s). Set `expires_at` (now + 15 min) on every shadow branch and keep the startup cleanup. Map 422 `BRANCHES_LIMIT_EXCEEDED` to busy/failed; treat 204 on delete as success. NFR-03 target: a previewed write is ready for review in under 20 s on the demo database (measured p50 5.0 s to a usable branch, about 14 s for a whole preview, from the dev machine).
+**Why:** Measured in `spikes/neon_branching.md` on `blastproof-company-dev` (20 runs). The expiry deletion delay is undocumented and unmeasured, and a leaked branch counts against the cap of 10, so two cleanups are safer than one. The 30 s shadow timeout leaves room over the 14 s p50.
+**Rejected:** a warm pre-created branch (cost, cap pressure, stale data); a target under 5 s (hashing alone takes 3.3 s).
+
+## D-134 · 2026-10-25 · Shadow runs use the direct endpoint only
+**Decision:** `NeonApiClient` connects to the direct endpoint. Commits on main do too.
+**Why:** The shadow run needs session temp tables, `TimeZone` and a multi-statement transaction. The spike did not prove that the pooled endpoint breaks them: the test endpoint had `pooler_enabled: False` and a single client kept its session state. So the choice rests on design grounds, not a failed test.
+**Rejected:** the pooled endpoint; re-testing it with pooling enabled (it would change a Neon setting and the answer would not change the design).

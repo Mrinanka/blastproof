@@ -357,7 +357,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [x] | SPIKE-01 | MCP spike: mount path (`streamable_http_app()` serves at `/mcp`), lifespan and `session_manager.run()`, stateless vs session mode, how a tool reads request data, and Claude Code's MCP tool timeout vs the 50 s long poll. | BE §6, B6; WF Part 3 | before B6 | Spike output pasted; decisions.md |
 | [x] | SPIKE-02 | Hook spike: matcher tool names (Read, Grep, Glob, MultiEdit, NotebookEdit), default hook timeout and whether a timeout fails open, `permissions.deny` path syntax, hook snapshot at startup, `disableAllHooks` and settings precedence, behaviour in bypass-permissions mode. | WF Part 3; BE B7, B18; SPEC §9 | before B7 | Spike output pasted |
-| [ ] | SPIKE-03 | Neon spike: create-branch payload, waiting on operations, non-owner role connection URIs, branch `expires_at`, free-plan caps, default Postgres version, pooled vs direct endpoint with asyncpg, project-scoped API keys, and measured create-to-first-query p50/p95. | BE §2, B10 | before B10 | Spike output; sets NFR-03 |
+| [x] | SPIKE-03 | Neon spike: create-branch payload, waiting on operations, non-owner role connection URIs, branch `expires_at`, free-plan caps, default Postgres version, pooled vs direct endpoint with asyncpg, project-scoped API keys, and measured create-to-first-query p50/p95. | BE §2, B10 | before B10 | Spike output; sets NFR-03 |
 | [ ] | SPIKE-04 | LangGraph spike: psycopg 3 setup (`autocommit=True`, `dict_row`, plain URL), `setup()` from an Alembic migration as `blastproof_owner`, and `interrupt()` re-running its node on resume. | BE B14 | before B14 | Spike output pasted |
 
 ## NFR: non-functional targets (spec §10)
@@ -366,7 +366,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [ ] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
 | [ ] | NFR-02 | Fast-lane writes complete in under 300 ms of Blastproof time. | SPEC §10; BE §17; D-007 | B14-B17 | MVP-B02 |
-| [ ] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (aim: under 5 s on a demo-size database). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
+| [ ] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (spike measured p50 5.0 s to a usable branch and about 14 s for a whole preview; target: under 20 s on a demo-size database). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
 | [ ] | NFR-04 | Pending approvals survive restarts; no action is lost or applied twice. | SPEC §10; BE §17 | B14-B16 | DW-B15, DW-B16; MVP-B07, MVP-B08 |
 | [ ] | NFR-05 | Several agents and sessions run at once: an integration test runs about 5 writes plus reads concurrently with `FakeNeonClient`; every action ends in the expected state and no more than `MAX_CONCURRENT_SHADOWS` shadow runs overlap. | SPEC §10; BE B17; D-034 | B17 | DW-B17 (concurrency test) |
 | [ ] | NFR-06 | Runs within free tiers plus LLM usage, under $100 per month at demo scale. | SPEC §10, §12 | Deploy | *monthly bill check* |

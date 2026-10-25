@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: spike Neon branching, then step 10 (Neon client and shadow executor). Step 9 (policy rules) is done on `feat/step-9`
+Next: step 10 (Neon client and shadow executor). The Neon branching spike is done on `feat/step-9` (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
 (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6 (MCP server) is done on `feat/step-6`.
 
@@ -25,6 +25,14 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `list_tables`, `describe_table`, `query_database` recorded as `executed`; `docker ps` was denied; the only server the agent sees is `blastproof`.
   GATE-01 is ticked below.
 - Run `workspace.py create --force` again, or edit `settings.json` by hand, on workspaces made before this change.
+
+### Spike: Neon branching, done 2026-10-25
+- Throwaway code and findings in `spikes/`: `neon_branching.py` (`probe`, `latency`, `cleanup`) and `neon_branching.md`. Dev project only;
+  no `backend/app` change; 848 unit tests and ruff still pass; no `spike-*` branches left.
+- Findings: no `connection_uris` (build the DSN from the endpoint host); branch usable p50 5.0 s / p95 5.2 s, whole preview about 14 s;
+  `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
+- Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
+- Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
 
 ### Step 9, done 2026-10-25
 - `app/services/policy.py` (`load_policy`, `check_columns`, `evaluate_pass_one`, `evaluate_pass_two`, `Policy.is_sensitive`,
@@ -350,9 +358,8 @@ created at deploy time straight into Fly.io secrets (D-058).
 - Accepted dev limitation (D-002): on the dev machine, the agent could reach the dev `.env` by a
   route the hook and `permissions.deny` miss. It only unlocks the dev company project. Full
   isolation is verified on the deployed demo.
-- Open until spikes run: the latency target for previewed writes and whether asyncpg prepared
-  statements work through Neon's pooled endpoint (Neon spike; the plan assumes the direct
-  endpoint), and the Claude Code MCP tool timeout vs the 50 s long poll (MCP spike, done).
+- Pooled Neon endpoint under concurrent clients is untested (D-134); step 10 uses the direct endpoint. The MCP long-poll
+  timeout was settled by the MCP spike.
 - Landing page CSP allows `'unsafe-inline'` scripts (D-028); verify the real headers in F1.
 - Confirm `blastproof-company` and `blastproof-app` are on Postgres 18 in `aws-us-east-2` like the
   dev project (D-057); a project's version cannot change later.
@@ -482,7 +489,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 ## Stage 2: judging parts
 - [x] 8. Classifier
 - [x] 9. Policy rules
-- [ ] Spike: Neon branching
+- [x] Spike: Neon branching
 - [ ] 10. Neon client and shadow executor
 - [ ] 11. Knowledge and RAG, swappable vector store
 - [ ] 12. Impact engine
