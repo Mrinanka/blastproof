@@ -1154,3 +1154,8 @@ existing setting.
 **Why:** Haiku declined to call Read on a `.env` path at all, so there was no tool result to judge. A check with no result fails closed rather than passing.
 **Rejected:** counting "no tool call" as a pass (proves nothing about the deny rule); a pass-through retry loop.
 
+## D-121 · 2026-10-25 · Gate audit fixes: Docker, connectors, Neon key scan, `check_read` functions
+**Decision:** (1) The demo workspace denies `docker` in Bash and PowerShell, because `docker exec` into `company-db` gives a superuser shell with no password (D-119 named only `python -c`). (2) Its settings set `disableClaudeAiConnectors: true`, so no claude.ai connector (a Neon or Postgres one, say) reaches the agent; `enabledMcpjsonServers` already limits project servers. (3) `workspace.py check` also flags a `NEON_API_KEY` variable. (4) `check_read` refuses `query_to_xml`, `cursor_to_xml` (they run SQL given as text, so they got past the function list), `pg_read_*`, `pg_ls_*` and `pg_stat_file`; `pg_sleep` stays allowed, the 5 s timeout stops it.
+**Why:** Gate audit findings F1 to F4. All are dev-machine guardrails except `check_read`, which runs in production too. They are guardrails, not the boundary: `python -c` against the local passwords still works (D-119), and the deployed demo is the real isolation check.
+**Rejected:** random Compose passwords now (a larger change, left to Deploy); scanning for `neonctl` (it matches the workspace's own deny rule); an allowlist of read functions now (step 8's classifier owns it).
+

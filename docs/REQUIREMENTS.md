@@ -107,14 +107,14 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
 | [x] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
 | [ ] | BE-16 | Action statuses follow the canonical state machine in BE §5; "pending" is never stored; `expired` actions have `decided_by` null. | BE §5 | B6, B14-B16 | *unit test of allowed transitions* |
-| [x] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is mounted in FastAPI so the public path is `/mcp`. | BE §3, B6 | B6 | DW-B06 |
+| [x] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is served by FastAPI at the public path `/mcp` (its route is added to the app, D-096). | BE §3, B6 | B6 | DW-B06 |
 | [ ] | BE-18 | MCP tools `list_tables` (names with one-line descriptions), `describe_table` (columns and types; plus knowledge notes from B11), `query_database` (`sql`, `intent`, optional `retry_of`) and `get_action_status` (`action_id`, optional `wait_seconds` 0-50, default 30). | BE §6, B6 | B6, B11, B17 | DW-B06, DW-B17 |
 | [x] | BE-19 | Middleware checks the agent key on `/mcp` and puts the agent and owner into a `contextvar` (or the SDK's own mechanism) for tools to read. | BE B6 | B6 | *integration test: bad key 401* |
 | [x] | BE-20 | `query_database` reads use `blastproof_reader` with a 5-second statement timeout and a 500-row cap; a read with more than 500 rows (fetch 501 to tell) returns the first 500 plus the `truncated` notice, with no total count. | BE B6, §6, §12; D-039 | B6 | *integration tests for timeout, cap and notice* |
 | [x] | BE-21 | Every `query_database`, `list_tables` and `describe_table` call is recorded in `actions` and `audit_events` with the owner's `user_id` (reads end as `executed`); `get_action_status` creates no action and is only logged; rate-limited writes (SEC-20) are the other exception. | BE B6; D-038 | B6 | DW-B06; *integration test* |
 | [x] | BE-22 | `session_id` is the MCP session ID when the transport provides one, else null. | BE §6 | B6 | *integration test* |
 | [ ] | BE-23 | `/ready` checks that Blastproof's DB, the company DB and the Neon API are reachable; `/health` is liveness only. | BE §6, §13, B6 | B1, B6 | *integration test with a dependency down* |
-| [x] | BE-24 | A demo workspace outside the repo holds no database URL (not in `.env`, not in shell variables) and has `.claude/settings.json` `permissions.deny` rules for the repo's `backend/`, any `.env` and credential files. | BE B7; D-002 | B7 | DW-B07 |
+| [x] | BE-24 | A demo workspace outside the repo holds no database URL (not in `.env`, not in shell variables) and has `.claude/settings.json` `permissions.deny` rules for the repo, any `.env` and credential files. | BE B7; D-002 | B7 | DW-B07 |
 
 ### Safety pipeline (B8-B13)
 
@@ -420,7 +420,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Gate | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | GATE-01 | Stage 1: Claude Code reads the demo DB only through Blastproof. | PROGRESS | after B7 | Gate audit (WF Prompt G) |
+| [x] | GATE-01 | Stage 1: Claude Code reads the demo DB only through Blastproof. | PROGRESS | after B7 | Gate audit (WF Prompt G) |
 | [ ] | GATE-02 | Stage 2: exact diffs and correct retrieval. | PROGRESS | after B13 | Gate audit (WF Prompt G) |
 | [ ] | GATE-03 | Gate 1: the Replit scenario is caught end to end (held for review and approvable via `/docs`). | SPEC §18; PROGRESS | after B17 (approve/reject pulled forward, D-053) | Gate audit (WF Prompt G) |
 | [ ] | GATE-04 | Gate 2: evals green and backend deployed. | SPEC §18; PROGRESS | Stage 4 | Gate audit (WF Prompt G) |

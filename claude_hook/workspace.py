@@ -31,7 +31,13 @@ KEY_VAR = "BLASTPROOF_AGENT_KEY"
 KEY_PATTERN = re.compile(r"bp_[A-Za-z0-9_-]{43}")
 
 # What must not appear in the workspace or its environment (DW-B07).
-SCAN_PATTERNS = ("postgres", "neon.tech", "PGPASSWORD", "DATABASE_URL")
+SCAN_PATTERNS = (
+    "postgres",
+    "neon.tech",
+    "PGPASSWORD",
+    "DATABASE_URL",
+    "NEON_API_KEY",
+)
 _SCAN_TEXT = re.compile("|".join(re.escape(p) for p in SCAN_PATTERNS), re.IGNORECASE)
 _SCAN_BYTES = re.compile("|".join(re.escape(p) for p in SCAN_PATTERNS).encode(), re.IGNORECASE)
 
@@ -76,6 +82,11 @@ def deny_rules(repo: Path) -> list[str]:
         "Edit(.mcp.json)",
         "Edit(//**/.env)",
         "Edit(//**/.env.*)",
+        # `docker exec` into the local databases needs no password (D-121).
+        "Bash(docker)",
+        "Bash(docker *)",
+        "PowerShell(docker)",
+        "PowerShell(docker *)",
     ]
 
 
@@ -84,7 +95,9 @@ def build_files(repo: Path, base_url: str, key: str) -> dict[str, str]:
         "permissions": {
             "deny": deny_rules(repo),
             "blockReadsOutsideWorkingDirectories": True,
-        }
+        },
+        # No claude.ai connector (for example a Neon or Postgres one) reaches the agent (D-121).
+        "disableClaudeAiConnectors": True,
     }
     local = {"env": {KEY_VAR: key}, "enabledMcpjsonServers": ["blastproof"]}
     mcp = {

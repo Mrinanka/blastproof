@@ -70,6 +70,11 @@ REFUSED = [
     ("SELECT dblink_exec('host=x', 'DELETE FROM users')", "side_effect_function"),
     ("SELECT lo_import('/etc/passwd')", "side_effect_function"),
     ("SELECT id FROM users WHERE id IN (SELECT PG_TERMINATE_BACKEND(1))", "side_effect_function"),
+    ("SELECT query_to_xml('select pg_advisory_lock(1)', true, false, '')", "side_effect_function"),
+    ("SELECT cursor_to_xml('c'::refcursor, 1, false, false, '')", "side_effect_function"),
+    ("SELECT pg_read_file('/etc/passwd')", "side_effect_function"),
+    ("SELECT pg_ls_dir('.')", "side_effect_function"),
+    ("SELECT pg_stat_file('postgresql.conf')", "side_effect_function"),
 ]
 
 
