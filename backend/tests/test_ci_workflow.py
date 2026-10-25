@@ -187,6 +187,12 @@ def test_lint_covers_demo_company(ci: dict[Any, Any]) -> None:
     assert all("../demo_company" in run for run in runs)
 
 
+def test_lint_covers_claude_hook(ci: dict[Any, Any]) -> None:
+    runs = [s["run"] for s in steps(ci) if "uv run ruff" in s.get("run", "")]
+    assert len(runs) == 2
+    assert all("../claude_hook" in run for run in runs)
+
+
 def test_migrations_run_after_postgres_and_before_pytest(ci: dict[Any, Any]) -> None:
     # Step 4 (OPS-01). Checked here rather than in REQUIRED_RUN_ORDER, so the exact-message check
     # below keeps its meaning.

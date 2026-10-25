@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: step 7 (remove direct access). The Claude Code hook spike is done on `spike/claude-hook`; step 6
+Next: the gate audit, then step 8. Step 7 (remove direct access) is done on `feat/step-7`. The Claude Code hook spike is done on `spike/claude-hook`; step 6
 (MCP server) is done on `feat/step-6`, PR into `develop`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
@@ -15,6 +15,18 @@ D-095.
 Spike: MCP mounting done 2026-10-25 on `spike/mcp-mounting`, decisions D-096 to D-101.
 Step 6 (MCP server) done 2026-10-25 on `feat/step-6`, decisions D-102 to D-112.
 Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 to D-116.
+
+### Step 7, done 2026-10-25
+- `claude_hook/workspace.py` (`create`, `check`, `verify`; stdlib only) and `claude_hook/README.md`. Workspace at
+  `D:/My Workplace/blastproof-demo` (outside the repo): deny rules for the whole repo and credential files,
+  `blockReadsOutsideWorkingDirectories`, key only in `.claude/settings.local.json`, `.mcp.json` expands it (D-117 to D-119).
+- Tests: 26 new in `test_demo_workspace.py` plus `test_lint_covers_claude_hook`; 487 pass in total. Removing each of 9
+  guards turned a test red. CI and CLAUDE.md lint now cover `claude_hook/`.
+- Done-when, by hand: `check` exits 0 (folder and shell environment); `verify` PASS on environment, canary and the real
+  `backend/.env` (denied). Interactive `/mcp` shows `blastproof` with 4 tools; "how many pro users" gave 459, 7 actions
+  recorded for agent `step7-check`. `verify` uses Sonnet for the deny checks (Haiku never attempts the Read).
+- Requirements ticked: BE-24, DW-B07. Left open: SEC-18 (step 18), ARCH-05, ARCH-16 (Deploy).
+- Accepted: the agent key was pasted into the chat; it unlocks only the local dev data.
 
 ### Spike: Claude Code hook, done 2026-10-25
 - Throwaway code and findings in `spikes/`: `claude_hook.py` (`probe`, about 6 minutes, 36 checks, decoy tree
@@ -371,6 +383,11 @@ created at deploy time straight into Fly.io secrets (D-058).
   `shadow_*` database, as `seed.py` does for `company_main`.
 - Step 6 onward: asyncpg sends unknown URL query parameters to Postgres as settings, so Neon's
   `channel_binding=require` must stay out of the company URLs (keep `sslmode=require`).
+- Step 7: local Docker databases stay reachable from agent code (D-119).
+- Step 7: `workspace.py verify` needs a Claude login and Sonnet, so it runs by hand, never in CI (D-120). A model that
+  declines to attempt the Read makes it fail closed.
+- Step 7: the workspace has no `PreToolUse` hook yet (step 18). A Bash redirect or `python -c` can still read files that
+  the deny rules cover (D-002); the agent key pasted into a chat during the manual check belongs to dev agent `step7-check`.
 - Step 7: trust the demo workspace folder by hand once (interactive sessions hold hooks back until then).
 - Step 18: the hook's block message shows the agent the hook command line; the spike's results are single runs of Haiku.
 - Two labeled actions disagree with rules alone on purpose (`close-one-ticket`,
@@ -404,7 +421,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Spike: MCP mounting
 - [x] 6. MCP server
 - [x] Spike: Claude Code hook
-- [ ] 7. Remove direct access
+- [x] 7. Remove direct access
 - [ ] GATE AUDIT: Claude Code reads the demo DB only through Blastproof
 
 ## Stage 2: judging parts

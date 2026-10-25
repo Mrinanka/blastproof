@@ -497,3 +497,37 @@ or `TABLE users`, is refused. That's the right direction for a safety tool, and 
 check anyway. Rows go back to the agent unmasked. Masking covers logs, prompts and the dashboard,
 and the reader role could read those rows regardless. Each call opens a fresh connection, which on
 Neon costs about 1.7 s of the roughly 3 s a call takes; a pool would fix that.
+
+## Step 7: Remove direct access
+
+**What we built.** A separate folder for Claude Code, outside the repo, that holds no database
+credential. Its only secret is the agent key. Claude Code reaches company data only through
+Blastproof's MCP server. One small script (`claude_hook/workspace.py`) creates the folder, scans it
+and its environment for anything that looks like a database credential, and drives Claude Code to
+prove the guardrails hold.
+
+**Choice 1: the boundary is the missing credential, and the deny rules are only a guardrail.**
+The agent cannot leak or misuse a password it never had. So the real protection is that the
+workspace and its environment contain nothing to find. The deny rules (no reading the repo,
+`.env` files, SSH or Neon tool configs, and no editing its own settings) sit on top. They stop the
+easy, accidental routes, and they matter because an agent that could edit its own settings could
+switch off its own hook. We deny the whole repo, not just `backend/`, because the Docker Compose
+file at the repo root holds the local database passwords. We know the rules leak: a Python one-liner
+can still read a file, and the local Docker databases still have guessable passwords. We wrote that
+down (D-119) instead of pretending otherwise. Full isolation is checked on the deployed demo,
+where the credentials live only in the backend's environment.
+*Rejected:* denying only `backend/`, and counting the deny rules as the security boundary.
+
+**Choice 2: the key travels by stdin, lives in one file, and the checks never print values.**
+The agent key is piped into the script, so it never reaches the command line, shell history or
+screen. It is written only to the workspace's local settings file. `.mcp.json` refers to it as
+`${BLASTPROOF_AGENT_KEY}`, so the shared config never contains the key. The scan and verify
+commands print only file names and variable names. The `.env` check reads a throwaway canary file
+first, and touches the real `.env` only if the canary was denied, because a failed deny would put
+real secrets in front of the model. We checked the one thing the docs did not say (that Claude Code
+fills the header from the settings file) with a fake key before building on it.
+*Rejected:* a key in the command line or `.mcp.json`, and testing the real `.env` first.
+
+**Limits.** The two deny checks use Sonnet because Haiku declines to attempt the read, which proves
+nothing. `verify` needs a Claude login, so it runs by hand and not in CI. A Bash redirect or a
+Python one-liner can still get past the rules; step 18's server-side rules cover part of that.
