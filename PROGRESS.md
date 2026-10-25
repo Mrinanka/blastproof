@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: step 8 (the gate audit passed, fixes in D-121). Step 7 (remove direct access) is merged (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6
+Next: step 9 (policy rules). Step 8 (classifier) is done on `fix/gate-audit` (decisions D-122 to D-127), not yet committed. Step 7 (remove direct access) is merged (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6
 (MCP server) is done on `feat/step-6`, PR into `develop`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
@@ -24,6 +24,26 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `list_tables`, `describe_table`, `query_database` recorded as `executed`; `docker ps` was denied; the only server the agent sees is `blastproof`.
   GATE-01 is ticked below.
 - Run `workspace.py create --force` again, or edit `settings.json` by hand, on workspaces made before this change.
+
+### Step 8, done 2026-10-25
+- `app/core/clock.py` (`Clock`, `SystemClock`, `FrozenClock`), `app/services/classifier.py` (`classify`, pure and
+  synchronous; `classify_in_worker`, a 4-thread `classifier-*` pool with a 2 s cap, returns the duration for step 17 to log),
+  `app/services/masking.py` (email and phone heuristics, `mask_text`), `app/services/sql_functions.py` (time, volatile,
+  side-effect and allowlisted function names). The classifier is standalone: `check_read` and `query_database` are unchanged.
+- Returns kind, statement types, `tables`, `target_tables`, `schemas`, `has_where`, `multi_statement`, `transaction_control`,
+  `non_deterministic`, `volatile_in_where`, `unordered_limit`, `fast_lane_eligible`, `side_effect_functions`,
+  `unknown_functions`, `pinned_sql`, `pinned_values`, `sql_display`. Pinning splices tokenizer spans and re-parses (D-122).
+- Tests: about 300 new, 796 pass in total with 1 skipped (Docker up). `test_classifier.py` has 126 table-driven rows plus the async
+  wrapper (timeout, crash, clock read once, worker thread); `test_classifier_pinning.py`, `test_masking.py`,
+  `test_classifier_scenarios.py` (every SQL scenario in both files against a local mirror of the SQL-only rules),
+  `test_clock.py`, and `test_classifier_postgres.py` (pinned literals have the same `pg_typeof` and value on `company-db`).
+- Found while testing: the first email regex was cubic on a 20 KB run of letters and hung the suite; rewritten and
+  covered by a timing test (D-123). One scenario label was incomplete and was fixed (D-124).
+- Done-when: at least 40 table-driven tests pass (126); the classifier-relevant incident scenarios pass; the named
+  DW-B08 cases are present. Removing each of 13 guards in turn turned a test red.
+- Requirements ticked: BE-25, BE-26, BE-27, BE-29, BE-30, BE-31, BE-32, BE-33, BE-34, BE-35, TEST-06, DW-B08. Left open
+  (the classifier half is done): BE-28, ARCH-01, ARCH-03, ARCH-11, ARCH-12, SEC-10 (step 9 blocks), SEC-14 and ARCH-17
+  (masking reaches logs, prompts and the API in steps 9 to 17), EVAL-05, OBS-02 (step 17 logs the duration with `action_id`).
 
 ### Step 7, done 2026-10-25
 - `claude_hook/workspace.py` (`create`, `check`, `verify`; stdlib only) and `claude_hook/README.md`. Workspace at
@@ -378,6 +398,13 @@ created at deploy time straight into Fly.io secrets (D-058).
 - Test helpers (`NetworkGuard`, database URLs) live in `tests/conftest.py` and are imported
   from it (hence `tests/__init__.py`). Move them to `tests/support.py` when the suite grows.
 - `FastAPI(version="0.1.0")` duplicates the version in `pyproject.toml`.
+- Step 8: `sql_display` and `pinned_sql` stay null on reads until step 17 wires the classifier in; reads also stay on
+  `check_read` until then. When they switch, a read using a function that is not on the allowlist is refused (D-124).
+- Step 9 proposals from step 8 (D-124): a `side_effect_function: true` key that blocks (no section 9 rule blocks
+  `terminate-backends` today), and a clearer reason for `unknown` than "Unparseable SQL".
+- Step 8: `ORDER BY` on a non-unique key with `LIMIT` still picks tied rows differently; step 16's key-set check catches it as
+  drift. A bare `'now'` with no cast in a comparison is not detected (D-122). `COMMIT PREPARED` and `RELEASE SAVEPOINT` do not
+  parse in sqlglot, so they are blocked as unknown.
 - Step 8: the frozen `Clock` must pin to exactly 2026-10-01T00:00:00Z. Only `last_login_at` has
   a margin around its cutoff; other expected counts (e.g. tickets closed a year ago) are exact
   only at that instant (D-079).
@@ -438,7 +465,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] GATE AUDIT: Claude Code reads the demo DB only through Blastproof
 
 ## Stage 2: judging parts
-- [ ] 8. Classifier
+- [x] 8. Classifier
 - [ ] 9. Policy rules
 - [ ] Spike: Neon branching
 - [ ] 10. Neon client and shadow executor

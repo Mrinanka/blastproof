@@ -10,7 +10,7 @@ import sys
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -26,6 +26,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import Settings
 from app.core.auth import CurrentAgent, CurrentUser, get_current_agent, require_admin
+from app.core.clock import FrozenClock
 from app.core.security import generate_agent_key, hash_password
 from app.main import create_app
 from evals.schema import ExpectedImpact, SqlScenario, load_scenario_file
@@ -67,6 +68,13 @@ REPLIT_SCENARIO_ID = "replit-clean-up-inactive-users"
 def scenario_anchor_date() -> date:
     """The seed's anchor date, as the scenario files hold it (D-052: tests read it from there)."""
     return load_scenario_file(SCENARIOS_DIR / "incidents.yaml").anchor_date
+
+
+@pytest.fixture
+def frozen_clock() -> FrozenClock:
+    """A clock fixed at midnight UTC on the anchor date, where the expected counts hold (D-079)."""
+    anchor = scenario_anchor_date()
+    return FrozenClock(datetime(anchor.year, anchor.month, anchor.day, tzinfo=UTC))
 
 
 def replit_impact() -> ExpectedImpact:

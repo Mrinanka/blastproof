@@ -553,3 +553,46 @@ role and the read-only transaction still stop writes on their own. A blocklist a
 new functions, so step 8's classifier should use an allowlist instead.
 *Rejected:* building the allowlist now (step 8 owns it), and blocking `pg_sleep` (it would break
 the timeout test for no extra safety).
+
+
+---
+
+## Step 8: Classifier
+
+### 1. Pin the clock by cutting text, not by rewriting the query
+
+**What I did.** An agent's SQL often says `now()`. If we preview the write now and commit it five
+minutes later, `now()` means two different moments, so the rows could differ. The classifier
+replaces every clock function with one fixed UTC timestamp taken when the call arrived, and that
+pinned text is what gets previewed, approved and committed. I do the swap by finding each clock
+function in the tokenizer's character positions and cutting that exact span out of the original
+string. Then I parse the result again and require it to classify identically, with no clock
+function left. If anything differs, the statement becomes `unknown`, which is blocked.
+
+**Why.** The obvious route is to parse the SQL into a tree, edit the tree and print it back. I
+tried it: the printer turns `current_time` into `CURRENT_TIME()`, which Postgres rejects, and it
+drops the precision from `current_timestamp(3)`. Cutting spans leaves every other byte alone, so
+SQL with no clock function comes back identical. The re-parse is the safety net: any mistake in my
+splicing fails closed instead of silently running different SQL than the owner approved.
+
+**What I rejected and the limits.** Printing the tree back (above); pinning strings like
+`'now'::timestamptz` (they convert implicitly, so I treat them as volatile and block them in a
+WHERE). A bare `'now'` with no cast inside a comparison is not detected yet.
+
+### 2. Allowlists, so anything the classifier does not recognise is treated as dangerous
+
+**What I did.** The classifier only calls a statement a read if its root is a plain SELECT, and
+only calls a function safe if it is a typed function or on a list of about 250 known-safe names.
+Everything else is a write or `unknown`. A DELETE hidden inside a CTE makes the whole statement a
+write. `SELECT pg_terminate_backend(pid)` is a write because the function has a side effect. A
+function the list has never seen is also a write.
+
+**Why.** The alternative is a blocklist ("refuse these bad things"), and a blocklist only works
+until someone finds the thing you forgot. sqlglot, the parser, even reads `START TRANSACTION`,
+`SAVEPOINT` and `NOTIFY` as harmless expressions, so I could not trust its types alone; I look at
+the leading keywords too. With an allowlist, my mistakes make Blastproof stricter, not weaker,
+which fits the rule that a failed check never lets a write through.
+
+**What I rejected and the limits.** A deny list of statement types. The cost of the allowlist is
+that a legitimate function missing from the list gets refused once reads use the classifier (step
+17); the list is generous and easy to extend, and a test covers the common functions.
