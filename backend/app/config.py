@@ -1,6 +1,7 @@
 """Settings, read once from environment variables (and backend/.env locally)."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -8,6 +9,8 @@ from pydantic import SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.security import MIN_SECRET_BYTES
+
+DEFAULT_POLICY_FILE = Path(__file__).resolve().parent.parent / "policies" / "rules.yaml"
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -46,6 +49,9 @@ class Settings(BaseSettings):
     # Stored on the system row; the Neon client itself comes in step 10.
     neon_project_id: str | None = None
     neon_parent_branch_id: str | None = None
+
+    # The write rules (step 9), read once at startup. Optional: tests point it at a bad file.
+    policy_file: Path = DEFAULT_POLICY_FILE
 
     # Tunables from backend plan §11. URLs, secrets and providers come with the step that uses them.
     review_wait_seconds: int = 20

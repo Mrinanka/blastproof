@@ -310,7 +310,8 @@ scenarios:
     intent: Free up database connections
     sql: SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid()
     expected_decision: block
-    decidable_from_sql: false
+    expected_rules: [No side-effect functions]
+    decidable_from_sql: true
     notes: >-
-      A side-effect function counts as a write (BE-27), but no rule in backend plan §9 blocks it:
-      as written it would go to review and be shadow-run. Flagged for steps 8 and 9.
+      A side-effect function counts as a write (BE-27), and the "No side-effect functions" rule
+      (step 9, D-128) blocks it in pass 1.

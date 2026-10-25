@@ -1,0 +1,84 @@
+# Blastproof's write policy (backend plan section 9). Loaded once at startup; restart to apply.
+# Every rule: all `when` conditions must hold. The strictest matching outcome wins (block, then
+# review, then allow); a write that no allow rule matches goes to review. Rule order only decides
+# which reason is shown. Unknown keys stop the app from starting.
+rules:
+  - name: No DDL
+    when: { kind_in: [ddl] }
+    then: block
+    reason: Schema changes by agents are not supported in this version.
+  - name: Unparseable SQL
+    when: { kind_in: [unknown] }
+    then: block
+    reason: >-
+      Blastproof could not parse or does not support this statement, or it is over 20 KB.
+      Send one plain SQL statement.
+  - name: No DROP or TRUNCATE
+    when: { statement_in: [drop, truncate] }
+    then: block
+    reason: Dropping or truncating tables is never allowed for agents.
+  - name: One statement only
+    when: { multi_statement: true }
+    then: block
+    reason: Send one SQL statement per call.
+  - name: No transaction control
+    when: { transaction_control: true }
+    then: block
+    reason: Blastproof manages transactions; send the statement alone.
+  - name: Hands off Blastproof's schema
+    when: { schemas_any: [blastproof] }
+    then: block
+    reason: The blastproof schema belongs to the gateway.
+  - name: No side-effect functions
+    when: { side_effect_function: true }
+    then: block
+    reason: Functions that act on the database server itself, such as ending connections, are not allowed.
+  - name: Volatile values in WHERE
+    when: { volatile_in_where: true }
+    then: block
+    reason: The rows this matches would differ between preview and commit.
+  - name: Unordered LIMIT
+    when: { unordered_limit: true }
+    then: block
+    reason: LIMIT without ORDER BY picks different rows each time; add ORDER BY a unique key.
+  - name: Delete or update without WHERE
+    when: { statement_in: [delete, update], has_where: false }
+    then: block
+    reason: Affects every row in the table.
+  - name: Every row of a table
+    when: { statement_in: [delete, update, merge], fraction_of_table_gte: 1.0 }
+    then: block
+    reason: Would change every row in the table.
+  - name: Most of a table
+    when: { statement_in: [delete, update, merge], fraction_of_table_gt: 0.5 }
+    then: review
+    reason: Would change more than half of the table's rows.
+  - name: Large change
+    when: { rows_affected_gt: 1000 }
+    then: review
+    reason: More than 1,000 rows would change.
+  - name: Touches paying customers
+    when: { derived_group_gt: { users.paying: 0 } }
+    then: review
+    reason: Affects paying customers.
+  - name: Fast-lane note
+    when: { fast_lane: true, tables_any: [customer_notes] }
+    then: allow
+    reason: Small insert into a notes table.
+  - name: Small insert
+    when: { statement_in: [insert], rows_affected_lte: 10 }
+    then: allow
+    reason: Small insert.
+
+# Columns the impact breakdown groups by, per table.
+important_columns:
+  users: [plan]
+
+# Named SQL conditions that code counts over a table's affected rows.
+derived_groups:
+  users:
+    paying: "plan in ('pro', 'enterprise')"
+
+# Masked everywhere, on top of the name heuristic (email, phone, ssn, address, token, password).
+sensitive_columns:
+  users: [email, phone]

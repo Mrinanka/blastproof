@@ -596,3 +596,39 @@ which fits the rule that a failed check never lets a write through.
 **What I rejected and the limits.** A deny list of statement types. The cost of the allowlist is
 that a legitimate function missing from the list gets refused once reads use the classifier (step
 17); the list is generous and easy to extend, and a test covers the common functions.
+
+## Step 9: Policy rules
+
+### 1. The rules are a file, judged in two passes, and the strictest answer wins
+
+**What I did.** What Blastproof allows lives in `backend/policies/rules.yaml`, not in Python. Each rule
+has conditions, an outcome (allow, review, block) and a reason. Rules run twice. Pass 1 sees only the
+SQL, before any preview: a rule that needs the preview's numbers (rows changed, share of the table) is
+skipped, not counted as false. A block ends the request at once; a fast-lane allow skips the preview.
+Pass 2 runs after the preview with every fact. If several rules match, the strictest wins (block over
+review over allow), and a write that no rule explicitly allows goes to a person.
+
+**Why.** "Skipped, not false" matters: a rule like "more than half the table" cannot be answered from
+SQL, and treating it as false would let a dangerous write look clean. Making the allow need a positive
+match means silence is never approval. And putting the rules in a file means the owner can read and
+change policy without touching code, while order only changes which reason is shown, never the outcome.
+
+**What I rejected and the limits.** A code-level safety net that blocks things even if someone deletes a
+rule: I declined it so outcomes come from one place, which means deleting "Unparseable SQL" really does
+remove that block. A test pins the known gaps (the CTE delete feeding a small insert) so any change is
+deliberate; the MERGE gap I closed by listing `merge` in the two fraction rules.
+
+### 2. A bad rules file stops the app, and bad facts stop the write
+
+**What I did.** The loader is strict. It rejects unknown keys, a key written twice (PyYAML would quietly
+keep the last one), a "true" in quotes where a real yes/no belongs, a misspelled statement type, and a
+fast-lane rule that could never fire. The SQL condition used to count paying users may only use columns,
+literals and comparisons, no functions or subqueries. At run time the same attitude applies: if the
+preview's numbers are missing or negative, the policy raises and the caller blocks the write.
+
+**Why.** The file decides what reaches a customer's database. A typo that silently disables a rule is
+the same as deleting it, so every mistake has to be loud, at startup, naming the rule and the key. This
+is the project's "fail closed" rule applied to configuration: when unsure, refuse to run.
+
+**What I rejected and the limits.** Checking at startup that the columns exist in the real database:
+startup has to work offline, so that check is a pure function that step 10's preview will call.

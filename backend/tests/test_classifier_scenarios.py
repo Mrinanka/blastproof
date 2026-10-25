@@ -1,40 +1,20 @@
 """Step 8 "Done when": the classifier-relevant incident scenarios pass.
 
-The classifier only supplies facts; the rules that read them arrive in step 9. Until then this
-file holds a local mirror of backend plan §9's SQL-only rules. Step 9 switches the mirror to
-`policies/rules.yaml`, as `DERIVED_GROUPS` in `test_seed_counts.py` will.
+The facts come from the classifier and the rules from `policies/rules.yaml`, evaluated through
+pass 1 as the workflow will (step 9 replaced this file's local mirror of the SQL-only rules).
 """
-
-from collections.abc import Callable
 
 import pytest
 
+from app.config import DEFAULT_POLICY_FILE
 from app.core.clock import FrozenClock
-from app.services.classifier import Classification, Kind, classify
+from app.services.classifier import Kind, classify
+from app.services.policy import Route, evaluate_pass_one, load_policy
 from evals.schema import SqlScenario, load_scenario_file
 from tests.conftest import SCENARIOS_DIR
 
-# name -> (condition on the classification, outcome). Only rules that read SQL alone; the diff
-# rules (rows affected, fraction of table, derived groups, cascades) need the shadow run.
-SqlRule = Callable[[Classification], bool]
-SQL_ONLY_BLOCK_RULES: dict[str, SqlRule] = {
-    "No DDL": lambda c: c.kind == Kind.DDL,
-    "Unparseable SQL": lambda c: c.kind == Kind.UNKNOWN,
-    "No DROP or TRUNCATE": lambda c: bool({"drop", "truncate"} & set(c.statement_types)),
-    "One statement only": lambda c: c.multi_statement,
-    "No transaction control": lambda c: c.transaction_control,
-    "Hands off Blastproof's schema": lambda c: "blastproof" in c.schemas,
-    "Volatile values in WHERE": lambda c: c.volatile_in_where,
-    "Unordered LIMIT": lambda c: c.unordered_limit,
-    "Delete or update without WHERE": lambda c: (
-        bool({"delete", "update"} & set(c.statement_types)) and not c.has_where
-    ),
-}
+POLICY = load_policy(DEFAULT_POLICY_FILE)
 FAST_LANE_NOTE = "Fast-lane note"
-
-
-def fast_lane_note_matches(c: Classification) -> bool:
-    return c.fast_lane_eligible and "customer_notes" in c.tables
 
 
 def sql_scenarios() -> list[SqlScenario]:
@@ -49,10 +29,6 @@ def sql_scenarios() -> list[SqlScenario]:
 SCENARIOS = sql_scenarios()
 
 
-def matched_block_rules(result: Classification) -> set[str]:
-    return {name for name, rule in SQL_ONLY_BLOCK_RULES.items() if rule(result)}
-
-
 def test_there_are_scenarios_to_check() -> None:
     assert len(SCENARIOS) >= 20
     assert any(s.decidable_from_sql for s in SCENARIOS)
@@ -61,13 +37,15 @@ def test_there_are_scenarios_to_check() -> None:
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
 def test_scenario(scenario: SqlScenario, frozen_clock: FrozenClock) -> None:
     result = classify(scenario.sql, now=frozen_clock.now())
-    matched = matched_block_rules(result)
+    pass_one = evaluate_pass_one(POLICY, result)
     expected = set(scenario.expected_rules)
     if scenario.decidable_from_sql:
-        assert matched == expected, f"{scenario.id}: {result}"
+        assert pass_one.route == Route.BLOCK, f"{scenario.id}: {result}"
+        matched_blocks = {m.name for m in pass_one.matched if m.outcome == "block"}
+        assert matched_blocks == expected, f"{scenario.id}: {result}"
     else:
-        assert matched == set(), f"{scenario.id} must not be blocked in pass 1: {matched}"
-        assert fast_lane_note_matches(result) == (FAST_LANE_NOTE in expected), scenario.id
+        assert pass_one.route != Route.BLOCK, f"{scenario.id} must not be blocked in pass 1"
+        assert (pass_one.route == Route.FAST_LANE) == (FAST_LANE_NOTE in expected), scenario.id
 
 
 def test_terminate_backends_is_a_write_with_its_function_recorded(
