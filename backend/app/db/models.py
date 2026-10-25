@@ -11,8 +11,8 @@ from decimal import Decimal
 from typing import Any
 
 from pgvector.sqlalchemy import VECTOR
-from sqlalchemy import ARRAY, ForeignKey, Index, Numeric, Text, text
-from sqlalchemy.dialects.postgresql import INET, JSONB
+from sqlalchemy import ForeignKey, Index, Numeric, Text, text
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, enum_check
@@ -242,12 +242,13 @@ class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
     __table_args__ = (
         Index("ix_knowledge_chunks_source", "source"),
-        Index("ix_knowledge_chunks_table_name", "table_name"),
+        # A chunk can be about several tables; retrieval asks for any overlap (`&&`).
+        Index("ix_knowledge_chunks_table_names", "table_names", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = _id()
     source: Mapped[str]
-    table_name: Mapped[str | None]
+    table_names: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'::text[]"))
     content: Mapped[str]
     created_at: Mapped[datetime] = _created_at()
 

@@ -62,7 +62,7 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
     "hook_events": {
         "id", "user_id", "agent_id", "tool", "summary", "decision", "reason", "rule", "created_at",
     },
-    "knowledge_chunks": {"id", "source", "table_name", "content", "created_at"},
+    "knowledge_chunks": {"id", "source", "table_names", "content", "created_at"},
     "chunk_embeddings": {"chunk_id", "embedding"},
 }  # fmt: skip
 
@@ -157,6 +157,13 @@ def test_embedding_is_a_384_dimension_vector_with_a_cosine_hnsw_index() -> None:
     options = indexes[0].dialect_options["postgresql"]
     assert options["using"] == "hnsw"
     assert options["ops"] == {"embedding": "vector_cosine_ops"}
+
+
+def test_knowledge_tags_have_a_gin_index() -> None:
+    indexes = {i.name: i for i in table("knowledge_chunks").indexes}
+    index = indexes["ix_knowledge_chunks_table_names"]
+    assert index.dialect_options["postgresql"]["using"] == "gin"
+    assert [c.name for c in index.columns] == ["table_names"]
 
 
 def test_only_chunk_embeddings_cascade() -> None:

@@ -136,7 +136,7 @@ Blastproof's own database has eleven tables, plus the checkpoint tables LangGrap
 | `preview_rows` | action\_id, table\_name, primary\_key (jsonb), before\_hash, change (deleted, updated, inserted) | Written by the shadow run: one row per affected row. The drift check compares against these at commit |
 | `before_images` | id, action\_id, table\_name, primary\_key (jsonb), row\_before (jsonb), row\_after (jsonb) | Saved at commit from the locked rows; for undo later |
 | `hook_events` | id, user\_id, agent\_id, tool, summary (masked), decision (allow, deny), reason, rule, created\_at | One row per Claude Code hook call. Kept out of `actions` so Bash noise never floods the review queue |
-| `knowledge_chunks` | id, source, table\_name, content, created\_at | Source of truth for knowledge text and metadata, whichever vector store is used |
+| `knowledge_chunks` | id, source, table\_names (text[], GIN index), content, created\_at | Source of truth for knowledge text and metadata, whichever vector store is used |
 | `chunk_embeddings` | chunk\_id, embedding (vector) | Used only by the pgvector store; Qdrant keeps vectors in its own collection |
 
 **Column meanings that are easy to mix up:** `sql` is exactly what the agent sent and is never returned by the API. `pinned_sql` is `sql` with `now()` and similar values replaced by one fixed timestamp (step 8); it is what is previewed, approved and committed. `sql_display` is `pinned_sql` with PII-looking string literals masked; it is the only SQL that reaches the API, the UI, logs and prompts. `policy_reason` comes from rules; `reviewer_note` is the human's reject reason, which is sent to the agent.
@@ -245,7 +245,7 @@ class ActionDetail(BaseModel):
     samples: list[SampleRow]             # table, change, masked row values (max 50)
     judge: JudgeView | None              # provider, model, recommendation, risk_level, confidence, reason
     matched_rules: list[MatchedRule]     # name, outcome, reason, pass ("pre" or "post")
-    knowledge_used: list[KnowledgeRef]   # chunk id, source, table_name, first line
+    knowledge_used: list[KnowledgeRef]   # chunk id, source, table_names, first line, match (table or similar), score
     policy_reason: str | None; reviewer_note: str | None
     retry_of: str | None; retried_by: str | None
     timeline: list[AuditEventView]       # event_type, created_at, short data
@@ -413,7 +413,7 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     - **Limits:** a table without a primary key fails the shadow run (so the write is blocked). At most `MAX_CONCURRENT_SHADOWS` (default 2) at once, via a semaphore; a write waits up to 10 seconds for a slot, then fails closed with the `busy` message. Timeout: 30 seconds. Always delete the branch in a `finally` block; on startup (under an advisory lock), delete any leftover `shadow-*` branches older than 15 minutes.
     - **Scale note:** whole-table hashing is fine up to a few million rows; past that, limit it to FK-reachable tables or use logical decoding. Recorded in `docs/decisions.md`.
     *Done when:* a DELETE of users inactive for 6 months (with the clock frozen at `ANCHOR_DATE`) returns exact counts, including cascaded `orders` and `order_items` and the `SET NULL` on `invoices`, plus correct breakdowns and derived groups, matching `incidents.yaml`. It runs with `FakeNeonClient` in CI (including two previews in a row of the same `company_main`) and with `NeonApiClient` once by hand. A test proves the same row hashes identically in the shadow run and in the commit query, with different session time zones.
-11. **Knowledge and RAG, with a swappable vector store** (`services/knowledge.py`). Three sources become chunks: an automatic schema scan (one chunk per table: columns, types, foreign keys), `schema_docs.md` split by heading (a `## table: <name>` heading tags the chunk with that table; other headings are untagged), and uploads through `/v1/knowledge` using the same splitter (the upload takes an optional `tables` field that tags every chunk from that file). The chunks used for an action are saved to `actions.knowledge_used`. Chunk text and metadata (source, table name) always live in Postgres in `knowledge_chunks`, the source of truth; vectors go to whichever store `VECTOR_STORE` selects. Retrieval for an action: all chunks tagged with the affected tables (a plain SQL query), plus the top 5 by vector similarity to the agent's `intent`, de-duplicated.
+11. **Knowledge and RAG, with a swappable vector store** (`services/knowledge.py`). Three sources become chunks: an automatic schema scan (one chunk per table: columns, types, foreign keys), `schema_docs.md` split by heading (a `## table: <name>` heading tags the chunk with that table; other headings are untagged), and uploads through `/v1/knowledge` using the same splitter (the upload takes an optional `tables` field that tags every chunk from that file). The chunks used for an action are saved to `actions.knowledge_used`. Chunk text and metadata (source, table name) always live in Postgres in `knowledge_chunks`, the source of truth; vectors go to whichever store `VECTOR_STORE` selects. (Step 11 as built: `table_names` is an array, so a chunk can carry several tags; `VectorStore.upsert` takes a batch of items and there is a `clear()` for reindex; the model loads on first use plus a warm-up after startup; D-144 to D-147.) Retrieval for an action: all chunks tagged with the affected tables (a plain SQL query), plus the top 10 by vector similarity (D-148; was 5) to the agent's `intent`, de-duplicated.
     - `Embedder` interface, `embed(texts) -> vectors`: fastembed (`BAAI/bge-small-en-v1.5`, 384 dimensions) by default. Stores never embed; they only store and search vectors.
     - `VectorStore` interface: `upsert(chunk_id, vector, metadata)`, `search(vector, k, tables=None) -> [(chunk_id, score)]`, `delete(chunk_ids)`. Results are chunk IDs; text is always read from Postgres, so every store behaves the same.
     - `PgVectorStore` (default): the `chunk_embeddings` table with an HNSW index.
@@ -422,11 +422,13 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     - Contract tests: one pytest suite runs against every `VectorStore` implementation, so a new store must pass the same checks.
     *Done when:* an action deleting users retrieves the "paying customer" and "enterprise contracts" rules; once the Qdrant store exists, switching `VECTOR_STORE` and running `reindex` gives the same results on the eval set.
 12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic facts from the diff: affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3), each derived group (paying: 12), cascades, and any percentage the summary may need (computed in code). Then the summary model (Gemini Flash by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given and to write numbers as digits. The prompt sees only `sql_display` and masked samples.
+    - **Knowledge is untrusted text (from step 11, D-149).** Chunks come from uploads anyone can write. Before they enter a prompt, run `mask_text` on them and wrap them as quoted data the model must not obey.
     - **Number guardrail:** extract every number from the output with a regex (`\d[\d,]*(\.\d+)?%?`, commas stripped). Each must be in the allowed set: the facts, the numbers in the agent's intent, and the rule thresholds. Any other number means falling back to a plain template summary built from the facts.
     - **Cost:** record input and output tokens from LangChain's `usage_metadata`; `llm_cost_usd` is tokens × a per-model price table in config (code counts, again).
     - **Limits:** 20-second timeout and a max-token cap. On error or timeout, use the template summary.
     *Done when:* the report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number.
 13. **Risk judge, pluggable** (`services/judge.py`). One interface, `Judge.assess(context) -> JudgeResult`, where the context holds the SQL, intent, diff facts, impact report and retrieved rules, and the result has `risk_level` (low to critical), `recommendation` (allow, review, block), `confidence` (0 to 1) and a short `reason`. The `JUDGE_PROVIDER` setting picks the implementation; the workflow never knows which one ran.
+    - **Knowledge is untrusted text (from step 11, D-149).** Same rule as step 12: mask and wrap retrieved chunks as data. Also check that the business rules still rank in the retrieved set (D-148: top 10).
     - **When it runs:** only on writes the rules did not block, and never on the fast lane.
     - **What it can do:** only make a decision stricter. It may raise allow to review or block, and review to block, but never lower anything. A `confidence` below `JUDGE_MIN_CONFIDENCE` (default 0.6) on an allow recommendation counts as review; otherwise confidence is stored for calibration evals.
     - **On error, timeout (20 s) or an unparseable result:** the decision becomes at least review, with the `ai_unavailable` message to the agent. The facts exist, so a human can still decide; a write is never allowed because the judge failed.
@@ -477,6 +479,7 @@ Steps 14 to 20 connect the pieces into one flow and finish the MVP.
     - Every call writes a `hook_events` row with a masked summary and the calling agent and its owner; hook calls do not create `actions`.
     *Done when:* Claude trying `psql`, reading the backend's `.env`, or editing its settings file is blocked with a clear reason. With the backend stopped, Bash and edits are denied, reading a normal source file still works, and reading `.env` is still denied.
 19. **Dashboard API.** The routes in section 6, with:
+    - **Upload size (from step 11).** Check the 1 MB limit before reading the whole body, and decide what `DELETE /v1/knowledge/{id}` means (a source name).
     - pagination;
     - approve and reject allowed only for the action's owner or an admin, through the conditional claim from step 15;
     - every actions query going through the central visibility rule (someone else's action returns 404);
@@ -514,6 +517,7 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `GOOGLE_API_KEY` | secret | Gemini calls (add the matching key, e.g. ANTHROPIC\_API\_KEY, for another provider) |
 | `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:\<flash model>` / `google_genai:\<pro model>` | Any provider:model string, e.g. anthropic:\<claude model> |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embeddings |
+| `EMBEDDING_CACHE_DIR` | `backend/.cache/fastembed` | Where the model is downloaded once |
 | `LANGSMITH_TRACING` | `true` | Turns tracing on |
 | `LANGSMITH_API_KEY` | secret | Sends traces |
 | `LANGSMITH_PROJECT` | `blastproof-dev` | Groups traces |

@@ -1,6 +1,7 @@
 # Progress
 
 ## Current focus
+Step 11 (Knowledge and RAG) is done on `feat/step-11`. Next: step 12 (impact engine). Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
 (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6 (MCP server) is done on `feat/step-6`.
@@ -33,6 +34,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Step 11, done 2026-10-26
+- New: `app/services/{embeddings,knowledge}.py`, `app/services/vectorstores/` (`base`, `memory`, `pgvector`), `app/db/knowledge.py`, migration `0002`. Changed: `models.py`, `config.py`, `main.py`, `cli.py` (`knowledge-scan`, `knowledge-ingest`, `reindex`), `describe_table` (`notes`). No new dependency. Empty `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `VECTOR_STORE` appended to `backend/.env`.
+- Tests: about 100 new in 9 files; full run 1,288 passed, 1 xfailed, 1 flaky (`test_cli_auth::test_create_user_then_log_in` failed once under full-suite load, passes alone and without my changes). Real model downloaded to `backend/.cache/fastembed` (CI downloads each run). Mutation checks: removing each of dedupe, stale-ID drop, table filter, replace-delete, lazy load, dimension check, iterative-scan setting turned a test red.
+- Done-when: scan plus `schema_docs.md` (11 + 13 chunks) retrieve the business rules for "Clean up inactive users" through similarity, with all Replit tables or only `users`; `knowledge_used` saved on a real action row. Every users-delete scenario also retrieves the rules after raising k from 5 to 10 (D-148). Retrieval takes about 25 to 30 ms once the model is loaded.
+- Not done by hand: the manual CLI run against local `blastproof` and `describe_table users` through MCP (covered by tests). Known: the Qdrant clause of Done-when is deferred.
 
 ### Step 10, done 2026-10-25
 - New: `app/services/company_schema.py` (`ROW_HASH_SQL`, `pk_json_sql`, `read_schema`), `app/services/neon.py` (`NeonClient`, `NeonApiClient`,
@@ -345,6 +352,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Step 11: the write lock is per process; with several backend processes a lost race can leave chunks without vectors (`reindex` repairs). `KnowledgeService.notes` was not built (`describe_table` queries the db directly). Knowledge text is untrusted: steps 12 and 13 must mask and wrap it (D-149). Step 19 must check upload size before reading the body and define `DELETE /v1/knowledge/{id}`. The CLI and `describe_table` were not run by hand against local `blastproof` (tests cover them). The Qdrant half of Done-when is deferred with `QdrantStore`. CI downloads the 67 MB model each run. `test_cli_auth::test_create_user_then_log_in` failed once under full-suite load (passes alone).
 - Step 10: a preview of a write that touches most of a table is slow: the Replit delete (246k rows) took 44 s on Neon (D-142, D-143). Most of it is downloading every changed
   row and computing both sides on a small compute. If typical writes turn out slow, stop downloading all rows (a change to what step 16 reads from `preview_rows`).
 - Step 10: each preview of the seed takes 10 to 15 s locally, so the suite is about 5.5 minutes locally (about 3 minutes in CI before this change). To cut it, the Replit preview is
@@ -526,7 +534,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 9. Policy rules
 - [x] Spike: Neon branching
 - [x] 10. Neon client and shadow executor
-- [ ] 11. Knowledge and RAG, swappable vector store
+- [x] 11. Knowledge and RAG, swappable vector store
 - [ ] 12. Impact engine
 - [ ] 13. Risk judge, pluggable
 - [ ] GATE AUDIT: exact diffs and correct retrieval

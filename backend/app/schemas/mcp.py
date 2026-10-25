@@ -41,12 +41,20 @@ class ColumnSummary(BaseModel):
     description: str | None
 
 
+class KnowledgeNote(BaseModel):
+    """A business rule or note about a table, from schema_docs.md or an uploaded document."""
+
+    source: str
+    text: str
+
+
 class TableDescription(BaseModel):
     action_id: str | None
     status: ReadStatus
     table: str
     description: str | None = None
     columns: list[ColumnSummary] = Field(default_factory=list)
+    notes: list[KnowledgeNote] = Field(default_factory=list)
     message: str | None = None
 
 

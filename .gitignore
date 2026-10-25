@@ -17,3 +17,6 @@ __pycache__/
 # Node / Next.js
 node_modules/
 .next/
+
+# Backend caches
+backend/.cache/

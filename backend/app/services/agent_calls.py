@@ -24,17 +24,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import Settings
 from app.core.auth import CurrentAgent
 from app.db import actions as actions_db
+from app.db import knowledge as knowledge_db
 from app.db.enums import ActionStatus
 from app.db.models import Action
 from app.schemas.mcp import (
     ActionStatusResult,
     ColumnSummary,
+    KnowledgeNote,
     QueryDatabaseResult,
     TableDescription,
     TableList,
     TableSummary,
 )
 from app.services import agent_messages, company_db, reads
+from app.services.knowledge import SCHEMA_SCAN_SOURCE
 from app.services.systems import ensure_main_system
 
 INTERNAL_ERROR = "internal_error"
@@ -230,6 +233,20 @@ async def list_tables(ctx: CallContext) -> TableList:
     return await _run_recorded(ctx, action_id, started, work, failed_result)
 
 
+async def _notes_for(ctx: CallContext, table: str) -> list[KnowledgeNote]:
+    """Docs and uploads tagged with this table. The columns are already in the reply, so the schema
+    scan is left out. Notes are extra: if they cannot be read, the columns are still returned."""
+    try:
+        async with ctx.sessionmaker() as session:
+            chunks = await knowledge_db.notes_for_table(
+                session, table.lower(), exclude_source=SCHEMA_SCAN_SOURCE
+            )
+    except Exception as exc:
+        logger.error("notes_failed", reason_code=type(exc).__name__)
+        return []
+    return [KnowledgeNote(source=c.source, text=c.content) for c in chunks]
+
+
 async def describe_table(ctx: CallContext, table: str) -> TableDescription:
     started = time.perf_counter()
     action_id = await _start(ctx, tool="describe_table", tables=[table])
@@ -256,6 +273,7 @@ async def describe_table(ctx: CallContext, table: str) -> TableDescription:
                 failure_reason="table_not_found",
             )
         info, columns = found
+        notes = await _notes_for(ctx, info.name)
         result = TableDescription(
             action_id=aid,
             status="executed",
@@ -267,8 +285,9 @@ async def describe_table(ctx: CallContext, table: str) -> TableDescription:
                 )
                 for c in columns
             ],
+            notes=notes,
         )
-        return _Outcome(result, data={"column_count": len(columns)})
+        return _Outcome(result, data={"column_count": len(columns), "note_count": len(notes)})
 
     return await _run_recorded(ctx, action_id, started, work, failed_result)
 
