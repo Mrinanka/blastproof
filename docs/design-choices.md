@@ -397,6 +397,47 @@ so the deploy step should check it on the real machine.
 
 ---
 
+## Spike: Claude Code hooks
+
+### 1. A hook that fails must block, so I set `onFailure: block` and test the failure paths
+
+**What I did.** I ran about 30 real Claude Code sessions against a decoy folder, each with a hook
+that was made to sleep, crash, point at a missing script, deny, or stay silent, and recorded whether
+the agent's command ran. A hook that timed out or crashed let the command through. Setting
+`"onFailure": "block"` turned both into a block. A Python script that does not exist exits with
+code 2, which counts as a deliberate block, so one failure mode is closed by accident while the
+others are open.
+
+**Why.** Blastproof's first rule is fail closed: a failed check never lets a write through. The
+documentation says hooks fail open, and without these runs I would have trusted the script's own
+error handling, which cannot help if the script never starts or hangs.
+
+**What I rejected.** Wrapping the script in try/except and calling it done; an `http` hook, which
+works but drops its auth header silently without an allow-list and cannot do the retry and
+local fallback the plan needs.
+
+**Trade-off and limits.** Blocking on failure means a Blastproof outage stops shell commands and
+edits (reads fall back to a local deny-list). Each result is one run of a small model, so I treat
+"leaks" as solid and "not tried" as nothing.
+
+### 2. The hook is a guardrail, so the agent must not be able to switch it off
+
+**What I did.** I checked what an agent can do to its own hook. It could write
+`.claude/settings.local.json` with `disableAllHooks: true` and run the blocked command next. Adding
+`Edit(.claude/**)` to the deny rules stopped that. A deny rule on the backend folder blocked Read,
+Grep, Glob, `cat` and `Get-Content`, but `python -c open(...)` still read it.
+
+**Why.** If the guardrail can be turned off from inside, it is not a guardrail. The real boundary is
+that the agent never holds the database credentials; the hook and deny rules only make accidents
+and obvious attempts fail loudly.
+
+**What I rejected.** Treating `permissions.deny` as the security boundary, and relying on the hook
+alone to protect `.env`.
+
+**Trade-off and limits.** On the dev machine an agent can still reach `.env` through an interpreter,
+which is the accepted limitation (D-002). Settings reload with about a one-call lag, and I did not
+test a nested `claude --settings` started from Bash (docs only).
+
 ## Step 6: MCP server
 
 ### 1. Write the record first, then do the work, and make every ending a record too

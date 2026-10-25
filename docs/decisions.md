@@ -1116,3 +1116,23 @@ expiry, an admin approving). The leak `visible_actions` guards against is a call
 user's action.
 **Rejected:** passing an owner ID into every internal update; leaving the literal 50 next to an
 existing setting.
+
+## D-113 · 2026-10-25 · The step 18 hook entry sets `onFailure: block` and a short `timeout`
+**Decision:** The `PreToolUse` entry for `claude_hook/pre_tool_use.py` carries `"onFailure": "block"` and a `timeout` of a few seconds. The script itself exits 2 only to deny on purpose.
+**Why:** Hook spike: a hook that timed out (10 s sleep, `timeout: 3`) or crashed (exit 1) let the Bash call run; with `onFailure: block` both were blocked. A missing executable also ran (exit 127). A `python` command on a missing script exits 2, which blocks even without it, so exit codes alone are not a safe contract.
+**Rejected:** relying on the script's own try/except (it cannot cut off a hang, and a startup failure never reaches it).
+
+## D-114 · 2026-10-25 · Hook matcher covers PowerShell and Monitor, drops MultiEdit
+**Decision:** Matcher `Bash|PowerShell|Monitor|Edit|Write|NotebookEdit|Read|Grep|Glob`. Shell-like tools fail closed when Blastproof is unreachable.
+**Why:** The hook fired for PowerShell (active by default on Windows) and Monitor (runs a command); `MultiEdit` is not in Claude Code 2.1.310's tool list.
+**Rejected:** keeping the old list (a PowerShell `psql` would skip the hook); a `*` matcher (Blastproof would see tools it has no rule for).
+
+## D-115 · 2026-10-25 · `permissions.deny` syntax for the demo workspace
+**Decision:** `Read(//d/<repo path>/backend/**)`, `Read(//**/.env)`, `Read(//**/.env.*)`, `Edit(.claude/**)` in the workspace's project settings. `//d/` and `//D/` both work, and a space in the path is fine.
+**Why:** A Read deny blocked Read, Grep, Glob, `cat` and PowerShell `Get-Content` on the path, and holds in bypass mode. `Edit(.claude/**)` stopped the agent writing `settings.local.json` with `disableAllHooks`, which otherwise switches its hook off. `python -c open(...)` still reads the file: the accepted dev limitation (D-002) stands.
+**Rejected:** relying on hooks alone for `.env` (the agent can disable a hook); counting the deny rule as the boundary (credential isolation is).
+
+## D-116 · 2026-10-25 · Keep the command hook script; do not switch to an `http` hook
+**Decision:** Step 18 stays a Python command hook.
+**Why:** The `http` hook works (JSON deny, `onFailure`), but its `$VAR` header is silently empty (`Bearer`) unless `allowedEnvVars` lists it, and it cannot do the retry-once and local read deny-list fallback BE-103 needs.
+**Rejected:** an `http` hook calling `/v1/hook/pre-tool-use` directly (revisit if the fallback is dropped).
