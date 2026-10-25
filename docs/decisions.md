@@ -1136,3 +1136,21 @@ existing setting.
 **Decision:** Step 18 stays a Python command hook.
 **Why:** The `http` hook works (JSON deny, `onFailure`), but its `$VAR` header is silently empty (`Bearer`) unless `allowedEnvVars` lists it, and it cannot do the retry-once and local read deny-list fallback BE-103 needs.
 **Rejected:** an `http` hook calling `/v1/hook/pre-tool-use` directly (revisit if the fallback is dropped).
+
+## D-117 · 2026-10-25 · The demo workspace denies the whole repo, not only `backend/`
+**Decision:** `Read(//d/<repo>/**)` plus credential-file rules (`.env*`, `.pgpass`, `pgpass.conf`, neonctl, `~/.ssh`, `~/.claude.json`), `Edit(.claude/**)`, `Edit(.mcp.json)`, and `permissions.blockReadsOutsideWorkingDirectories: true`. Supersedes D-115's `backend/**` rule.
+**Why:** The repo root's `docker-compose.yml` holds the local superuser passwords, and BE-24 asks for credential files.
+**Rejected:** denying only `backend/**`.
+
+## D-118 · 2026-10-25 · Workspace tooling is `claude_hook/workspace.py`, key through stdin
+**Decision:** One stdlib script creates, scans and verifies the workspace at `D:/My Workplace/blastproof-demo` (a sibling of the repo). The agent key arrives on stdin and is written only to `.claude/settings.local.json`; `.mcp.json` uses `${BLASTPROOF_AGENT_KEY}`, which Claude Code expands from that `env` block (checked with a fake key). `check` and `verify` print names and PASS/FAIL, never values; `verify` reads a canary before the real `.env`.
+**Why:** Keeps the key out of argv, history and output, and makes DW-B07 repeatable.
+
+## D-119 · 2026-10-25 · Local Docker databases stay reachable from agent code (known issue)
+**Decision:** An agent can still use `python -c` against `localhost` with the guessable dev passwords. Recorded as part of D-002; fixing it needs random Compose passwords or a devcontainer. The deployed demo is not affected.
+
+## D-120 · 2026-10-25 · `workspace.py verify` uses Sonnet for the deny checks
+**Decision:** The canary and `.env` Read checks run `claude -p --model sonnet`; the environment check stays on Haiku.
+**Why:** Haiku declined to call Read on a `.env` path at all, so there was no tool result to judge. A check with no result fails closed rather than passing.
+**Rejected:** counting "no tool call" as a pass (proves nothing about the deny rule); a pass-through retry loop.
+

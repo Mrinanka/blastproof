@@ -44,9 +44,9 @@ jobs:
 
       # Includes TID251, the ban on importing demo_company (ARCH-21). demo_company/ has no
       # pyproject.toml, so Ruff lints it with the backend's settings.
-      - run: uv run ruff check . ../demo_company
+      - run: uv run ruff check . ../demo_company ../claude_hook
 
-      - run: uv run ruff format --check . ../demo_company
+      - run: uv run ruff format --check . ../demo_company ../claude_hook
 
       # The same Compose file, image digest and role init scripts as local dev (D-072).
       - run: docker compose up -d --wait

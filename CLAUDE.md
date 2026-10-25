@@ -31,7 +31,7 @@ Backend (run from `backend/`):
 - `uv sync` - install dependencies
 - `uv run uvicorn app.main:app --reload --log-config log_config.json` - run the API on :8000 (the flag makes uvicorn's own startup lines JSON too)
 - `uv run pytest` - tests (needs Docker up); `uv run pytest -m "not integration"` - unit tests only
-- `uv run ruff check . && uv run ruff format --check .` - lint
+- `uv run ruff check . ../demo_company ../claude_hook && uv run ruff format --check . ../demo_company ../claude_hook` - lint (as CI does)
 - `uv run alembic revision --autogenerate -m "..."` then `uv run alembic upgrade head`
 - `uv run python -m evals.run` - eval suite
 
