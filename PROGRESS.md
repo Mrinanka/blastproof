@@ -1,8 +1,8 @@
 # Progress
 
 ## Current focus
-Next: Spike: Claude Code hook (Stage 1), then step 7 (remove direct access). Step 6 (MCP server)
-is done on `feat/step-6`, PR into `develop`.
+Next: step 7 (remove direct access). The Claude Code hook spike is done on `spike/claude-hook`; step 6
+(MCP server) is done on `feat/step-6`, PR into `develop`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
@@ -14,6 +14,20 @@ Step 5 (Auth) done 2026-10-25 on `feat/step-5`, PR #5 into `develop` (CI green),
 D-095.
 Spike: MCP mounting done 2026-10-25 on `spike/mcp-mounting`, decisions D-096 to D-101.
 Step 6 (MCP server) done 2026-10-25 on `feat/step-6`, decisions D-102 to D-112.
+Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 to D-116.
+
+### Spike: Claude Code hook, done 2026-10-25
+- Throwaway code and findings in `spikes/`: `claude_hook.py` (`probe`, about 6 minutes, 36 checks, decoy tree
+  outside the repo, deleted afterwards) and `claude_hook.md` (answers, plan differences, real output).
+  No `backend/app` change; 273 unit tests and ruff still pass.
+- Findings: timeouts and crashes fail open unless `onFailure: block`; `python` on a missing script exits 2
+  (a block); the hook fires for PowerShell and Monitor, `MultiEdit` is gone; a Read deny covers Grep, Glob,
+  `cat`, `Get-Content` but not `python -c`; the agent can disable its hook through `settings.local.json`
+  unless `Edit(.claude/**)` is denied; hooks stay on in bypass mode; `http` hook headers need
+  `allowedEnvVars`.
+- Plan edits: backend plan steps 7 and 18, BE-103 and BE-104 wording. Requirements ticked: SPIKE-02.
+- Not tested: a nested `claude --settings` from Bash, workspace trust (docs only, a step 7 manual step), an
+  `Edit`-only deny on NotebookEdit (blocked earlier by read-before-edit), and the 600 s default timeout.
 
 ### Step 6, done 2026-10-25
 - `app/mcp/auth.py` (pure-ASGI `AgentAuthMiddleware` on `/mcp` exactly: 401 `invalid_agent_key`,
@@ -278,8 +292,7 @@ created at deploy time straight into Fly.io secrets (D-058).
   isolation is verified on the deployed demo.
 - Open until spikes run: the latency target for previewed writes and whether asyncpg prepared
   statements work through Neon's pooled endpoint (Neon spike; the plan assumes the direct
-  endpoint), the hook timeout behaviour (hook spike), and the Claude Code MCP tool timeout vs the
-  50 s long poll (MCP spike).
+  endpoint), and the Claude Code MCP tool timeout vs the 50 s long poll (MCP spike, done).
 - Landing page CSP allows `'unsafe-inline'` scripts (D-028); verify the real headers in F1.
 - Confirm `blastproof-company` and `blastproof-app` are on Postgres 18 in `aws-us-east-2` like the
   dev project (D-057); a project's version cannot change later.
@@ -358,8 +371,8 @@ created at deploy time straight into Fly.io secrets (D-058).
   `shadow_*` database, as `seed.py` does for `company_main`.
 - Step 6 onward: asyncpg sends unknown URL query parameters to Postgres as settings, so Neon's
   `channel_binding=require` must stay out of the company URLs (keep `sslmode=require`).
-- Hook spike: MultiEdit is no longer listed in Claude Code's tools reference; confirm the matcher
-  list in BE-103/BE-104.
+- Step 7: trust the demo workspace folder by hand once (interactive sessions hold hooks back until then).
+- Step 18: the hook's block message shows the agent the hook command line; the spike's results are single runs of Haiku.
 - Two labeled actions disagree with rules alone on purpose (`close-one-ticket`,
   `delete-inactive-enterprise-customer`); the evals will count them as a false block and a miss
   until the judge handles them.
@@ -390,7 +403,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 5. Auth
 - [x] Spike: MCP mounting
 - [x] 6. MCP server
-- [ ] Spike: Claude Code hook
+- [x] Spike: Claude Code hook
 - [ ] 7. Remove direct access
 - [ ] GATE AUDIT: Claude Code reads the demo DB only through Blastproof
 
