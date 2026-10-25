@@ -182,7 +182,7 @@ then paste Prompt 2 again.
 ### Prompt 3: wrap up and commit
 
 ```text
-I have run the Done-when check and read the diff. Wrap up this step:
+ if no issues to fix, create pr, but make sure you have done below steps:
 1. Update PROGRESS.md: tick the step, add anything partial or deferred to Known issues,
    and set Current focus to the next unticked item.
 2. Tick the requirement IDs this step fully verified in docs/REQUIREMENTS.md. Only tick

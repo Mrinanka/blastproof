@@ -1,6 +1,6 @@
 """CONV-03, BE-23 (partly): /ready checks Blastproof's database and the company database.
 
-The Neon API check comes with the Neon client in step 10 (D-105).
+The Neon API check comes with the Neon client in step 10 (D-105); see test_ready_neon.py.
 """
 
 import pytest
@@ -16,11 +16,12 @@ DOWN_COMPANY_DB = "postgresql://blastproof_reader:secret-reader-pw@127.0.0.1:1/c
 
 
 def test_nothing_configured_is_not_ready(settings: Settings) -> None:
+    settings = settings.model_copy(update={"neon_client": "api"})  # CI sets NEON_CLIENT=fake
     with TestClient(create_app(settings)) as client:
         response = client.get("/ready")
     assert response.status_code == 503
     assert response.json() == {
-        "error": {"code": "not_ready", "message": "Not ready: blastproof_db, company_db."}
+        "error": {"code": "not_ready", "message": "Not ready: blastproof_db, company_db, neon_api."}
     }
 
 

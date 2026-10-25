@@ -45,6 +45,10 @@ def test_production_refuses_to_start_without_its_settings(update: dict, missing:
         blastproof_database_url="postgresql+asyncpg://blastproof_app:x@db.invalid/blastproof",
         jwt_secret=TEST_JWT_SECRET,
         company_db_reader_url="postgresql://blastproof_reader:x@db.invalid/neondb",
+        company_db_writer_url="postgresql://blastproof_writer:x@db.invalid/neondb",
+        neon_api_key="neon-key",
+        neon_project_id="project",
+        neon_parent_branch_id="br-parent",
     )
     create_app(complete)  # builds; never connects
     with pytest.raises(MissingProductionSettingError, match=missing):

@@ -29,6 +29,8 @@ from app.core.auth import CurrentAgent, CurrentUser, get_current_agent, require_
 from app.core.clock import FrozenClock
 from app.core.security import generate_agent_key, hash_password
 from app.main import create_app
+from app.services.neon import FakeNeonClient
+from app.services.shadow import ShadowRunner
 from evals.schema import ExpectedImpact, SqlScenario, load_scenario_file
 
 BLASTPROOF_OWNER_URL = os.environ.get(
@@ -564,3 +566,41 @@ def call_tool(
     result = message["result"]
     assert not result.get("isError"), result
     return result["structuredContent"]
+
+
+# --- Step 10: shadow runs ---------------------------------------------------------------------
+
+
+def fake_neon_client(clock: FrozenClock | None = None, **overrides: object) -> FakeNeonClient:
+    """A FakeNeonClient on the Compose company-db: clones company_main, never calls Neon."""
+    from app.core.clock import SystemClock
+
+    values: dict[str, object] = {
+        "admin_url": COMPANY_ADMIN_URL,
+        "writer_url": COMPANY_WRITER_URL,
+        "clock": clock or SystemClock(),
+    }
+    return FakeNeonClient(**(values | overrides))  # type: ignore[arg-type]
+
+
+def shadow_runner(clients: object | None = None, **overrides: object) -> ShadowRunner:
+    from app.config import DEFAULT_POLICY_FILE
+    from app.services.policy import load_policy
+
+    values: dict[str, object] = {
+        "policy": load_policy(DEFAULT_POLICY_FILE),
+        "clients": clients if clients is not None else {"local": fake_neon_client()},
+        # The real default is 30 s; a preview of the 273k-row seed takes 10 to 15 s on a Docker
+        # Desktop machine, so tests that are not about the timeout leave room.
+        "timeout_seconds": 120,
+    }
+    return ShadowRunner(**(values | overrides))  # type: ignore[arg-type]
+
+
+async def leftover_shadow_databases() -> list[str]:
+    conn = await asyncpg.connect(company_url("postgres"))
+    try:
+        rows = await conn.fetch(r"SELECT datname FROM pg_database WHERE datname LIKE 'shadow\_%'")
+        return [r["datname"] for r in rows]
+    finally:
+        await conn.close()
