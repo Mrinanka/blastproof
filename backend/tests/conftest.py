@@ -2,6 +2,7 @@ import asyncio
 import asyncio.proactor_events
 import asyncio.selector_events
 import ipaddress
+import json
 import os
 import socket
 import subprocess
@@ -477,3 +478,81 @@ def login(
 
 def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+# --- Step 6: MCP helpers ----------------------------------------------------------------------
+
+# The MCP DNS-rebinding check refuses TestClient's default host `testserver` with 421 (D-099).
+MCP_BASE_URL = "http://localhost:8000"
+MCP_PROTOCOL_VERSION = "2026-07-28"
+
+
+def mcp_settings(auth_db: AuthDb, **overrides: object) -> Settings:
+    """auth_settings plus the local company database (company_main as blastproof_reader)."""
+    values: dict[str, object] = {
+        "blastproof_database_url": asyncpg_url(auth_db.app_url),
+        "jwt_secret": TEST_JWT_SECRET,
+        "company_connection_profile": "local",
+        "local_company_reader_url": COMPANY_READER_URL,
+    }
+    return Settings(_env_file=None, app_env="test", **(values | overrides))  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def mcp_client(auth_db: AuthDb) -> Iterator[TestClient]:
+    with TestClient(create_app(mcp_settings(auth_db)), base_url=MCP_BASE_URL) as test_client:
+        yield test_client
+
+
+def mcp_call(tool: str, arguments: dict[str, object] | None = None) -> tuple[dict, dict[str, str]]:
+    """A raw 2026-07-28 `tools/call` (the session-less protocol Claude Code speaks, D-097).
+
+    Returns the JSON-RPC body and the headers to send with it (without the agent key).
+    """
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": tool,
+            "arguments": arguments or {},
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+                "io.modelcontextprotocol/clientInfo": {"name": "blastproof-tests", "version": "0"},
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+        },
+    }
+    headers = {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": MCP_PROTOCOL_VERSION,
+        "mcp-method": "tools/call",
+        "mcp-name": tool,
+    }
+    return body, headers
+
+
+def parse_rpc(content_type: str, text: str) -> dict:
+    """The JSON-RPC response from an SSE stream (`data:` lines) or a plain JSON body."""
+    if content_type.startswith("text/event-stream"):
+        for line in text.splitlines():
+            if line.startswith("data:") and line[5:].strip():
+                message = json.loads(line[5:])
+                if "id" in message:
+                    return message
+        raise AssertionError(f"no JSON-RPC response in the SSE stream: {text[:200]!r}")
+    return json.loads(text)
+
+
+def call_tool(
+    client: TestClient, key: str, tool: str, arguments: dict[str, object] | None = None
+) -> dict:
+    """Call a tool with an agent key and return its structured result (asserts HTTP 200)."""
+    body, headers = mcp_call(tool, arguments)
+    response = client.post("/mcp", json=body, headers=headers | bearer(key))
+    assert response.status_code == 200, response.text[:300]
+    message = parse_rpc(response.headers.get("content-type", ""), response.text)
+    result = message["result"]
+    assert not result.get("isError"), result
+    return result["structuredContent"]

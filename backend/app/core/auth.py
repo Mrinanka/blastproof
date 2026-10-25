@@ -1,8 +1,8 @@
 """Who is calling: dashboard users (JWT) and agents (API key). FastAPI dependencies.
 
 Every failure is a 401 with one generic message per kind; the reason goes to the logs only.
-`authenticate_agent_key` is a plain function so step 6's `/mcp` middleware can call it too
-(FastAPI dependencies do not run inside a mounted ASGI app).
+`authenticate_agent_key` is a plain function so the `/mcp` middleware (app/mcp/auth.py) can call
+it too (FastAPI dependencies do not run for the SDK's route).
 """
 
 import uuid
@@ -30,6 +30,8 @@ from app.db.session import get_session
 logger = structlog.get_logger()
 
 _BEARER = {"WWW-Authenticate": "Bearer"}
+# Shared with the /mcp middleware, so both doors refuse a bad key the same way.
+INVALID_AGENT_KEY_MESSAGE = "The agent key is invalid or deactivated."
 
 user_bearer = HTTPBearer(
     auto_error=False,
@@ -148,7 +150,5 @@ async def get_current_agent(
 ) -> CurrentAgent:
     agent = await authenticate_agent_key(session, credentials.credentials if credentials else None)
     if agent is None:
-        raise ApiError(
-            401, "invalid_agent_key", "The agent key is invalid or deactivated.", _BEARER
-        )
+        raise ApiError(401, "invalid_agent_key", INVALID_AGENT_KEY_MESSAGE, _BEARER)
     return agent

@@ -1,6 +1,6 @@
 """SEC-09: the running app refuses to use any database role but blastproof_app.
 
-Also: production refuses to start without its database URL and JWT secret, and with no database
+Also: production refuses to start without its database URLs and JWT secret, and with no database
 configured the auth routes answer 503 instead of crashing.
 """
 
@@ -33,14 +33,18 @@ def test_only_the_app_role_passes() -> None:
     [
         ({"jwt_secret": None}, "JWT_SECRET"),
         ({"blastproof_database_url": None}, "BLASTPROOF_DATABASE_URL"),
+        ({"company_db_reader_url": None}, "COMPANY_DB_READER_URL"),
+        # The local Compose company-db is for tests and seeded actions, never production.
+        ({"company_connection_profile": "local"}, "COMPANY_CONNECTION_PROFILE=neon"),
     ],
 )
-def test_production_refuses_to_start_without_auth_settings(update: dict, missing: str) -> None:
+def test_production_refuses_to_start_without_its_settings(update: dict, missing: str) -> None:
     complete = Settings(
         _env_file=None,
         app_env="production",
         blastproof_database_url="postgresql+asyncpg://blastproof_app:x@db.invalid/blastproof",
         jwt_secret=TEST_JWT_SECRET,
+        company_db_reader_url="postgresql://blastproof_reader:x@db.invalid/neondb",
     )
     create_app(complete)  # builds; never connects
     with pytest.raises(MissingProductionSettingError, match=missing):

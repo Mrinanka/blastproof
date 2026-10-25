@@ -1,8 +1,8 @@
 # Progress
 
 ## Current focus
-Next: step 6 (MCP server), as rewritten after the MCP spike (D-096 to D-101). Its `/mcp`
-middleware calls `app.core.auth.authenticate_agent_key` (D-090).
+Next: Spike: Claude Code hook (Stage 1), then step 7 (remove direct access). Step 6 (MCP server)
+is done on `feat/step-6`, PR into `develop`.
 
 Stage 0 (setup) complete: plan audit, REQUIREMENTS.md and outside setup, decisions D-001 to D-062.
 Step 1 (repo and skeleton) done and committed 2026-10-24, decisions D-063 to D-071.
@@ -13,6 +13,57 @@ D-087.
 Step 5 (Auth) done 2026-10-25 on `feat/step-5`, PR #5 into `develop` (CI green), decisions D-088 to
 D-095.
 Spike: MCP mounting done 2026-10-25 on `spike/mcp-mounting`, decisions D-096 to D-101.
+Step 6 (MCP server) done 2026-10-25 on `feat/step-6`, decisions D-102 to D-112.
+
+### Step 6, done 2026-10-25
+- `app/mcp/auth.py` (pure-ASGI `AgentAuthMiddleware` on `/mcp` exactly: 401 `invalid_agent_key`,
+  503 `unavailable`; `current_agent` contextvar, `require_agent()`), `app/mcp/server.py`
+  (`build_mcp_server` with the four tools, `transport_security`), `app/services/agent_calls.py`
+  (record `received`, run, record `executed`/`failed` with `total_ms`), `agent_messages.py`,
+  `reads.py` (temporary `check_read`, `run_read` fetching 501, `list_tables`, `describe_table`),
+  `company_db.py` (one reader connection per call), `systems.py` (`ensure_main_system`),
+  `app/db/actions.py` (`visible_actions`, `create_action`, `set_status`), `app/db/systems.py`,
+  `GET /ready`, `app/schemas/{mcp,ready}.py`.
+- `create_app` builds one MCP server, adds its `/mcp` route to FastAPI's router (stateless, SSE) and
+  enters `session_manager.run()` in the lifespan. Logging: `mcp.*` records lose arguments and
+  tracebacks, `mcp` at WARNING, `sqlglot` at ERROR (it echoed SQL), and `Settings` hides rejected
+  values in errors (D-110).
+- Config: `PUBLIC_BASE_URL`, `COMPANY_CONNECTION_PROFILE` (`neon` default), `COMPANY_DB_READER_URL`
+  (now read by the app), `LOCAL_COMPANY_READER_URL`, `NEON_PROJECT_ID`, `NEON_PARENT_BRANCH_ID`.
+  Production also needs the reader URL and refuses the `local` profile. Empty names appended to
+  `backend/.env`; `.env.example` documents them.
+- Tests: 459 in total (128 new): every template word for word, 52 read-check cases, MCP log
+  filtering, config (host parsing, `channel_binding`, hidden inputs), mounting (one SDK route, 404
+  and OpenAPI unchanged, two apps in a row), DNS rebinding (421/403), seven bad-key cases → 401,
+  database down → 503, two agents interleaved, a key change between calls, nine overlapping calls,
+  a tool with no agent, all four tools, truncation at 500/501, the 5 s timeout, query errors, writes
+  refused with `company_main` unchanged, Postgres refusing a write `run_read` is handed directly,
+  JSON-safe values, recording and audit events, owner-scoped `get_action_status` (including an
+  admin's agent), a raising tool leaving no raw value in the logs, `/ready` up and down.
+  Mutation checks: removing each of 20 guards turned a test red (log filter, `mcp` and `sqlglot`
+  levels, `require_agent`, the 401, the exact path, `visible_actions`, admin widening off, refused
+  nodes, side-effect functions, the read-only transaction, fetch 501, the statement timeout, the
+  profile check, hidden inputs, `channel_binding`, both production checks, class-only error logs,
+  the failed status).
+- Done-when, automated: `test_done_when_pro_users_count` gets 459 from the local seed through
+  `query_database`, with an `actions` row under the owner.
+- Done-when, by hand against Neon dev: uvicorn on :8000, `/ready` 200 (both databases ok). Agent
+  `step6-check` (owner `step5-check@example.com`) created by a script that wrote the key only into
+  a `--mcp-config` file (deleted after). `claude -p "how many pro users do we have?"` (Claude Code
+  2.1.310) called `list_tables`, `describe_table` twice and `query_database`, and answered 459. Four
+  actions on local `blastproof`: owner's `user_id`, system `company` (profile `neon`),
+  `session_id` null, audit events `[received, executed]`, about 3 s each. The server log (27 lines)
+  held no key, no SQL and no row values.
+- Fixed after the verify review (D-112): the `wait_seconds` maximum comes from
+  `STATUS_MAX_WAIT_SECONDS` instead of a literal 50; `get_action_status` on a failed action repeats
+  the message the agent got (`not_supported`, `table_not_found`); the `visible_actions` rule is
+  recorded as covering reads made for a user or agent, not internal updates by ID. Both code fixes
+  were mutation-checked (a test turns red without each).
+- Requirements ticked: BE-17, BE-19, BE-20, BE-21, BE-22, ARCH-13, DW-B06. Done for step 6 but
+  left open: SEC-33 (hook half, step 18), BE-18 (knowledge notes in
+  step 11, long poll and `retry_of` in step 17), BE-23 (Neon check, step 10), BE-100 (the write
+  templates, step 17), BE-16 and OBS-06 (write path), ARCH-10 (graph thread test, step 14),
+  SEC-34 (`retry_of`, step 17), CONV-03 (step 19), SEC-14 (masking, steps 8-13).
 
 ### Spike: MCP mounting, done 2026-10-25
 - Throwaway code and findings in `spikes/`: `mcp_mounting.py` (`probe` runs 10 questions in about
@@ -188,14 +239,23 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
-- Step 6: the MCP SDK's stdlib `mcp` logger writes raw exception text (seen in the spike: an email
-  and a URL with a password). Step 6 must silence or mask it and test that no raw value reaches
-  the logs (D-100).
+- Step 6: company reads open one connection per call (D-109). Measured on Neon dev from the dev
+  machine: connect 1.45 s, query 0.5 s, close 0.24 s, so a tool call takes about 3 s. A pool for
+  the `neon` profile would save about 1.7 s per call.
+- Local dev database now also holds agent `step6-check` (owner `step5-check@example.com`) and the
+  `company` system row (profile `neon`) from the step 6 manual check.
+- Step 6: 500 wide rows can pass Claude Code's 25k-token tool output limit (text over 50,000
+  characters is saved to a file). The cap stays 500; measure on real queries.
+- Step 6: `sql_display` and `pinned_sql` are null on read actions until step 8, so the dashboard
+  will show no SQL for these rows; seeded and later actions have it.
+- Step 6: an SDK argument-validation failure (e.g. `wait_seconds` 51) never reaches our code, so
+  it is not recorded as an action.
+- Step 6: the `systems` row named `company` is created by the first tool call (D-102); switching
+  `COMPANY_CONNECTION_PROFILE` on a database that already has it makes every tool call fail
+  closed until the row is fixed (step 20's bootstrap owns this).
 - Deploy: Fly's proxy is said to drop connections idle for about 60 s (community forum, not docs).
   `/mcp` streams SSE pings every 15 s (D-097); measure a 50 s `get_action_status` long poll on the
   real machine (D-101).
-- Step 6 tests: Starlette's TestClient host `testserver` gets 421 from the MCP DNS-rebinding check;
-  use the base URL `http://localhost:8000` (D-099).
 - The MCP route is taken from the SDK app's route list (D-096). If the SDK app ever gains more
   routes or middleware (for example by turning on SDK auth), the step 6 route-count test fails.
 - Account admin has no tools yet (D-095): no route or command bumps `token_version` (log out
@@ -203,7 +263,8 @@ created at deploy time straight into Fly.io secrets (D-058).
   on the dev database. Step 19 adds user routes; decide then which of these it covers.
 - Accounts are admin-created only and emails are never verified (D-095). Self sign-up, email-based
   password reset or Google sign-in would each need verification or SSO first.
-- Step 6 and step 18 must use `authenticate_agent_key` / `get_current_agent` to finish SEC-33.
+- Step 18 must use `authenticate_agent_key` / `get_current_agent` to finish SEC-33 (step 6's
+  `/mcp` middleware does).
 - Local dev database still holds the step 5 manual-check user `step5-check@example.com` and agent
   `step5-check` (owner to decide whether to delete them).
 - Login rate limit uses `request.client.host` (D-089). Locally uvicorn trusts `X-Forwarded-For`
@@ -242,8 +303,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - Adding a step to `REQUIRED_RUN_ORDER` breaks the exact-message check in
   `test_order_check_catches_a_seed_before_postgres`; step 4 checked its CI step in a separate test
   instead (D-086).
-- The MCP SDK is v2 (D-063); the MCP spike used the v2 API and step 6's text now does too
-  (D-096 to D-101).
+- The MCP SDK is v2 (D-063); the MCP spike and step 6 use the v2 API (D-096 to D-111).
 - Without `--log-config log_config.json`, uvicorn's reloader prints three plain-text lines
   before the app loads (the plan's Done-when command still works; CLAUDE.md uses the flag).
 - `mcp` v2 pulls in `httpx2` alongside the plan's `httpx`; harmless. The test client logs each
@@ -289,7 +349,8 @@ created at deploy time straight into Fly.io secrets (D-058).
   only at that instant (D-079).
 - Steps 8-9: no rule in backend plan §9 blocks a side-effect function such as
   `pg_terminate_backend`; as written it would go to review and be shadow-run. `labeled.yaml`
-  (`terminate-backends`) expects block.
+  (`terminate-backends`) expects block. Step 6's temporary `check_read` refuses them (D-103); keep
+  that list when the classifier replaces it.
 - Step 9: `tests/test_seed_counts.py` repeats the `users.paying` derived group in
   `DERIVED_GROUPS`; switch it to read `policies/rules.yaml`.
 - Step 10: `CREATE DATABASE ... TEMPLATE` does not copy database-level rights, so
@@ -328,7 +389,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 4. Blastproof data model
 - [x] 5. Auth
 - [x] Spike: MCP mounting
-- [ ] 6. MCP server
+- [x] 6. MCP server
 - [ ] Spike: Claude Code hook
 - [ ] 7. Remove direct access
 - [ ] GATE AUDIT: Claude Code reads the demo DB only through Blastproof

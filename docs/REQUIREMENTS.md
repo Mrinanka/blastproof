@@ -33,7 +33,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
 | [ ] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
 | [ ] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
-| [ ] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
+| [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
 | [ ] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
 | [ ] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
 | [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
@@ -107,12 +107,12 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
 | [x] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
 | [ ] | BE-16 | Action statuses follow the canonical state machine in BE §5; "pending" is never stored; `expired` actions have `decided_by` null. | BE §5 | B6, B14-B16 | *unit test of allowed transitions* |
-| [ ] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is mounted in FastAPI so the public path is `/mcp`. | BE §3, B6 | B6 | DW-B06 |
+| [x] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is mounted in FastAPI so the public path is `/mcp`. | BE §3, B6 | B6 | DW-B06 |
 | [ ] | BE-18 | MCP tools `list_tables` (names with one-line descriptions), `describe_table` (columns and types; plus knowledge notes from B11), `query_database` (`sql`, `intent`, optional `retry_of`) and `get_action_status` (`action_id`, optional `wait_seconds` 0-50, default 30). | BE §6, B6 | B6, B11, B17 | DW-B06, DW-B17 |
-| [ ] | BE-19 | Middleware checks the agent key on `/mcp` and puts the agent and owner into a `contextvar` (or the SDK's own mechanism) for tools to read. | BE B6 | B6 | *integration test: bad key 401* |
-| [ ] | BE-20 | `query_database` reads use `blastproof_reader` with a 5-second statement timeout and a 500-row cap; a read with more than 500 rows (fetch 501 to tell) returns the first 500 plus the `truncated` notice, with no total count. | BE B6, §6, §12; D-039 | B6 | *integration tests for timeout, cap and notice* |
-| [ ] | BE-21 | Every `query_database`, `list_tables` and `describe_table` call is recorded in `actions` and `audit_events` with the owner's `user_id` (reads end as `executed`); `get_action_status` creates no action and is only logged; rate-limited writes (SEC-20) are the other exception. | BE B6; D-038 | B6 | DW-B06; *integration test* |
-| [ ] | BE-22 | `session_id` is the MCP session ID when the transport provides one, else null. | BE §6 | B6 | *integration test* |
+| [x] | BE-19 | Middleware checks the agent key on `/mcp` and puts the agent and owner into a `contextvar` (or the SDK's own mechanism) for tools to read. | BE B6 | B6 | *integration test: bad key 401* |
+| [x] | BE-20 | `query_database` reads use `blastproof_reader` with a 5-second statement timeout and a 500-row cap; a read with more than 500 rows (fetch 501 to tell) returns the first 500 plus the `truncated` notice, with no total count. | BE B6, §6, §12; D-039 | B6 | *integration tests for timeout, cap and notice* |
+| [x] | BE-21 | Every `query_database`, `list_tables` and `describe_table` call is recorded in `actions` and `audit_events` with the owner's `user_id` (reads end as `executed`); `get_action_status` creates no action and is only logged; rate-limited writes (SEC-20) are the other exception. | BE B6; D-038 | B6 | DW-B06; *integration test* |
+| [x] | BE-22 | `session_id` is the MCP session ID when the transport provides one, else null. | BE §6 | B6 | *integration test* |
 | [ ] | BE-23 | `/ready` checks that Blastproof's DB, the company DB and the Neon API are reachable; `/health` is liveness only. | BE §6, §13, B6 | B1, B6 | *integration test with a dependency down* |
 | [ ] | BE-24 | A demo workspace outside the repo holds no database URL (not in `.env`, not in shell variables) and has `.claude/settings.json` `permissions.deny` rules for the repo's `backend/`, any `.env` and credential files. | BE B7; D-002 | B7 | DW-B07 |
 
@@ -382,7 +382,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B03 | The seed runs; a count by plan returns sensible numbers on the local and dev databases; the scenario files load and validate against a Pydantic schema. | BE B3 | B3 | Manual + test |
 | [x] | DW-B04 | `alembic upgrade head` creates all tables locally; a test as `blastproof_app` fails to update or delete an audit event, and so does one as `blastproof_owner` (trigger). | BE B4 | B4 | Integration test |
 | [x] | DW-B05 | Tests prove: wrong key or token, or a deactivated agent's key → 401; inactive user or bumped `token_version` → 401; 6th failed login in 15 min from one IP refused; 21st failed login in an hour for one email refused across IPs; admin-only route rejects members with 403. | BE B5 | B5 | Unit/integration tests |
-| [ ] | DW-B06 | After `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>" --scope local`, Claude answers "how many pro users do we have?" through Blastproof and the call appears in `actions`. | BE B6 | B6 | Manual in Claude Code |
+| [x] | DW-B06 | After `claude mcp add --transport http blastproof http://localhost:8000/mcp --header "Authorization: Bearer <key>" --scope local`, Claude answers "how many pro users do we have?" through Blastproof and the call appears in `actions`. | BE B6 | B6 | Manual in Claude Code |
 | [ ] | DW-B07 | Searching the demo workspace and its environment for "postgres" finds nothing, and Claude's `Read` of the backend's `.env` path is denied. | BE B7 | B7 | Manual in Claude Code |
 | [ ] | DW-B08 | About 40 table-driven classifier tests pass, including CTE writes, `UPDATE … FROM`, `WHERE true`, pinning with a frozen clock, multi-statement, transaction control, `blastproof` schema access, unordered LIMIT and a function call in fast-lane VALUES; classifier-relevant incident scenarios pass. | BE B8 | B8 | Unit tests |
 | [ ] | DW-B09 | Unit tests cover each rule, pass-1 skip semantics and strictest-wins; every incident scenario decidable from SQL alone is blocked in pass 1. | BE B9 | B9 | Unit tests |

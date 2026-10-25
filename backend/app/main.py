@@ -11,7 +11,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
-from app.api import auth, health
+from app.api import auth, health, ready
 from app.config import Settings, get_settings
 from app.core.errors import (
     ApiError,
@@ -22,6 +22,8 @@ from app.core.errors import (
 from app.core.request_id import RequestIdMiddleware
 from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
+from app.mcp.auth import AgentAuthMiddleware
+from app.mcp.server import build_mcp_server, transport_security
 
 logger = structlog.get_logger()
 
@@ -31,7 +33,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # No network, database or model download here: startup must work offline (TEST-07).
     settings: Settings = app.state.settings
     logger.info("startup", app_env=settings.app_env)
-    yield
+    # The MCP transport's task group lives as long as the app (D-096); it opens no connection.
+    async with app.state.mcp.session_manager.run():
+        yield
     if app.state.engine is not None:
         await app.state.engine.dispose()
     logger.info("shutdown")
@@ -43,15 +47,22 @@ class MissingProductionSettingError(RuntimeError):
 
 def _check_production_settings(settings: Settings) -> None:
     # Enforced here, not in Settings: Settings alone may be loaded with APP_ENV=production (tests).
+    if settings.app_env != "production":
+        return
+    if settings.company_connection_profile == "local":
+        raise MissingProductionSettingError(
+            "APP_ENV=production needs COMPANY_CONNECTION_PROFILE=neon; refusing to start."
+        )
     missing = [
         name
         for name, value in (
             ("BLASTPROOF_DATABASE_URL", settings.blastproof_database_url),
             ("JWT_SECRET", settings.jwt_secret),
+            ("COMPANY_DB_READER_URL", settings.company_db_reader_url),
         )
         if value is None
     ]
-    if settings.app_env == "production" and missing:
+    if missing:
         raise MissingProductionSettingError(
             f"APP_ENV=production needs {', '.join(missing)}; refusing to start."
         )
@@ -68,11 +79,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     url = settings.blastproof_database_url
     app.state.engine = make_engine(url.get_secret_value()) if url is not None else None
     app.state.sessionmaker = make_sessionmaker(app.state.engine) if app.state.engine else None
+
+    # One MCP server per app (D-096). Its single /mcp route joins FastAPI's own router, so unknown
+    # paths still get FastAPI's 404 and /mcp stays out of the OpenAPI schema.
+    app.state.mcp = build_mcp_server(settings, app.state.sessionmaker)
+    mcp_app = app.state.mcp.streamable_http_app(
+        stateless_http=True, json_response=False, transport_security=transport_security(settings)
+    )
+    app.router.routes.extend(mcp_app.routes)
+
+    # Added first, so it runs inside RequestIdMiddleware (the request ID stays outermost).
+    app.add_middleware(AgentAuthMiddleware, sessionmaker=app.state.sessionmaker)
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     use_error_envelope_in_openapi(app)
     app.include_router(health.router)
+    app.include_router(ready.router)
     app.include_router(auth.router)
     return app
 
