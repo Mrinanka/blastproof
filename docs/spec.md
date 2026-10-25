@@ -178,7 +178,7 @@ Blastproof must be safe when it fails, fast on safe actions, and explainable on 
 | ----------------- | -------------------------------------------------------------------------------------- | ------------------------------------------ |
 | Safety on failure | If Blastproof or any check fails, writes are blocked (fail closed); reads may continue | 0 writes pass on error                     |
 | Latency, reads    | Pass-through overhead stays small so agents feel no slowdown                           | under 50 ms added at p95                   |
-| Latency, writes   | Shadow run plus impact report fast enough to keep the agent's flow; trivially safe small inserts take a fast lane with no shadow run or LLM call | Fast lane under 300 ms; previewed writes: target set from the Neon spike's measured p50/p95 (aim: under 5 s for a demo-size database) |
+| Latency, writes   | Shadow run plus impact report fast enough to keep the agent's flow; trivially safe small inserts take a fast lane with no shadow run or LLM call | Fast lane under 300 ms; previewed writes: target set from the Neon spike's measured p50/p95 (measured: branch usable at p50 5.0 s, whole preview about 14 s; target: under 20 s for a demo-size database) |
 | Reliability       | Pending approvals survive restarts; no action is lost or applied twice                 | Durable workflow state; idempotent commits |
 | Explainability    | Every decision carries a reason a non-expert can read                                  | 100% of decisions                          |
 | Auditability      | Every action, decision and approver recorded; log is append-only                       | 100% of actions                            |
