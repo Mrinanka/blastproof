@@ -1,6 +1,7 @@
 """Readiness (CONV-03): can this process serve calls right now?
 
-Checks Blastproof's database, the company database and (when shadow copies are Neon branches) the
+Checks Blastproof's database, the company database, the workflow's checkpointer pool and
+recovery (when one is configured) and (when shadow copies are Neon branches) the
 Neon API, each with a 3 s timeout, at the same time. A failure names the checks
 that failed, never the exception text (which can hold a host or user name).
 """
@@ -58,7 +59,21 @@ async def ready(
             raise RuntimeError("not configured")
         await client.ping()
 
+    async def checkpointer() -> None:
+        async with request.app.state.checkpointer_pool.connection() as conn:
+            await conn.execute("SELECT 1")
+
+    async def workflow() -> None:
+        # Startup recovery has not finished (or the app is draining): a write or decision now
+        # could race it.
+        runner = request.app.state.runner
+        if runner is None or not runner.accepting:
+            raise RuntimeError("not recovered")
+
     probes = {"blastproof_db": blastproof_db, "company_db": company}
+    if request.app.state.checkpointer_pool is not None:
+        probes["checkpointer"] = checkpointer
+        probes["workflow"] = workflow
     if settings.company_connection_profile == "neon" and settings.neon_client == "api":
         probes["neon_api"] = neon_api
     names = list(probes)

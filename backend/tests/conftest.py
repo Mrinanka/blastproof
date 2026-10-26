@@ -188,6 +188,20 @@ def wf_env(auth_db: "AuthDb"):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
+def fresh_wf_env(blastproof_db_reachable: None):  # type: ignore[no-untyped-def]
+    """Like `wf_env`, but in a scratch database of its own, dropped after the test: for tests
+    that act on every action in the database (recovery, the sweep, retention)."""
+    from tests.workflow_helpers import make_env
+
+    name = create_blastproof_scratch()
+    try:
+        alembic_command.upgrade(alembic_config(on_database(BLASTPROOF_OWNER_URL, name)), "head")
+        yield make_env(AuthDb(name))
+    finally:
+        drop_blastproof_scratch(name)
+
+
+@pytest.fixture
 def settings() -> Settings:
     # _env_file=None: tests never read backend/.env.
     return Settings(_env_file=None, app_env="test")

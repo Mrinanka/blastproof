@@ -39,6 +39,7 @@ from app.services.shadow import ShadowRunner
 from app.services.vectorstores import build_vector_store
 from app.workflow.checkpointer import make_checkpointer, make_checkpointer_pool
 from app.workflow.graph import WorkflowDeps, build_graph
+from app.workflow.runner import WorkflowRunner
 
 logger = structlog.get_logger()
 
@@ -63,10 +64,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # wait=False a database that is down does not stop the app from starting; the graph then
         # fails closed on its first run.
         pool = app.state.checkpointer_pool
+        maintain = None
+        runner: WorkflowRunner | None = None
         if pool is not None:
             app.state.workflow = build_graph(app.state.workflow_deps, make_checkpointer(pool))
+            runner = WorkflowRunner(
+                app.state.workflow, app.state.sessionmaker, SystemClock(), settings
+            )
+            app.state.runner = runner
             if settings.app_env != "test":
                 await pool.open(wait=False)
+                # Recovery then the sweep, in the background: a database that is down at boot must
+                # not stop startup (TEST-07). Until recovery is done the runner takes no new write
+                # or decision, and /ready names `workflow`.
+                maintain = asyncio.create_task(runner.maintain())
         # Load the embedding model after startup, so the first retrieval does not wait for it.
         warm_up = None
         if settings.app_env != "test":
@@ -74,7 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
             yield
         finally:
-            for task in (sweep, warm_up):
+            # Let running writes finish (uvicorn has already closed its socket); the rest are
+            # cancelled and left for the next start's recovery.
+            if runner is not None and settings.app_env != "test":
+                await runner.drain()
+            for task in (sweep, warm_up, maintain):
                 if task is not None:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
@@ -178,11 +193,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # The write workflow (step 14). Only the closed pool is built here: the saver needs a running
     # event loop, so the lifespan builds it and the graph. Neither opens a connection (TEST-07);
-    # the lifespan opens the pool. Nothing calls the graph yet (step 15 starts it, 17 feeds it).
+    # the lifespan opens the pool. The runner (step 15) starts it; step 17 feeds it.
     checkpointer_url = settings.checkpointer_database_url
     app.state.checkpointer_pool = None
     app.state.workflow_deps = None
     app.state.workflow = None
+    app.state.runner = None
     if checkpointer_url is not None and app.state.sessionmaker is not None:
         app.state.checkpointer_pool = make_checkpointer_pool(checkpointer_url.get_secret_value())
         app.state.workflow_deps = WorkflowDeps(

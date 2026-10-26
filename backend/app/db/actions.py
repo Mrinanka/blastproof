@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, any_, func, select
+from sqlalchemy import ColumnElement, Select, any_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -134,6 +134,144 @@ async def add_event(
         )
     )
     await session.flush()
+
+
+@dataclass(frozen=True)
+class StatusView:
+    """What the agent (and a 409) needs to know about an action: no raw SQL, no intent."""
+
+    id: uuid.UUID
+    status: str
+    decision: str | None
+    policy_reason: str | None
+    reviewer_note: str | None
+    failure_reason: str | None
+    decided_by_name: str | None
+    created_at: datetime
+    expires_at: datetime | None
+
+
+async def status_view(
+    session: AsyncSession, action_id: uuid.UUID, user_id: uuid.UUID, *, is_admin: bool
+) -> StatusView | None:
+    """The status view of an action this user may see; None for an unknown or someone else's."""
+    decider = aliased(User)
+    query = (
+        visible_actions(user_id, is_admin=is_admin)
+        .with_only_columns(
+            Action.id,
+            Action.status,
+            Action.decision,
+            Action.policy_reason,
+            Action.reviewer_note,
+            Action.failure_reason,
+            decider.display_name.label("decided_by_name"),
+            Action.created_at,
+            Action.expires_at,
+        )
+        .outerjoin(decider, Action.decided_by == decider.id)
+        .where(Action.id == action_id)
+        .execution_options(populate_existing=True)
+    )
+    row = (await session.execute(query)).first()
+    return StatusView(**row._asdict()) if row is not None else None
+
+
+async def claim_decision(
+    session: AsyncSession,
+    action_id: uuid.UUID,
+    *,
+    user_id: uuid.UUID,
+    is_admin: bool,
+    approved: bool,
+    note: str | None,
+    now: datetime,
+) -> bool:
+    """Claim a review for `user_id` with one conditional UPDATE; True if this call won it.
+
+    The condition is the same as `can_decide`: awaiting review and not past `expires_at`. Of two
+    callers at once, the second waits for the first's row lock, sees the new status and claims
+    nothing (D-177). Visibility is part of the statement, so no caller can claim what it cannot see.
+    """
+    visible = visible_actions(user_id, is_admin=is_admin).with_only_columns(Action.id)
+    status = ActionStatus.APPROVED if approved else ActionStatus.REJECTED
+    claimed = await session.execute(
+        update(Action)
+        .where(
+            Action.id == action_id,
+            Action.id.in_(visible),
+            Action.status == ActionStatus.AWAITING_REVIEW.value,
+            or_(Action.expires_at.is_(None), Action.expires_at > now),
+        )
+        .values(status=status.value, decided_by=user_id, decided_at=now, reviewer_note=note)
+        .returning(Action.id)
+    )
+    return claimed.scalar_one_or_none() is not None
+
+
+async def expire_if_overdue(session: AsyncSession, action_id: uuid.UUID, now: datetime) -> bool:
+    """Expire a review whose deadline has passed. `decided_by` stays null (BE-16).
+
+    Locks the row first, so a decision that won the race is seen, and nothing is expired twice.
+    """
+    action = (
+        await session.execute(
+            select(Action)
+            .where(Action.id == action_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if (
+        action is None
+        or action.status != ActionStatus.AWAITING_REVIEW.value
+        or action.expires_at is None
+        or action.expires_at > now
+    ):
+        return False
+    await set_status(
+        session,
+        action_id,
+        ActionStatus.EXPIRED,
+        decided_at=now,
+        data={"reason": "review_timeout"},
+    )
+    return True
+
+
+async def overdue_reviews(session: AsyncSession, now: datetime) -> list[uuid.UUID]:
+    """Reviews waiting past their `expires_at`."""
+    return list(
+        (
+            await session.execute(
+                select(Action.id).where(
+                    Action.status == ActionStatus.AWAITING_REVIEW.value, Action.expires_at <= now
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def stuck_actions(
+    session: AsyncSession, statuses: frozenset[ActionStatus], cutoff: datetime
+) -> list[uuid.UUID]:
+    """Actions in one of `statuses` since before `cutoff`.
+
+    Timed from the latest audit event named after the action's current status, not from
+    `created_at`: a re-preview after drift (step 16) re-enters `previewing` hours later.
+    """
+    entered = (
+        select(func.max(AuditEvent.created_at))
+        .where(AuditEvent.action_id == Action.id, AuditEvent.event_type == Action.status)
+        .correlate(Action)
+        .scalar_subquery()
+    )
+    query = select(Action.id).where(
+        Action.status.in_([status.value for status in statuses]), entered < cutoff
+    )
+    return list((await session.execute(query)).scalars().all())
 
 
 @dataclass(frozen=True)
