@@ -1422,3 +1422,8 @@ existing setting.
 ## D-178 · 2026-10-26 · Graph state holds plain types, or registered models
 **Decision:** The graph state uses plain types (dicts, strings, ints; decimals as strings) unless the model's module is listed in `allowed_msgpack_modules`.
 **Why:** UUID, datetime, Decimal and a Pydantic model all round-tripped, but reading a checkpoint with a Pydantic model logs "Deserializing unregistered type ... will be blocked in a future version" (`LANGGRAPH_STRICT_MSGPACK`). A future block would make every resume fail.
+
+## D-179 · 2026-10-26 · Local `pytest` runs the fast tests; the full suite runs in CI
+**Decision:** `uv run pytest` runs only the unit tests (no Docker). `uv run pytest --integration` runs all of them; CI uses that flag, so every test still runs before merge. CI is split into a `lint + unit` job and a parallel `integration` job. Details and how to reverse it: `docs/test-speed.md`. Status: implemented.
+**Why:** The full suite was 1,975 tests and 554 s; the 1,552 unit tests take 42 s, and the 423 integration tests (mostly shadow/preview tests that clone the 273k-row company database) take about 510 s. That blocked local work and slowed CI.
+**Rejected:** `addopts = "-m 'not integration'"` (applies to CI too, and `test_ci_workflow.py` forbids a `-m` filter in CI); deleting or shrinking the shadow tests (loses coverage).

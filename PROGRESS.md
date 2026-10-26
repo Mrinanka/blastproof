@@ -1,5 +1,7 @@
 # Progress
 
+> **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
+
 ## Current focus
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Next: step 14 (LangGraph workflow). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).

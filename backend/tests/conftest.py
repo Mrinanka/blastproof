@@ -72,6 +72,27 @@ def scenario_anchor_date() -> date:
     return load_scenario_file(SCENARIOS_DIR / "incidents.yaml").anchor_date
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--integration",
+        action="store_true",
+        help="also run the integration tests (need Docker Compose Postgres; CI always passes this)",
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Plain `pytest` runs only the fast tests (D-179). CI passes --integration to run them all.
+
+    An explicit `-m` expression is respected as given, so `-m integration` still works.
+    """
+    if config.getoption("--integration") or config.option.markexpr:
+        return
+    skipped = [item for item in items if item.get_closest_marker("integration")]
+    if skipped:
+        config.hook.pytest_deselected(items=skipped)
+        items[:] = [item for item in items if item not in skipped]
+
+
 @pytest.fixture(autouse=True)
 def no_llm_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     """A dev shell's model keys and tracing switch never reach a test: no test can call a model
@@ -179,7 +200,7 @@ def blastproof_db_reachable() -> None:
     except (OSError, TimeoutError, asyncpg.PostgresError) as exc:
         pytest.fail(
             "blastproof-db is not reachable on localhost:5432. Run `docker compose up -d` from"
-            " the repo root, or run only unit tests with `-m 'not integration'`."
+            " the repo root, or leave out --integration to run only the unit tests."
             f" ({type(exc).__name__})",
             pytrace=False,
         )

@@ -19,14 +19,20 @@ DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
 
 SHA_PIN = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
-# The commands CI must run, in this order. Lint comes before Postgres starts so it fails fast.
-REQUIRED_RUN_ORDER = [
+# The commands each job must run, in this order (D-179). The `unit` job is the fast one: lint and
+# the tests that need no Docker. The `integration` job runs everything, so plain `pytest` skipping
+# the integration tests locally can never skip them in CI.
+UNIT_RUN_ORDER = [
     "uv sync --locked",
     "uv run ruff check",
     "uv run ruff format --check",
+    "uv run pytest",
+]
+INTEGRATION_RUN_ORDER = [
+    "uv sync --locked",
     "docker compose up",
     "demo_company/seed.py --target local",  # step 3: builds company_template and company_main
-    "uv run pytest",
+    "uv run pytest --integration",
 ]
 
 
@@ -36,8 +42,9 @@ def load_yaml(text: str) -> dict[Any, Any]:
     return data
 
 
-def steps(workflow: dict[Any, Any]) -> list[dict[str, Any]]:
-    return [step for job in workflow["jobs"].values() for step in job["steps"]]
+def steps(workflow: dict[Any, Any], job: str | None = None) -> list[dict[str, Any]]:
+    jobs = [workflow["jobs"][job]] if job else list(workflow["jobs"].values())
+    return [step for j in jobs for step in j["steps"]]
 
 
 def secret_problems(text: str) -> list[str]:
@@ -54,16 +61,16 @@ def pin_problems(workflow: dict[Any, Any]) -> list[str]:
     ]
 
 
-def run_order_problems(workflow: dict[Any, Any]) -> list[str]:
-    runs = [step["run"] for step in steps(workflow) if "run" in step]
+def run_order_problems(workflow: dict[Any, Any], job: str, order: list[str]) -> list[str]:
+    runs = [step["run"] for step in steps(workflow, job) if "run" in step]
     positions = []
-    for command in REQUIRED_RUN_ORDER:
+    for command in order:
         found = [i for i, run in enumerate(runs) if command in run]
         if not found:
             return [f"missing step: {command}"]
         positions.append(found[0])
     if positions != sorted(positions):
-        return [f"steps out of order: {REQUIRED_RUN_ORDER}"]
+        return [f"steps out of order: {order}"]
     return []
 
 
@@ -92,8 +99,8 @@ def test_runs_on_pull_requests_and_pushes_to_long_lived_branches(ci: dict[Any, A
 def test_token_is_read_only_and_checkout_keeps_no_credentials(ci: dict[Any, Any]) -> None:
     assert ci["permissions"] == {"contents": "read"}
     checkouts = [s for s in steps(ci) if s.get("uses", "").startswith("actions/checkout@")]
-    assert len(checkouts) == 1
-    assert checkouts[0]["with"]["persist-credentials"] is False
+    assert len(checkouts) == len(ci["jobs"])
+    assert all(c["with"]["persist-credentials"] is False for c in checkouts)
 
 
 def test_uses_no_secrets(ci_text: str) -> None:
@@ -114,20 +121,35 @@ def test_tests_run_as_test_env_with_fake_neon(ci: dict[Any, Any]) -> None:
     assert ci["env"]["NEON_CLIENT"] == "fake"
 
 
-def test_runs_lint_then_postgres_then_all_tests(ci: dict[Any, Any]) -> None:
-    assert run_order_problems(ci) == []
-    runs = [step["run"] for step in steps(ci) if "run" in step]
+def test_jobs_are_unit_and_integration(ci: dict[Any, Any]) -> None:
+    assert set(ci["jobs"]) == {"unit", "integration"}
+
+
+def test_unit_job_runs_lint_then_fast_tests_without_docker(ci: dict[Any, Any]) -> None:
+    assert run_order_problems(ci, "unit", UNIT_RUN_ORDER) == []
+    runs = [step["run"] for step in steps(ci, "unit") if "run" in step]
+    assert not any("docker" in run for run in runs)
+    (pytest_run,) = [run for run in runs if "uv run pytest" in run]
+    assert "--integration" not in pytest_run
+    assert " -m " not in f" {pytest_run} "
+
+
+def test_integration_job_runs_postgres_then_every_test(ci: dict[Any, Any]) -> None:
+    assert run_order_problems(ci, "integration", INTEGRATION_RUN_ORDER) == []
+    runs = [step["run"] for step in steps(ci, "integration") if "run" in step]
     (compose,) = [run for run in runs if "docker compose up" in run]
     assert "--wait" in compose
     (pytest_run,) = [run for run in runs if "uv run pytest" in run]
-    # Integration tests must run in CI, never be filtered out.
+    # Plain pytest skips the integration tests (D-179), so CI must opt in. Never filter with -m.
+    assert "--integration" in pytest_run
     assert "not integration" not in pytest_run
     assert " -m " not in f" {pytest_run} "
 
 
 def test_uv_version_comes_from_an_exact_pin(ci: dict[Any, Any]) -> None:
-    (setup_uv,) = [s for s in steps(ci) if s.get("uses", "").startswith("astral-sh/setup-uv@")]
-    assert setup_uv["with"]["version-file"] == "backend/pyproject.toml"
+    setup_uvs = [s for s in steps(ci) if s.get("uses", "").startswith("astral-sh/setup-uv@")]
+    assert len(setup_uvs) == len(ci["jobs"])
+    assert all(s["with"]["version-file"] == "backend/pyproject.toml" for s in setup_uvs)
     pyproject = tomllib.loads((BACKEND_DIR / "pyproject.toml").read_text(encoding="utf-8"))
     assert re.fullmatch(r"==\d+\.\d+\.\d+", pyproject["tool"]["uv"]["required-version"])
 
@@ -156,18 +178,31 @@ def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -
             lambda text: pin_problems(load_yaml(text)),
         ),
         (
-            "jobs: {b: {steps: [{run: uv sync --locked}, {run: uv run ruff check .}]}}",
-            lambda text: run_order_problems(load_yaml(text)),
+            "jobs: {unit: {steps: [{run: uv sync --locked}, {run: uv run ruff check .}]}}",
+            lambda text: run_order_problems(load_yaml(text), "unit", UNIT_RUN_ORDER),
         ),
         (
-            "jobs: {b: {steps: ["
-            "{run: uv sync --locked}, {run: uv run ruff check .},"
-            "{run: uv run ruff format --check .},"
-            "{run: uv run pytest}, {run: docker compose up -d --wait}]}}",
-            lambda text: run_order_problems(load_yaml(text)),
+            "jobs: {integration: {steps: ["
+            "{run: uv sync --locked}, {run: uv run pytest --integration},"
+            "{run: docker compose up -d --wait}]}}",
+            lambda text: run_order_problems(load_yaml(text), "integration", INTEGRATION_RUN_ORDER),
+        ),
+        (
+            # Plain pytest in the integration job would silently skip the integration tests.
+            "jobs: {integration: {steps: ["
+            "{run: uv sync --locked}, {run: docker compose up -d --wait},"
+            "{run: uv run --project backend python demo_company/seed.py --target local},"
+            "{run: uv run pytest}]}}",
+            lambda text: run_order_problems(load_yaml(text), "integration", INTEGRATION_RUN_ORDER),
         ),
     ],
-    ids=["secret", "tag-pinned-action", "missing-pytest", "pytest-before-postgres"],
+    ids=[
+        "secret",
+        "tag-pinned-action",
+        "missing-pytest",
+        "pytest-before-postgres",
+        "integration-job-without-flag",
+    ],
 )
 def test_checks_catch_a_bad_workflow(bad_yaml: str, check: Any) -> None:
     assert check(bad_yaml) != []
@@ -194,9 +229,9 @@ def test_lint_covers_claude_hook(ci: dict[Any, Any]) -> None:
 
 
 def test_migrations_run_after_postgres_and_before_pytest(ci: dict[Any, Any]) -> None:
-    # Step 4 (OPS-01). Checked here rather than in REQUIRED_RUN_ORDER, so the exact-message check
-    # below keeps its meaning.
-    runs = [s.get("run", "") for s in steps(ci)]
+    # Step 4 (OPS-01). Checked here rather than in INTEGRATION_RUN_ORDER, so the exact-message
+    # check below keeps its meaning.
+    runs = [s.get("run", "") for s in steps(ci, "integration")]
     migrate = [i for i, run in enumerate(runs) if "uv run alembic upgrade head" in run]
     assert len(migrate) == 1
     compose = next(i for i, run in enumerate(runs) if "docker compose up" in run)
@@ -211,10 +246,11 @@ def test_migrations_run_after_postgres_and_before_pytest(ci: dict[Any, Any]) -> 
 
 def test_order_check_catches_a_seed_before_postgres() -> None:
     bad = load_yaml(
-        "jobs: {b: {steps: ["
-        "{run: uv sync --locked}, {run: uv run ruff check .},"
-        "{run: uv run ruff format --check .},"
+        "jobs: {integration: {steps: ["
+        "{run: uv sync --locked},"
         "{run: uv run --project backend python demo_company/seed.py --target local},"
-        "{run: docker compose up -d --wait}, {run: uv run pytest}]}}"
+        "{run: docker compose up -d --wait}, {run: uv run pytest --integration}]}}"
     )
-    assert run_order_problems(bad) == [f"steps out of order: {REQUIRED_RUN_ORDER}"]
+    assert run_order_problems(bad, "integration", INTEGRATION_RUN_ORDER) == [
+        f"steps out of order: {INTEGRATION_RUN_ORDER}"
+    ]
