@@ -14,6 +14,7 @@ import pytest
 from app.config import DEFAULT_POLICY_FILE
 from app.db.actions import DetailRows, SummaryRow
 from app.db.models import Action, Agent, AuditEvent, User
+from app.logging import configure_logging
 from app.services import actions as service
 from app.services import classifier
 from app.services.actions import StoredShapeError, build_detail, build_summary, can_decide
@@ -273,6 +274,7 @@ def test_the_log_names_the_field_and_keys_and_holds_no_value(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     # caplog, not structlog's capture_logs: after configure_logging the logger is cached.
+    configure_logging(stream=None)  # alone, structlog is unconfigured and bypasses logging
     bad = {"headline": "secret text", "key_points": 5}
     with caplog.at_level("ERROR"), pytest.raises(StoredShapeError):
         detail(make_action(impact_report=bad))
