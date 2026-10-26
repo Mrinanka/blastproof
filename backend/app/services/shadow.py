@@ -254,9 +254,11 @@ class ShadowRunner:
         *,
         policy: Policy,
         clients: Mapping[str, NeonClient],
+        # No default: SHADOW_TIMEOUT_SECONDS is the one source (D-143), so a caller cannot get a
+        # stale value by leaving it out.
+        timeout_seconds: float,
         max_concurrent: int = 2,
         slot_wait_seconds: float = 10.0,
-        timeout_seconds: float = 30.0,
         delete_timeout_seconds: float = 10.0,
     ) -> None:
         self._policy = policy

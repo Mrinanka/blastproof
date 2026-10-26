@@ -17,6 +17,10 @@ COMPLETE = {
     "neon_api_key": "napi-key",
     "neon_project_id": "project",
     "neon_parent_branch_id": "br-parent",
+    # Production also sets its model settings itself (D-165).
+    "summary_model": "anthropic:claude-haiku-5-5",
+    "judge_model": "anthropic:claude-haiku-5-5",
+    "llm_prices": {"anthropic:claude-haiku-5-5": {"input_per_million": 1, "output_per_million": 5}},
 }
 
 

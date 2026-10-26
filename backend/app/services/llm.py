@@ -6,6 +6,7 @@ never logged, because they could hold a key.
 """
 
 import asyncio
+import re
 from collections.abc import Callable, Mapping
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final
@@ -30,6 +31,10 @@ RESERVED_OPTION_KEYS: Final = frozenset(
         "config_prefix",
     }
 )
+# `provider:model` (ARCH-19). init_chat_model takes the part before the first colon as the provider
+# only when it is one of its lowercase provider names; anything else, or a bare name, makes it guess
+# the provider from the model name (a bare `gemini-...` becomes Vertex AI, not google_genai).
+MODEL_STRING: Final = re.compile(r"[a-z][a-z0-9_]*:\S+")
 # For Google, max_retries=1 means a single attempt: no retry inside our timeout.
 MAX_RETRIES: Final = 1
 COST_QUANTUM: Final = Decimal("0.000001")  # actions.llm_cost_usd is Numeric(12, 6)
@@ -122,6 +127,7 @@ class LazyModel[T]:
 
 
 __all__ = [
+    "MODEL_STRING",
     "RESERVED_OPTION_KEYS",
     "LazyModel",
     "LlmConfigError",

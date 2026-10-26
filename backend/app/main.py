@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from app.api import auth, health, ready
-from app.config import Settings, get_settings
+from app.config import SET_EXPLICITLY_IN_PRODUCTION, Settings, get_settings
 from app.core.clock import SystemClock
 from app.core.errors import (
     ApiError,
@@ -105,6 +105,12 @@ def _check_production_settings(settings: Settings) -> None:
             ("NEON_PARENT_BRANCH_ID", settings.neon_parent_branch_id),
         )
         if value is None
+    ]
+    # The model and price defaults are for dev machines only (D-165).
+    missing += [
+        env
+        for name, env in SET_EXPLICITLY_IN_PRODUCTION.items()
+        if name not in settings.explicit_fields
     ]
     if missing:
         raise MissingProductionSettingError(

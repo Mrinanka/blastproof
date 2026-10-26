@@ -1,5 +1,7 @@
 """Step 10: the pure parts of the shadow executor (no database)."""
 
+import pytest
+
 from app.config import DEFAULT_POLICY_FILE
 from app.services.company_schema import ForeignKey, pk_json_sql, quote_ident, quote_literal
 from app.services.policy import DiffFacts, load_policy
@@ -8,6 +10,7 @@ from app.services.shadow import (
     Diff,
     RowChange,
     SampleRow,
+    ShadowRunner,
     TableDiff,
     fk_paths,
     mask_row,
@@ -152,3 +155,10 @@ def test_pk_json_and_quoting() -> None:
     assert pk_json_sql("a", ["x", "y"]) == 'jsonb_build_object(\'x\', "a"."x", \'y\', "a"."y")'
     assert quote_ident('we"ird') == '"we""ird"'
     assert quote_literal("it's") == "'it''s'"
+
+
+def test_the_runner_has_no_timeout_default_of_its_own() -> None:
+    """Gate audit: SHADOW_TIMEOUT_SECONDS (D-143) is the only source, so leaving it out fails."""
+    with pytest.raises(TypeError, match="timeout_seconds"):
+        ShadowRunner(policy=POLICY, clients={})  # type: ignore[call-arg]
+    assert ShadowRunner(policy=POLICY, clients={}, timeout_seconds=60)._timeout == 60
