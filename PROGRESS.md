@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: Stage 3, starting with the pull-forward of GET /v1/actions and GET /v1/actions/{id}. The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). Next: Stage 3, the LangGraph interrupt and resume spike. The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -35,6 +35,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Actions read routes (Stage 3 pull-forward), done 2026-10-26, D-168 to D-172
+- New: `app/api/actions.py`, `app/schemas/actions.py`, `app/services/actions.py`; `app/db/actions.py` gained `list_visible_actions` and `get_action_detail_rows` (both start from `visible_actions`); `classifier.py` gained public `display_sql` and `display_in_worker`; `main.py` includes the router. No migration, no new dependency.
+- Tests: 113 new in `test_actions_api.py`, `test_actions_views.py`, `test_authorization_matrix.py` (+ `action_helpers.py`); full run 1,975 passed, 1 skipped (7 min 24 s); ruff, format and `alembic check` clean. Mutation checks: removing each of 11 guards turned a test red (owner filter, admin widening, both intent masks, first_line mask, 50 cap, can_decide expiry, timeline whitelist, malformed-id 404, retried_by visibility, total ignoring filters; the last first survived and got its own test).
+- By hand 2026-10-26: uvicorn on :8000 (`/ready` all ok), logged in as a new local admin `check-admin@example.com`, `GET /v1/actions` and `GET /v1/actions/{id}` returned the step 6 read actions in the full shape, a random and a malformed ID gave the same 404. Not checked by hand: a second member getting 404 on another user's action (the automated tests cover it). That run left users `check-admin@example.com` (and possibly `check-member@example.com`) in the local dev database.
+- Requirements ticked: BE-109, BE-110, ARCH-14, ARCH-15. Left open: TEST-03 (matrix started, step 19 adds rows), CONV-03 to CONV-07, SEC-14, ARCH-17, OPS-05.
 
 ### Gate audit (Stage 2), done 2026-10-26, D-165 to D-167
 - Audit (Prompt G, branch `fix/gate-audit-stage-2`): 1,814 passed before the fixes; ruff, format and `alembic check` clean. Gate check: the shadow done-when, all 16 measured scenarios and the row-hash test pass, and plain `SELECT count(*)` queries on local `company_main` as `blastproof_reader` (no shadow code) match `incidents.yaml` exactly (users 48,213 = free 48,201 + pro 9 + enterprise 3; orders 48,500; order_items 121,364; subscriptions 1,476; payments 4,382; support_tickets 11,647; customer_notes 5,713; invoices set to NULL 4,382). Every users delete retrieves the business rules. `evals.run` does not exist yet (Evals stage).
@@ -373,6 +379,8 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Flaky test (step 11): `test_vector_store_contract.py::test_the_wrong_dimension_raises_and_stores_nothing[pgvector]` failed once on CI for PR #20 ("DID NOT RAISE" on the empty-table `search` with a 3-number vector) and passed on re-run, with no related change. Likely cause (not confirmed): `PgVectorStore.search` relies on Postgres raising a dimension error while evaluating a distance, which an empty table can skip depending on the query plan. Fix if it returns: make `search` check the vector length itself (a step 11 code change).
+- Actions routes: step 14 must write `matched_rules` as `[{name, outcome, reason, pass}]` with `pass` `pre` or `post` (D-171). A stored shape the views cannot parse is a 500 (D-170). In `from`/`to` query values, write the offset as `Z` or `%2B00:00`. The 404 for unknown routes is still FastAPI's default (step 19).
 - Gate audit 2, finding 6 (fixed, D-167): one path still logs exception text: when a response has already started, the middleware re-raises and uvicorn's `uvicorn.error` logger prints the traceback with the message. No route streams a response today (MCP tool errors are caught by the SDK and filtered by `StripMcpDetails`); revisit if a streaming route is added. Logs from other code that call `logger.exception` would also print text; none do in `app/` today.
 - Gate audit 2, finding 4 (Deploy): Neon documents `branch.expires_at` as Early Access only. It works on `blastproof-company-dev`; at deploy, run one `preview-sql --confirm-project blastproof-company` (owner-approved) and, if Neon refuses it, make `expires_at` a setting and rely on the sweep.
 - Gate audit 2: with `APP_ENV=production`, `SUMMARY_MODEL`, `JUDGE_MODEL` and `LLM_PRICES` must be set in Fly.io secrets or the backend does not start (D-165). The users-delete scenario `delete-users-without-where` ranks the business rules 8th of 10, but pass 1 blocks it before retrieval. A cancelled Neon create now spends up to 10 s looking up its branch by name (D-166), so a preview that hits `SHADOW_TIMEOUT_SECONDS` can take up to 70 s before it fails closed.
@@ -570,7 +578,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] GATE AUDIT: exact diffs and correct retrieval
 
 ## Stage 3: the flow + dashboard start
-- [ ] Pull forward: GET /v1/actions, GET /v1/actions/{id} (`/v1/auth/me` done in step 5, D-092)
+- [x] Pull forward: GET /v1/actions, GET /v1/actions/{id} (`/v1/auth/me` done in step 5, D-092)
 - [ ] Spike: LangGraph interrupt and resume
 - [ ] 14. LangGraph workflow
 - [ ] 15. Workflow runner

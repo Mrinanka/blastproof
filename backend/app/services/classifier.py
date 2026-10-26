@@ -786,14 +786,19 @@ def _display(sql: str) -> str:
 # --- Entry points ------------------------------------------------------------------------------
 
 
-def _unknown(sql: str, reason: str) -> Classification:
+def display_sql(sql: str) -> str:
+    """The masked display of `sql`; never raises. Input past the cap is not scanned whole: the
+    display is for people, and the scan is not free."""
     try:
-        # Input past the cap is not scanned whole: the display is for people, and the scan is
-        # not free.
-        display = _display(sql[:MAX_SQL_BYTES])
+        return _display(sql[:MAX_SQL_BYTES])
     except Exception:
-        display = mask_text(sql[:MAX_SQL_BYTES])
-    return Classification(kind=Kind.UNKNOWN, reason=reason, pinned_sql=sql, sql_display=display)
+        return mask_text(sql[:MAX_SQL_BYTES])
+
+
+def _unknown(sql: str, reason: str) -> Classification:
+    return Classification(
+        kind=Kind.UNKNOWN, reason=reason, pinned_sql=sql, sql_display=display_sql(sql)
+    )
 
 
 def _analyze(sql: str) -> tuple[Classification, _Acc]:
@@ -900,3 +905,20 @@ async def classify_in_worker(sql: str, clock: Clock) -> tuple[Classification, in
         logger.error("classify_failed", error_class=type(exc).__name__)
         result = _unknown(sql, "check_error")
     return result, round((time.perf_counter() - started) * 1000)
+
+
+async def display_in_worker(sql: str) -> str | None:
+    """`display_sql` on the classifier pool with the same 2 s cap; None on a timeout or a crash.
+
+    For the API's `original_sql_display`: a slow display is left out, never waited for.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_EXECUTOR, partial(display_sql, sql)), CLASSIFY_TIMEOUT_SECONDS
+        )
+    except TimeoutError:
+        return None
+    except Exception as exc:
+        logger.error("display_failed", error_class=type(exc).__name__)
+        return None
