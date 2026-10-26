@@ -599,8 +599,8 @@ def shadow_runner(clients: object | None = None, **overrides: object) -> ShadowR
     values: dict[str, object] = {
         "policy": load_policy(DEFAULT_POLICY_FILE),
         "clients": clients if clients is not None else {"local": fake_neon_client()},
-        # The real default is 30 s; a preview of the 273k-row seed takes 10 to 15 s on a Docker
-        # Desktop machine, so tests that are not about the timeout leave room.
+        # The real value is SHADOW_TIMEOUT_SECONDS (60 s); a preview of the 273k-row seed takes 10
+        # to 15 s on a Docker Desktop machine, so tests that are not about the timeout leave room.
         "timeout_seconds": 120,
     }
     return ShadowRunner(**(values | overrides))  # type: ignore[arg-type]

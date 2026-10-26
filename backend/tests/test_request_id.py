@@ -146,7 +146,10 @@ def test_unhandled_exception_returns_500_with_request_id(crashing_app: FastAPI) 
     error, finished = lines
     assert error["event"] == "unhandled_exception"
     assert error["level"] == "error"
-    assert "RuntimeError: secret detail" in error["exception"]
+    # Gate audit finding 6: the class and where, never the message (it can hold row values).
+    assert error["exc_type"] == "RuntimeError"
+    assert error["frames"][-1].endswith(" boom")
+    assert "secret detail" not in buf.getvalue()
     assert finished["event"] == "request_finished"
     assert finished["status"] == 500
 
@@ -172,3 +175,65 @@ async def test_exception_after_response_started_is_logged_and_reraised() -> None
     assert error["event"] == "unhandled_exception"
     assert error["request_id"] == finished["request_id"]
     assert finished["status"] == 200
+
+
+# --- Gate audit finding 6: the crash log keeps where it failed, never what the error said -----
+
+LEAKY = 'invalid input syntax for type integer: "alice@example.com"'
+
+
+@pytest.fixture
+def leaking_app(settings: Settings) -> FastAPI:
+    app = create_app(settings)
+
+    def load_customer() -> None:
+        raise ValueError(LEAKY)
+
+    @app.get("/leak")
+    async def leak() -> None:
+        try:
+            load_customer()
+        except ValueError as exc:
+            raise RuntimeError(f"wrapped: {exc}") from exc
+
+    return app
+
+
+def test_the_crash_log_holds_no_error_text_but_says_where(leaking_app: FastAPI) -> None:
+    """A Postgres error can carry row values; only the class and code locations are logged."""
+    buf = io.StringIO()
+    with TestClient(leaking_app) as client:
+        configure_logging(stream=buf)
+        assert client.get("/leak").status_code == 500
+
+    assert "alice@example.com" not in buf.getvalue()
+    assert "invalid input syntax" not in buf.getvalue()
+    [error] = [line for line in log_lines(buf) if line["event"] == "unhandled_exception"]
+    assert error["exc_type"] == "RuntimeError"
+    assert "exception" not in error  # no formatted traceback, which repeats the message
+    assert error["frames"][-1] == f"test_request_id.py:{_line_of('raise RuntimeError(f')} leak"
+    assert not any(char in frame for frame in error["frames"] for char in "\n\"'")
+
+
+def test_the_frames_are_capped() -> None:
+    from app.core.request_id import MAX_LOGGED_FRAMES, crash_frames
+
+    def recurse(n: int) -> None:
+        if n == 0:
+            raise RuntimeError("deep")
+        recurse(n - 1)
+
+    try:
+        recurse(MAX_LOGGED_FRAMES * 2)
+    except RuntimeError as exc:
+        frames = crash_frames(exc)
+    assert len(frames) == MAX_LOGGED_FRAMES
+    assert frames[-1].endswith(" recurse")  # innermost last
+
+
+def _line_of(text: str) -> int:
+    from pathlib import Path
+
+    lines = Path(__file__).read_text(encoding="utf-8").splitlines()
+    [number] = [i for i, line in enumerate(lines, 1) if text in line and "_line_of" not in line]
+    return number

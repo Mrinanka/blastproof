@@ -9,14 +9,20 @@ from pathlib import Path
 
 import pytest
 
-from app.config import DEFAULT_EMBEDDING_CACHE_DIR
+from app.config import DEFAULT_EMBEDDING_CACHE_DIR, DEFAULT_POLICY_FILE
 from app.core.clock import FrozenClock
 from app.db import knowledge as knowledge_db
 from app.db.actions import create_action
 from app.db.session import make_engine, make_sessionmaker
 from app.services.classifier import classify
 from app.services.embeddings import FastEmbedEmbedder
-from app.services.knowledge import SCHEMA_DOCS_SOURCE, KnowledgeService, Retrieval
+from app.services.knowledge import (
+    SCHEMA_DOCS_SOURCE,
+    SIMILAR_CHUNKS,
+    KnowledgeService,
+    Retrieval,
+)
+from app.services.policy import Route, evaluate_pass_one, load_policy
 from app.services.vectorstores.pgvector import PgVectorStore
 from evals.schema import SqlScenario, load_scenario_file
 from tests.conftest import (
@@ -149,3 +155,36 @@ async def test_knowledge_used_is_saved_on_a_real_action_row(
     assert rules[0]["match"] == "similar"
     assert rules[0]["source"] == SCHEMA_DOCS_SOURCE
     assert all("content" not in r for r in stored)
+
+
+# Measured 2026-10-26 (k=10): the five users deletes that reach retrieval rank 1 to 6; the three
+# that pass 1 blocks rank 2 to 8. A margin of three places keeps a small model or chunking change
+# from silently pushing the rules out of the top k.
+MAX_RULES_RANK = SIMILAR_CHUNKS - 3
+
+
+async def test_the_business_rules_rank_well_inside_the_top_k(
+    service: tuple[KnowledgeService, AuthDb], frozen_clock: FrozenClock
+) -> None:
+    """Gate audit: the rules arrive only through similarity (they carry no table tag). With no
+    tables, every chunk comes from the vector search, best first, so the position is the rank.
+    Only writes that pass 1 sends to preview are retrieved for, so only they must rank well."""
+    knowledge, _ = service
+    policy = load_policy(DEFAULT_POLICY_FILE)
+    ranks: dict[str, int | None] = {}
+    for name in ("incidents.yaml", "labeled.yaml"):
+        for scenario in load_scenario_file(SCENARIOS_DIR / name).scenarios:
+            if not isinstance(scenario, SqlScenario):
+                continue
+            kind = classify(scenario.sql, now=frozen_clock.now())
+            if not ("delete" in kind.statement_types and "users" in kind.target_tables):
+                continue
+            if evaluate_pass_one(policy, kind).route != Route.PREVIEW:
+                continue
+            result = await knowledge.retrieve(scenario.intent, [])
+            assert all(c.match == "similar" for c in result.chunks)
+            ranks[scenario.id] = next(
+                (i for i, c in enumerate(result.chunks, 1) if c in business_rules(result)), None
+            )
+    assert len(ranks) >= 4, ranks
+    assert all(r is not None and r <= MAX_RULES_RANK for r in ranks.values()), ranks

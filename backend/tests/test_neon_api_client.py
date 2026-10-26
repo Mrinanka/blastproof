@@ -1,5 +1,6 @@
 """Step 10: NeonApiClient against Neon's REST API, played back by httpx.MockTransport."""
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -324,3 +325,112 @@ def test_the_neon_profile_uses_the_api_unless_told_to_fake() -> None:
 )
 def test_an_unconfigured_neon_profile_has_no_client(missing: str) -> None:
     assert neon_client_for("neon", settings(**{missing: None}), FrozenClock(NOW)) is None
+
+
+# --- Gate audit: a branch made by a create whose answer never arrived is found by name --------
+
+SHADOW_NAME = f"shadow-{ACTION}"
+
+
+def lookups(neon: FakeNeon) -> list[httpx.Request]:
+    return [r for r in neon.calls("GET") if r.url.path.endswith("/branches")]
+
+
+async def test_a_malformed_create_response_deletes_the_branch_by_name() -> None:
+    neon = FakeNeon()
+    neon.create = [(201, {"branch": {}})]
+    neon.branches = [branch(SHADOW_NAME, 0)]
+    with pytest.raises(NeonError) as raised:
+        await client(neon).create_shadow(ACTION)
+    assert raised.value.reason_code == "neon_bad_response"
+    [lookup] = lookups(neon)
+    assert lookup.url.params["search"] == SHADOW_NAME
+    assert [r.url.path for r in neon.calls("DELETE")] == [
+        f"/api/v2/projects/proj-1/branches/br-{SHADOW_NAME}"
+    ]
+
+
+async def test_a_create_that_times_out_deletes_the_branch_it_may_have_made() -> None:
+    neon = FakeNeon()
+    neon.branches = [branch(SHADOW_NAME, 0)]
+    answer = neon.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            neon.requests.append(request)
+            raise httpx.ReadTimeout("no answer", request=request)
+        return answer(request)
+
+    with pytest.raises(NeonError) as raised:
+        await client(neon, transport=httpx.MockTransport(handler)).create_shadow(ACTION)
+    assert raised.value.reason_code == "neon_ReadTimeout"
+    assert len(neon.calls("DELETE")) == 1
+
+
+async def test_a_create_cancelled_mid_request_deletes_the_branch_it_may_have_made() -> None:
+    """ShadowRunner's own timeout cancels create_shadow; the branch must not outlive it."""
+    neon = FakeNeon()
+    neon.branches = [branch(SHADOW_NAME, 0)]
+    answer = neon.handler
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            neon.requests.append(request)
+            await asyncio.sleep(60)
+        return answer(request)
+
+    neon_client = client(neon, transport=httpx.MockTransport(handler))
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.05):
+            await neon_client.create_shadow(ACTION)
+    assert len(neon.calls("DELETE")) == 1
+
+
+async def test_only_the_exact_name_is_deleted() -> None:
+    """Neon's search matches partial names and IDs; nothing but this action's branch goes."""
+    neon = FakeNeon()
+    neon.create = [(201, {"branch": {}})]
+    neon.branches = [
+        branch(f"{SHADOW_NAME}0", 0),
+        branch(f"x{SHADOW_NAME}", 0),
+        branch(SHADOW_NAME, 0, default=True),
+    ]
+    with pytest.raises(NeonError):
+        await client(neon).create_shadow(ACTION)
+    assert neon.calls("DELETE") == []
+
+
+async def test_a_failed_lookup_is_logged_and_the_create_error_stays() -> None:
+    neon = FakeNeon()
+    neon.create = [(201, {"branch": {}})]
+    answer = neon.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith("/branches"):
+            neon.requests.append(request)
+            return httpx.Response(500)
+        return answer(request)
+
+    with pytest.raises(NeonError) as raised:
+        await client(neon, transport=httpx.MockTransport(handler)).create_shadow(ACTION)
+    assert raised.value.reason_code == "neon_bad_response"
+
+
+async def test_a_refused_create_does_not_look_for_a_branch() -> None:
+    """A status answer means Neon decided: there is no branch to find."""
+    neon = FakeNeon()
+    neon.create = [(400, {"code": "", "message": "x"})]
+    with pytest.raises(NeonError):
+        await client(neon).create_shadow(ACTION)
+    assert lookups(neon) == []
+
+
+async def test_a_server_error_on_create_looks_for_the_branch() -> None:
+    """A 5xx does not say whether the branch was made."""
+    neon = FakeNeon()
+    neon.create = [(500, {"code": "", "message": "x"})]
+    neon.branches = [branch(SHADOW_NAME, 0)]
+    with pytest.raises(NeonError) as raised:
+        await client(neon).create_shadow(ACTION)
+    assert raised.value.reason_code == "neon_500"
+    assert len(neon.calls("DELETE")) == 1

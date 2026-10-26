@@ -5,11 +5,14 @@ the MCP transport mounted in step 6.
 
 Unhandled exceptions are turned into the 500 response here, not by Starlette's outer error
 handler: that handler runs outside this middleware, so its 500 would have no X-Request-ID and its
-traceback log line no request_id.
+traceback log line no request_id. The log line names the exception class and where it was raised,
+never its message: a database error can carry row values (SEC-14, ARCH-17).
 """
 
 import time
+import traceback
 import uuid
+from pathlib import Path
 
 import structlog
 from starlette.datastructures import MutableHeaders
@@ -19,11 +22,24 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 HEADER = "X-Request-ID"
 _HEADER_KEY = HEADER.lower().encode("latin-1")
 _MAX_INCOMING_LENGTH = 64
+MAX_LOGGED_FRAMES = 15
 
 logger = structlog.get_logger()
 
 # Says nothing about the cause: details go to the log line, never to the client.
 _INTERNAL_ERROR_BODY = {"error": {"code": "internal_error", "message": "Internal server error"}}
+
+
+def crash_frames(exc: BaseException) -> list[str]:
+    """`file:line function` for the innermost frames, innermost last.
+
+    No message, no source lines, no locals: enough to find the code, nothing from the data.
+    """
+    frames = [
+        f"{Path(frame.f_code.co_filename).name}:{line} {frame.f_code.co_name}"
+        for frame, line in traceback.walk_tb(exc.__traceback__)
+    ]
+    return frames[-MAX_LOGGED_FRAMES:]
 
 
 def parse_request_id(raw: bytes | None) -> str | None:
@@ -67,8 +83,10 @@ class RequestIdMiddleware:
 
         try:
             await self.app(scope, receive, send_with_request_id)
-        except Exception:
-            logger.exception("unhandled_exception")
+        except Exception as exc:
+            logger.error(
+                "unhandled_exception", exc_type=type(exc).__name__, frames=crash_frames(exc)
+            )
             if response_started:
                 # Too late for a clean 500; the server closes the connection.
                 raise

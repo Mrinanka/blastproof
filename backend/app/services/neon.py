@@ -112,6 +112,7 @@ class NeonApiClient:
         operation_timeout: float = 30.0,
         retry_delays: tuple[float, ...] = (0.5, 1.0, 2.0, 4.0),
         connect_timeout: float = 10.0,
+        orphan_cleanup_timeout: float = 10.0,
         connect: Callable[..., Awaitable[asyncpg.Connection]] = asyncpg.connect,
     ) -> None:
         self._project_id = project_id
@@ -122,6 +123,7 @@ class NeonApiClient:
         self._operation_timeout = operation_timeout
         self._retry_delays = retry_delays
         self._connect_timeout = connect_timeout
+        self._orphan_cleanup_timeout = orphan_cleanup_timeout
         self._connect = connect
         self._http = httpx.AsyncClient(
             base_url=NEON_API_URL,
@@ -169,19 +171,27 @@ class NeonApiClient:
         return str(response.json()["project"]["name"])
 
     async def create_shadow(self, action_id: UUID) -> ShadowTarget:
+        name = f"{SHADOW_BRANCH_PREFIX}{action_id}"
         expires_at = (self._clock.now() + BRANCH_LIFETIME).strftime("%Y-%m-%dT%H:%M:%SZ")
         body = {
-            "branch": {
-                "parent_id": self._parent_branch_id,
-                "name": f"{SHADOW_BRANCH_PREFIX}{action_id}",
-                "expires_at": expires_at,
-            },
+            "branch": {"parent_id": self._parent_branch_id, "name": name, "expires_at": expires_at},
             "endpoints": [{"type": "read_write"}],
         }
-        response = await self._request("POST", f"/projects/{self._project_id}/branches", json=body)
+        # Until the answer is read, Neon may have made the branch without us learning its ID: a
+        # timeout, a cancel (the shadow run's own timeout), a 5xx or an unreadable 2xx. Then the
+        # branch is found by its name and deleted, so it does not hold one of the 10 slots.
+        try:
+            response = await self._request(
+                "POST", f"/projects/{self._project_id}/branches", json=body
+            )
+        except BaseException:
+            await self._delete_by_name_quietly(name)
+            raise
         if response.status_code == 422 and "BRANCHES_LIMIT_EXCEEDED" in response.text:
             raise NeonBusyError("neon_branches_limit")
         if response.status_code not in (200, 201):
+            if response.status_code >= 500:
+                await self._delete_by_name_quietly(name)
             raise self._fail(response)
         try:
             created = response.json()
@@ -189,6 +199,7 @@ class NeonApiClient:
             host = str(created["endpoints"][0]["host"])
             operation_ids = [str(op["id"]) for op in created.get("operations", [])]
         except (ValueError, KeyError, IndexError, TypeError):
+            await self._delete_by_name_quietly(name)
             raise NeonError("neon_bad_response") from None
         target = ShadowTarget(
             branch_id=branch_id,
@@ -247,6 +258,32 @@ class NeonApiClient:
             await asyncio.shield(self.delete_shadow(target))
         except Exception as exc:
             logger.error("shadow_delete_failed", reason_code=getattr(exc, "reason_code", None))
+
+    async def _delete_by_name_quietly(self, name: str) -> None:
+        """Best effort and never raises an Exception: `expires_at` and the sweep stay the backstops.
+
+        A branch whose create is still running inside Neon may not be listed yet; those wait for
+        the backstops too.
+        """
+        try:
+            await asyncio.shield(self._delete_by_name(name))
+        except Exception as exc:
+            reason_code = getattr(exc, "reason_code", type(exc).__name__)
+            logger.error("shadow_delete_failed", reason_code=reason_code)
+
+    async def _delete_by_name(self, name: str) -> None:
+        async with asyncio.timeout(self._orphan_cleanup_timeout):
+            response = await self._request(
+                "GET", f"/projects/{self._project_id}/branches", params={"search": name}
+            )
+            if response.status_code != 200:
+                raise self._fail(response)
+            for branch in response.json().get("branches", []):
+                # `search` matches partial names and IDs: only this exact, non-default name is ours.
+                if branch.get("name") == name and not branch.get("default"):
+                    await self.delete_shadow(
+                        ShadowTarget(branch_id=str(branch["id"]), connect_kwargs={})
+                    )
 
     async def delete_shadow(self, target: ShadowTarget) -> None:
         response = await self._request(

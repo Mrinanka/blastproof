@@ -39,7 +39,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
 | [ ] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
 | [x] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
-| [ ] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
+| [x] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
 | [x] | ARCH-20 | Knowledge text lives in Postgres (`knowledge_chunks`); vector stores hold only vectors. | CL; BE §5, B11 | B11 | TEST-12 |
 | [x] | ARCH-21 | The backend never imports from `demo_company/`. | CL; BE B1; D-047 | B1 (config), All | Ruff TID251 (banned imports) in CI |
 | [ ] | ARCH-22 | The dashboard holds no business logic; the backend enforces every permission. | CL; FE §1, §11 | All F steps, B19 | TEST-03; MVP-F06 |
@@ -126,10 +126,10 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-28 | A parse error, parse timeout or SQL over 20 KB returns `unknown`, which the "Unparseable SQL" rule blocks in pass 1; the agent gets the `blocked` template with that rule's reason. | BE B8, B9; D-040 | B8, B9 | DW-B08; DW-B09 |
 | [x] | BE-29 | `has_where` is false when the WHERE simplifies to a constant true (`WHERE true`, `WHERE 1=1`). | BE B9 note; D-009 | B8 | DW-B08 (`WHERE true` case) |
 | [x] | BE-30 | `unordered_limit` is set for a LIMIT without ORDER BY anywhere in a write. | BE B8 | B8 | DW-B08 |
-| [x] | BE-31 | Pinning replaces `now()`, `current_timestamp`, `current_date`, `localtimestamp`, `statement_timestamp()`, `clock_timestamp()` and `transaction_timestamp()` with one UTC literal from intercept time (cast to the original type), and returns `pinned_values`. | BE B8; D-005 | B8 | DW-B08 (frozen clock) |
+| [x] | BE-31 | Pinning replaces `now()`, `current_timestamp`, `current_date`, `localtimestamp`, `statement_timestamp()`, `clock_timestamp()`, `transaction_timestamp()`, `current_time` and `localtime` with one UTC literal from intercept time (cast to the original type, precision kept), and returns `pinned_values`. | BE B8; D-005, D-122 | B8 | DW-B08 (frozen clock) |
 | [x] | BE-32 | The time used for pinning comes from an injected `Clock` (real in the app, frozen at `ANCHOR_DATE` in tests and evals). | BE B8; D-017 | B8 | DW-B08 |
 | [x] | BE-33 | Volatile functions (`random()`, `nextval()`, `gen_random_uuid()` and others) in a WHERE or a subquery feeding one set `volatile_in_where`; inside INSERT values they are allowed. | BE B8 | B8 | DW-B08 |
-| [x] | BE-34 | `fast_lane_eligible` is true only for a single `INSERT … VALUES` of at most 10 rows, with no SELECT, ON CONFLICT, CTE or RETURNING beyond the PK, and only literals, NULL, DEFAULT, casts of literals and pinned timestamps in VALUES. | BE B8; D-024 | B8 | DW-B08 (function in VALUES case) |
+| [x] | BE-34 | `fast_lane_eligible` is true only for a single `INSERT … VALUES` of at most 10 rows, with no SELECT, ON CONFLICT, CTE or RETURNING at all, and only literals, NULL, DEFAULT, casts of literals and pinned timestamps in VALUES. | BE B8; D-024, D-125 | B8 | DW-B08 (function in VALUES case) |
 | [x] | BE-35 | `sql_display` is `pinned_sql` with PII-looking string literals (email, phone) masked; it is the only SQL that reaches the API, UI, logs and prompts. | BE §5, B8 | B8 | *unit test* |
 | [x] | BE-36 | Policy rules live in `policies/rules.yaml`; each has a name, conditions (all must hold), an outcome (allow, review, block) and a reason; they load at startup and changes need a restart. | BE B9 | B9 | DW-B09 |
 | [x] | BE-37 | Condition keys are a closed list (SQL-only and diff keys in BE B9); an unknown key fails at startup. | BE B9; D-009 | B9 | DW-B09 |
@@ -137,7 +137,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | BE-39 | A pass-1 `block` ends the flow with no shadow run; a pass-1 `allow` on a fast-lane write sends it down the fast lane; pass 2 runs after the shadow run with every key. | BE B9 | B9, B14 | DW-B09, DW-B14 |
 | [x] | BE-40 | The strictest matching outcome wins (block > review > allow); auto-approve needs a positive allow match and no stricter match; no match means review. | BE B9; D-009 | B9 | DW-B09 |
 | [x] | BE-41 | The fast lane's only table list is an `allow` rule with `fast_lane: true` and `tables_any`; there is no separate list. | BE B9; D-024 | B9 | DW-B09 |
-| [x] | BE-42 | The rules file defines per-table `important_columns`, `derived_groups` (counted over that table's affected rows only; an unaffected table counts as 0) and `sensitive_columns`; startup validates that every column a derived group names exists. | BE B9; D-023 | B9 | DW-B09 |
+| [x] | BE-42 | The rules file defines per-table `important_columns`, `derived_groups` (counted over that table's affected rows only; an unaffected table counts as 0) and `sensitive_columns`; startup validates the file, and every preview checks that the columns they name exist (`check_columns`), failing the write closed if one is missing. | BE B9; D-023, D-132 | B9 | DW-B09 |
 | [x] | BE-43 | Sensitive columns are the configured ones plus a name heuristic (email, phone, ssn, address, token, password). | BE B9, §12 | B9 | *unit test* |
 | [x] | BE-44 | `rules.yaml` ships with the rules in BE §9: No DDL, Unparseable SQL, No DROP or TRUNCATE, One statement only, No transaction control, Hands off Blastproof's schema, Volatile values in WHERE, Unordered LIMIT, Delete or update without WHERE, Every row of a table, Most of a table, Large change, Touches paying customers, Fast-lane note, Small insert. | BE B9 | B9 | DW-B09 |
 | [x] | BE-45 | The demo "clean up inactive users" delete (about 96% of users) is held for review, not blocked. | BE B9 note; D-009 | B9, B10 | MVP-B03; EVAL scenarios |
@@ -152,7 +152,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-54 | Cascade expectations: per FK path to the target (from `pg_constraint`, depth ≤ 3), the count of child rows referencing affected keys, stored in `actions.cascade_expectations`. | BE B10; D-021 | B10 | DW-B10 |
 | [x] | BE-55 | The shadow run outputs a `Diff` and writes one `preview_rows` row per affected row (table, PK, before hash, change) with `COPY`. | BE B10 | B10 | DW-B10 |
 | [x] | BE-56 | A table without a primary key fails the shadow run, so the write is blocked. | BE B10; D-004 | B10 | *integration test* |
-| [x] | BE-57 | At most `MAX_CONCURRENT_SHADOWS` (2) shadow runs at once; a write waits up to 10 s for a slot, then fails closed with the `busy` message; each run times out at 30 s. | BE B10 | B10 | *integration test* |
+| [x] | BE-57 | At most `MAX_CONCURRENT_SHADOWS` (2) shadow runs at once; a write waits up to 10 s for a slot, then fails closed with the `busy` message; each run times out after `SHADOW_TIMEOUT_SECONDS` (default 60 s). | BE B10; D-143 | B10 | *integration test* |
 | [x] | BE-58 | The shadow branch is always deleted in a `finally`; on startup, under an advisory lock, leftover `shadow-*` branches older than 15 minutes are deleted. | BE B10 | B10 | *unit test with FakeNeonClient* |
 | [x] | BE-59 | Knowledge chunks come from an automatic schema scan (one chunk per table: columns, types, FKs), `schema_docs.md` split by heading (`## table: <name>` tags the table), and uploads split the same way with an optional `tables` tag. | BE B11 | B11 | DW-B11 |
 | [x] | BE-60 | Retrieval returns all chunks tagged with the affected tables plus the top 10 by vector similarity (D-148) to the intent, de-duplicated; the chunks used are saved to `actions.knowledge_used`. | BE B11 | B11 | DW-B11 |
@@ -421,7 +421,7 @@ D-055). Tick a box only when its verification has passed.
 | | ID | Gate | Source | Step | Verified by |
 |---|---|---|---|---|---|
 | [x] | GATE-01 | Stage 1: Claude Code reads the demo DB only through Blastproof. | PROGRESS | after B7 | Gate audit (WF Prompt G) |
-| [ ] | GATE-02 | Stage 2: exact diffs and correct retrieval. | PROGRESS | after B13 | Gate audit (WF Prompt G) |
+| [x] | GATE-02 | Stage 2: exact diffs and correct retrieval. | PROGRESS | after B13 | Gate audit (WF Prompt G) |
 | [ ] | GATE-03 | Gate 1: the Replit scenario is caught end to end (held for review and approvable via `/docs`). | SPEC §18; PROGRESS | after B17 (approve/reject pulled forward, D-053) | Gate audit (WF Prompt G) |
 | [ ] | GATE-04 | Gate 2: evals green and backend deployed. | SPEC §18; PROGRESS | Stage 4 | Gate audit (WF Prompt G) |
 

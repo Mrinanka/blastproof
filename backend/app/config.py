@@ -1,17 +1,25 @@
 """Settings, read once from environment variables (and backend/.env locally)."""
 
 import json
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, ValidationInfo, field_validator
+from pydantic import (
+    Field,
+    PrivateAttr,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.security import MIN_SECRET_BYTES
-from app.services.llm import RESERVED_OPTION_KEYS, LlmPrice
+from app.services.llm import MODEL_STRING, RESERVED_OPTION_KEYS, LlmPrice
 
 DEFAULT_POLICY_FILE = Path(__file__).resolve().parent.parent / "policies" / "rules.yaml"
 
@@ -24,7 +32,24 @@ DEFAULT_LLM_PRICES = {
         input_per_million=Decimal("0.75"), output_per_million=Decimal("3.75")
     )
 }
+# Settings production must take from its environment: the defaults above are for dev machines, and
+# a deployed backend never runs on a model or price nobody chose (D-165). Field name -> env name.
+SET_EXPLICITLY_IN_PRODUCTION = {
+    "summary_model": "SUMMARY_MODEL",
+    "judge_model": "JUDGE_MODEL",
+    "llm_prices": "LLM_PRICES",
+}
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+def _model_string(value: str, name: str) -> str:
+    """`provider:model` or a clear error that never repeats the value (ARCH-19)."""
+    if not MODEL_STRING.fullmatch(value):
+        raise ValueError(
+            f"{name} must be a provider:model string: LangChain's lowercase provider name, a colon,"
+            " then the model (a bare model name would make LangChain guess the provider)"
+        )
+    return value
 
 
 def _json_object(value: object, name: str) -> object:
@@ -130,6 +155,27 @@ class Settings(BaseSettings):
     judge_min_confidence: float = 0.6
     retention_days: int = 30
 
+    # Which of SET_EXPLICITLY_IN_PRODUCTION came with a non-empty value (`_remember_explicit`).
+    _explicit: frozenset[str] = PrivateAttr(default_factory=frozenset)
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _remember_explicit(
+        cls, data: object, handler: Callable[[object], "Settings"]
+    ) -> "Settings":
+        # An empty value means the default (backend/.env holds empty placeholders), so it does not
+        # count as set, although pydantic lists it in `model_fields_set`.
+        settings = handler(data)
+        if isinstance(data, Mapping):
+            settings._explicit = frozenset(
+                name for name in SET_EXPLICITLY_IN_PRODUCTION if data.get(name) not in (None, "")
+            )
+        return settings
+
+    @property
+    def explicit_fields(self) -> frozenset[str]:
+        return self._explicit
+
     @field_validator("log_level", mode="before")
     @classmethod
     def _upper_log_level(cls, value: object) -> object:
@@ -180,6 +226,20 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_prices(cls, value: object) -> object:
         return dict(DEFAULT_LLM_PRICES) if value == "" else _json_object(value, "LLM_PRICES")
+
+    @field_validator("summary_model", "judge_model")
+    @classmethod
+    def _provider_model(cls, value: str, info: ValidationInfo) -> str:
+        assert info.field_name is not None
+        return _model_string(value, info.field_name.upper())
+
+    @field_validator("llm_prices")
+    @classmethod
+    def _priced_models_are_provider_model(cls, value: dict[str, LlmPrice]) -> dict[str, LlmPrice]:
+        # A bare key would never match a model setting, which must be `provider:model`.
+        for model in value:
+            _model_string(model, "LLM_PRICES keys")
+        return value
 
     @field_validator("summary_model_options", "judge_model_options")
     @classmethod
