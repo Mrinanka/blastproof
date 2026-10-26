@@ -1396,6 +1396,33 @@ existing setting.
 **Decision:** `tests/test_authorization_matrix.py` holds `(method, route)` rows with the expected status for anonymous, the owner, another member and an admin, and a guard that fails when an operation under `/v1/` in the OpenAPI schema has no row. The guard reads the schema because this FastAPI nests included routers instead of listing their routes in `app.routes`. Step 19 adds a row for each route it builds.
 **Why:** TEST-03 can only be complete if forgetting a route is a red test.
 
+## D-173 · 2026-10-26 · The checkpoint tables come from a migration that holds the library's DDL
+**Decision:** Step 14's Alembic migration executes the 10 statements of `BasePostgresSaver.MIGRATIONS` itself with `CONCURRENTLY` removed, inserts `checkpoint_migrations` rows 0 to 9, and grants the app. It does not call `setup()`. A test compares its statements with the installed library's `MIGRATIONS` (modulo `CONCURRENTLY`), and `env.py` skips tables named `checkpoint*` in `include_object`.
+**Why:** SPIKE-04. `setup()` on a second connection committed on its own, and a failing statement later in the revision left all four tables behind; `autocommit_block()` did the same. The library-DDL approach rolled back completely, a later `setup()` was a no-op, downgrade and re-upgrade worked. Without the filter `alembic check` reports the four tables and their indexes as drift. My pre-spike guess that `setup()` would hang inside the transaction was wrong.
+**Rejected:** `setup()` inside `autocommit_block()` (breaks the one-transaction rule, D-087); `setup()` at app startup (the app role cannot create tables).
+
+## D-174 · 2026-10-26 · No `ALTER DEFAULT PRIVILEGES`
+**Decision:** The migration grants `SELECT, INSERT, UPDATE, DELETE` on `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` and `SELECT` on `checkpoint_migrations`, and nothing else. A test checks the grants on every `checkpoint%` table.
+**Why:** The spike showed the default-privileges rule also gave the app UPDATE and DELETE on a later unrelated table, which would silently break append-only tables such as `audit_events`. The app role worked with exactly these grants, needs no CREATE or TEMP, and was refused `setup()`, DROP, TRUNCATE and ALTER. A library-added table fails the grants test instead of being granted blindly.
+**Rejected:** default privileges (BE-78 as first written).
+
+## D-175 · 2026-10-26 · The checkpointer uses a checked connection pool
+**Decision:** One `AsyncConnectionPool` for the app's lifetime, kwargs `autocommit=True`, `prepare_threshold=0`, `row_factory=dict_row`, `check=AsyncConnectionPool.check_connection`, wrapped by `AsyncPostgresSaver`. A test asserts a checkpoint row exists after a run. `psycopg-pool` becomes a direct dependency, pinned in step 14 after asking.
+**Why:** Without `autocommit` the graph ran without error and stored zero rows. After all server connections were killed, the single connection stayed dead and an unchecked pool failed again; the checked pool recovered on the first run. Five actions in parallel worked on both. Checkpointing cost about 8 ms per checkpoint.
+**Rejected:** `from_conn_string` (one connection, no recovery).
+
+## D-176 · 2026-10-26 · Graph runs use `durability="sync"`
+**Decision:** Every `ainvoke` passes `durability="sync"`.
+**Why:** With the process killed at the start of node 2, `sync` kept node 1's checkpoint in 3 of 3 trials; the default `async` and `exit` lost it in 3 of 3. Step 15's recovery reads checkpoints. The extra cost was not measurable (25.5 ms vs 25.3 ms for three nodes).
+
+## D-177 · 2026-10-26 · Resume rules: LangGraph is not the guard
+**Decision:** Step 14/15 resume with `Command(resume=...)` only when `aget_state().next == ("human_review",)`, continue after a crash with `ainvoke(None, config)`, and rely on step 15's SQL claim against double resumes. Calls use `version="v2"` and read `.next` and `.interrupts`.
+**Why:** Two concurrent resumes on one thread both ran `finish` (twice). A resume on a finished thread is a silent no-op, on an unknown thread it starts a run and fails with `KeyError`, `ainvoke(None)` on an unknown thread raises `EmptyInputError`, and an unknown thread's snapshot has `values == {}` and `next == ()`. The interrupted node re-runs from its start and earlier nodes do not, as D-025 assumed.
+
+## D-178 · 2026-10-26 · Graph state holds plain types, or registered models
+**Decision:** The graph state uses plain types (dicts, strings, ints; decimals as strings) unless the model's module is listed in `allowed_msgpack_modules`.
+**Why:** UUID, datetime, Decimal and a Pydantic model all round-tripped, but reading a checkpoint with a Pydantic model logs "Deserializing unregistered type ... will be blocked in a future version" (`LANGGRAPH_STRICT_MSGPACK`). A future block would make every resume fail.
+
 ## D-179 · 2026-10-26 · Local `pytest` runs the fast tests; the full suite runs in CI
 **Decision:** `uv run pytest` runs only the unit tests (no Docker). `uv run pytest --integration` runs all of them; CI uses that flag, so every test still runs before merge. CI is split into a `lint + unit` job and a parallel `integration` job. Details and how to reverse it: `docs/test-speed.md`. Status: implemented.
 **Why:** The full suite was 1,975 tests and 554 s; the 1,552 unit tests take 42 s, and the 423 integration tests (mostly shadow/preview tests that clone the 273k-row company database) take about 510 s. That blocked local work and slowed CI.
