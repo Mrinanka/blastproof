@@ -1395,3 +1395,8 @@ existing setting.
 ## D-172 · 2026-10-26 · The authorization matrix starts as a table of route rows
 **Decision:** `tests/test_authorization_matrix.py` holds `(method, route)` rows with the expected status for anonymous, the owner, another member and an admin, and a guard that fails when an operation under `/v1/` in the OpenAPI schema has no row. The guard reads the schema because this FastAPI nests included routers instead of listing their routes in `app.routes`. Step 19 adds a row for each route it builds.
 **Why:** TEST-03 can only be complete if forgetting a route is a red test.
+
+## D-179 · 2026-10-26 · Local `pytest` runs the fast tests; the full suite runs in CI
+**Decision:** `uv run pytest` runs only the unit tests (no Docker). `uv run pytest --integration` runs all of them; CI uses that flag, so every test still runs before merge. CI is split into a `lint + unit` job and a parallel `integration` job. Details and how to reverse it: `docs/test-speed.md`. Status: implemented.
+**Why:** The full suite was 1,975 tests and 554 s; the 1,552 unit tests take 42 s, and the 423 integration tests (mostly shadow/preview tests that clone the 273k-row company database) take about 510 s. That blocked local work and slowed CI.
+**Rejected:** `addopts = "-m 'not integration'"` (applies to CI too, and `test_ci_workflow.py` forbids a `-m` filter in CI); deleting or shrinking the shadow tests (loses coverage).
