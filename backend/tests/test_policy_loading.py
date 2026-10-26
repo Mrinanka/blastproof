@@ -291,6 +291,39 @@ def test_ordinary_columns_are_not_sensitive(column: str) -> None:
     assert not load_policy(DEFAULT_POLICY_FILE).is_sensitive("users", column)
 
 
+# --- important columns may not be sensitive (step 12) ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("extra", "named"),
+    [
+        (
+            "important_columns:\n  users: [plan, nickname]\n"
+            "sensitive_columns:\n  users: [nickname]\n",
+            "users.nickname",
+        ),
+        ("important_columns:\n  users: [email]\n", "users.email"),
+        ("important_columns:\n  orders: [billing_address]\n", "orders.billing_address"),
+    ],
+    ids=["configured", "by-name", "by-name-inside"],
+)
+def test_a_sensitive_important_column_is_refused(tmp_path: Path, extra: str, named: str) -> None:
+    """Breakdown labels are raw values: they reach the prompt, actions.impact and the UI."""
+    with pytest.raises(PolicyFileError) as raised:
+        load_policy(write(tmp_path, one_rule("{ kind_in: [ddl] }") + "\n" + extra))
+    message = str(raised.value)
+    assert "important_columns" in message and named in message and "sensitive" in message
+
+
+def test_an_ordinary_important_column_on_a_table_with_sensitive_ones_loads(
+    tmp_path: Path,
+) -> None:
+    text = one_rule("{ kind_in: [ddl] }") + (
+        "\nimportant_columns:\n  users: [plan]\nsensitive_columns:\n  users: [nickname]\n"
+    )
+    assert load_policy(write(tmp_path, text)).important_columns == {"users": ["plan"]}
+
+
 # --- startup -----------------------------------------------------------------------------------
 
 

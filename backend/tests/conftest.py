@@ -72,6 +72,15 @@ def scenario_anchor_date() -> date:
     return load_scenario_file(SCENARIOS_DIR / "incidents.yaml").anchor_date
 
 
+@pytest.fixture(autouse=True)
+def no_llm_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dev shell's model keys and tracing switch never reach a test: no test can call a model
+    or LangSmith by accident (step 12)."""
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    for name in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "LANGCHAIN_TRACING_V2"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def frozen_clock() -> FrozenClock:
     """A clock fixed at midnight UTC on the anchor date, where the expected counts hold (D-079)."""

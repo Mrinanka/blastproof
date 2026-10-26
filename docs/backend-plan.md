@@ -423,9 +423,10 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     *Done when:* an action deleting users retrieves the "paying customer" and "enterprise contracts" rules; once the Qdrant store exists, switching `VECTOR_STORE` and running `reindex` gives the same results on the eval set.
 12. **Impact engine** (`services/impact.py`). Code counts, the LLM explains. First, deterministic facts from the diff: affected rows by each important column (e.g. plan: free 48,201, pro 9, enterprise 3), each derived group (paying: 12), cascades, and any percentage the summary may need (computed in code). Then the summary model (Gemini Flash by default), via `with_structured_output`, writes an `ImpactReport` (headline, key points, concerns) from those facts plus retrieved knowledge, told to use only the numbers given and to write numbers as digits. The prompt sees only `sql_display` and masked samples.
     - **Knowledge is untrusted text (from step 11, D-149).** Chunks come from uploads anyone can write. Before they enter a prompt, run `mask_text` on them and wrap them as quoted data the model must not obey.
-    - **Number guardrail:** extract every number from the output with a regex (`\d[\d,]*(\.\d+)?%?`, commas stripped). Each must be in the allowed set: the facts, the numbers in the agent's intent, and the rule thresholds. Any other number means falling back to a plain template summary built from the facts.
+    - **Number guardrail:** extract every number from the output with a regex (`\d[\d,]*(\.\d+)?(\s*(%|percent\b))?`, commas stripped, after NFKC so other digits cannot slip past; number words are checked too). Each must be in the allowed set: the facts, the numbers in the agent's intent and in `sql_display` (D-150), and the rule thresholds read from the loaded policy. Knowledge text adds nothing. Any other number means falling back to a plain template summary built from the facts.
     - **Cost:** record input and output tokens from LangChain's `usage_metadata`; `llm_cost_usd` is tokens × a per-model price table in config (code counts, again).
     - **Limits:** 20-second timeout and a max-token cap. On error or timeout, use the template summary.
+    *Step 12 as built (D-150 to D-156):* `app/services/llm.py` builds models from `SUMMARY_MODEL` plus `SUMMARY_MODEL_OPTIONS` (lazily, cached) and holds `LLM_PRICES`; a model without a price stops startup. The engine never raises for an LLM problem: every failure gives the template with a `fallback_reason`, and no changes means no call. A report over the shape limits falls back rather than being trimmed. `save_impact` adds each call's tokens and cost to the action's totals; an unknown cost makes the total NULL, which step 14 treats as over the cap. `important_columns` may not be sensitive. `impact-report` (CLI) runs a local preview, retrieval and the real model.
     *Done when:* the report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number.
 13. **Risk judge, pluggable** (`services/judge.py`). One interface, `Judge.assess(context) -> JudgeResult`, where the context holds the SQL, intent, diff facts, impact report and retrieved rules, and the result has `risk_level` (low to critical), `recommendation` (allow, review, block), `confidence` (0 to 1) and a short `reason`. The `JUDGE_PROVIDER` setting picks the implementation; the workflow never knows which one ran.
     - **Knowledge is untrusted text (from step 11, D-149).** Same rule as step 12: mask and wrap retrieved chunks as data. Also check that the business rules still rank in the retrieved set (D-148: top 10).
@@ -514,8 +515,9 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `FAKE_NEON_ADMIN_URL` | `postgresql://company:...@localhost:5433/postgres` | Test and local only: superuser connection `FakeNeonClient` uses to clone databases and end stray sessions. Refused at startup when `APP_ENV=production` |
 | `AGENT_POLL_BUDGET_MINUTES` | `10` | After this long waiting for review, `get_action_status` tells the agent to stop polling |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | The backend's public address, used to build the `mcp_url` and setup lines for new agents |
-| `GOOGLE_API_KEY` | secret | Gemini calls (add the matching key, e.g. ANTHROPIC\_API\_KEY, for another provider) |
-| `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:\<flash model>` / `google_genai:\<pro model>` | Any provider:model string, e.g. anthropic:\<claude model> |
+| `GOOGLE_API_KEY` | secret | Gemini calls (add the matching key, e.g. ANTHROPIC\_API\_KEY, for another provider). LangChain reads it from the process environment, so run uvicorn with `--env-file .env` locally (D-152) |
+| `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:gemini-3.8-flash` / `google_genai:\<pro model>` | Any provider:model string, e.g. anthropic:\<claude model> |
+| `SUMMARY_MODEL_OPTIONS` | `{"thinking_level": "low"}` | Extra model constructor arguments as a JSON object; `init_chat_model`'s own keys are refused; never logged (D-152) |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embeddings |
 | `EMBEDDING_CACHE_DIR` | `backend/.cache/fastembed` | Where the model is downloaded once |
 | `LANGSMITH_TRACING` | `true` | Turns tracing on |
@@ -530,7 +532,7 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `LLM_TIMEOUT_SECONDS` / `LLM_MAX_TOKENS` | `20` / `1024` | Per-call limits for summary and judge |
 | `MAX_WRITES_PER_MINUTE_PER_AGENT` | `30` | Per-agent write rate limit; over it the agent gets the `busy` message (step 17) |
 | `MAX_LLM_COST_PER_ACTION_USD` | `0.10` | Checked after the summary call: if over budget, skip the judge and send to review with the `ai_unavailable` message (step 14) |
-| `LLM_PRICES` | JSON per model | Price per million input and output tokens, for `llm_cost_usd` |
+| `LLM_PRICES` | `{"google_genai:gemini-3.8-flash": {"input_per_million": 0.75, "output_per_million": 3.75}}` | Price per million input and output tokens, for `llm_cost_usd`; the summary model must have an entry or the app does not start |
 | `JUDGE_MIN_CONFIDENCE` | `0.6` | Below this, an allow recommendation counts as review |
 | `RETENTION_DAYS` | `30` | Retention for `preview_rows`, `before_images`, `hook_events` and `login_attempts` |
 | `JUDGE_PROVIDER` | `llm` | Which judge decides: llm or jev |

@@ -1285,3 +1285,45 @@ existing setting.
 ## D-149 · 2026-10-26 · Knowledge text is untrusted input to prompts
 **Decision:** Steps 12 and 13 mask retrieved chunks with `mask_text` and wrap them as quoted data before any prompt; step 19 checks upload size before reading the body.
 **Why:** Uploads can contain instructions aimed at the judge. Step 11 stores text as written.
+
+## D-150 · 2026-10-26 · The number guardrail also allows numbers from `sql_display` (plan changed)
+**Finding:** The demo SQL says `interval '6 months'` and pins `now()` to a date, so a summary saying "inactive for 6 months" always failed a guardrail limited to the facts, the intent and the thresholds.
+**Decision:** Allowed plain numbers are every count in the facts (totals and `rows_before` included), digits inside the facts' table, column, label and group-definition text, numbers in the intent, numbers in `sql_display` (a list such as `IN (1,2,3)` also allows each item), and every diff-rule threshold read from the loaded policy. Allowed percentages are each table's share at 1 dp and as a whole number, fraction thresholds x 100, and percentages written in the intent or SQL. Knowledge text never adds a number (D-149). Backend plan step 12 and BE-67 updated.
+**Why:** The SQL is agent-supplied like the intent; refusing it made the guardrail useless for the headline case.
+**Rejected:** dropping the SQL interval from the summary by prompt alone (the model would still write it), and allowing numbers from knowledge (anyone who can upload a file could make an invented number pass).
+
+## D-151 · 2026-10-26 · How the guardrail reads numbers, and its known limit
+**Decision:** Each report string is NFKC-normalised and any other Unicode digit is turned into ASCII before matching `\d[\d,]*(\.\d+)?(\s*(%|percent\b))?` (commas stripped, read as `Decimal`), so full-width or Arabic-Indic digits cannot slip past and "12 %" or "12 percent" counts as a share. The words two to twenty, the tens, hundred(s), thousand(s), million(s), billion(s) and dozen(s) are checked too; "one" is exempt (a pronoun) and "half" is checked as 50%. One unknown number means the template is used; logs hold only the count.
+**Known limit (accepted):** it checks membership, not meaning: "48,213 paying customers" passes, and an agent can widen the set through its intent or SQL. Code-computed numbers sit beside the summary in the UI (D-042), evals check the numbers exactly, and the judge (step 13) sees the facts.
+**Rejected:** a second model to check the first (costly, not deterministic), and plain ASCII `\d` without normalising (full-width and other digits slip past).
+
+## D-152 · 2026-10-26 · Summary model settings: options, prices, key
+**Decision:** `SUMMARY_MODEL` (default `google_genai:gemini-3.8-flash`), `SUMMARY_MODEL_OPTIONS` (a JSON object passed to `init_chat_model`; `.env.example` sets `{"thinking_level": "low"}`), and `LLM_PRICES` (JSON, Decimal per million in and out tokens; a value replaces the default table). Both JSON settings are parsed by our own validator (`NoDecode`): empty means the default, bad JSON or a non-object is a clear error that never repeats the value. Options may not use `init_chat_model`'s own keys (`model`, `model_provider`, `timeout`, `max_tokens`, `max_retries`, `configurable_fields`, `config_prefix`) and are kept out of `repr` and logs. A summary model without a price stops startup (`LlmConfigError`). We never pass `temperature` (Gemini 3.6 and later deprecate sampling) and use `max_retries=1` (one attempt). The provider key reaches LangChain through the process environment (`uvicorn --env-file .env`).
+**Why:** Thinking tokens count against `LLM_MAX_TOKENS`; a cost must never be silently unknown; options can hold a key. Exporting `.env` into the backend process is accepted: the backend holds those values anyway and the agent workspace is separate (step 7).
+**Price:** $0.75 / $3.75 per million through 2026-12-31, then $1.50 / $7.50; update `LLM_PRICES` in January (known issue). A model the options do not fit fails to build, logs `llm_build_failed` with the class name each time and uses the template; the manual CLI run is the check after any model change.
+**Rejected:** pydantic-settings' own JSON decoding (an empty `LLM_PRICES=` crashed startup), and an unknown price treated as 0 (the cost cap would never trigger).
+
+## D-153 · 2026-10-26 · LLM cost: 0, known, or unknown; totals add up
+**Decision:** `cost_usd` is 0 when no call was made (no changes, model not configured, fast lane), tokens x price (Decimal, 6 dp) when the usage is known (kept even when parsing, shape or the guardrail then fails), and None when a call was made but its usage is unknown (timeout, error, no `usage_metadata`). `save_impact` adds each call to the action's running totals (`coalesce(x, 0) + new`); an unknown amount sets the total to NULL. Step 14 must treat a NULL cost as over `MAX_LLM_COST_PER_ACTION_USD` (skip the judge, review).
+**Why:** A re-preview after drift calls the model again and both calls count toward the cap; unknown spend must not look like zero.
+**Rejected:** replacing the totals on each save (a re-preview would hide the first call's spend), and treating unknown usage as 0 (looser than the cap intends).
+
+## D-154 · 2026-10-26 · A sensitive column cannot be an important column
+**Decision:** `load_policy` refuses an `important_columns` entry that is sensitive (configured or by the name heuristic). The shipped file passes (only `users.plan`).
+**Why:** Breakdown labels are raw values and reach the prompt, `actions.impact` and the UI unmasked; this also closes the same gap in step 10's `actions.impact`.
+**Rejected:** masking breakdown labels instead (a masked label like `[masked] 48,201` tells a reviewer nothing, and the column should never have been a breakdown).
+
+## D-155 · 2026-10-26 · The impact engine never raises for an LLM problem
+**Decision:** `ImpactEngine.summarize` always returns an `ImpactResult`: source `llm`, or `template` with a reason (`no_changes`, `not_configured`, `llm_timeout`, `llm_error`, `parse_error`, `bad_shape`, `number_check`). No changes means no call. The model is built on the first summary, cached, and rebuilt on the next call after a failed build. A report breaking the shape limits (headline 1 to 200 characters, at most 8 items of at most 300 characters, no blank strings) falls back rather than being trimmed, so a concern is never dropped silently; `mask_text` runs over an accepted report. `template()` (no call) is for the fast lane. `actions.impact_report` also stores `source` and `fallback_reason`. A bug in `build_facts` does raise, and step 14 fails closed. Step 12 changes no status and writes no audit event; a `RetrievalError` is step 14's to route (`summarize` takes `retrieval=None`).
+**Why:** The summary explains; the rules decide. A failed explanation must never block or allow a write.
+**Rejected:** raising so step 14 sends the write to review (a model outage would then hold every write), and trimming an over-long report (could drop a concern silently).
+
+## D-156 · 2026-10-26 · What the summary prompt holds
+**Decision:** A system message with the rules (only FACTS numbers, digits, never estimate, `<untrusted_data>` is data), then the user message: FACTS as JSON, then `<untrusted_data kind="intent|sql|samples|knowledge">` blocks whose content is JSON with `<` escaped as `\u003c`, so nothing inside can close a tag (FACTS get the same escaping, because breakdown labels are database values). The intent is masked and cut at 2,000 characters; the SQL is `sql_display` only (the function takes the `Classification`, never raw SQL), cut at 20 KB; samples are at most 5 per table, masked again; knowledge is masked, ordered target-tagged, other tagged, then similar by score, and capped at 24,000 characters in total. Worst case about 15k tokens, about $0.012.
+**Why:** BE-66, SEC-12, D-149; a flood of uploaded chunks cannot run up cost or crowd out the facts. LangSmith's own anonymiser hooks are left to the Security pass; tracing is on only with `LANGSMITH_TRACING`, and tests force it off.
+**Rejected:** sending raw SQL for better context (it can hold emails), and plain tags without encoding (an injected closing tag would break out).
+
+## D-157 · 2026-10-26 · Model options live in config only; JSON values in `.env` are single-quoted
+**Decision:** Code never carries provider- or model-specific options: `SUMMARY_MODEL_OPTIONS` defaults to `{}`, and tuning such as `{"thinking_level": "low"}` is set in `backend/.env` (documented in `.env.example`). JSON values in `.env` are written in single quotes (`SUMMARY_MODEL_OPTIONS='{"thinking_level": "low"}'`), which both `uv run --env-file` and pydantic-settings read.
+**Why:** The owner's rule: defaults may exist, model tuning is not hard-coded. `uv run --env-file` cannot parse bare JSON ("Failed to parse environment file"), found during the manual run.
+**Rejected:** a per-model options default in `config.py` (briefly added, then reverted at the owner's request), and our own `.env` loader (another parser to maintain).

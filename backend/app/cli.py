@@ -6,6 +6,7 @@
     uv run python -m app.cli knowledge-scan
     uv run python -m app.cli knowledge-ingest --file ../demo_company/schema_docs.md [--tables a,b]
     uv run python -m app.cli reindex
+    uv run --env-file .env python -m app.cli impact-report --sql "DELETE ..." --intent "..."
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -17,6 +18,10 @@ SQL). It refuses unless the project's name equals --confirm-project.
 The knowledge commands (step 11) fill and rebuild the knowledge base: knowledge-scan reads the
 company database's schema, knowledge-ingest splits one Markdown file into chunks (the source is
 the file name unless --source is given), reindex recomputes every vector. They print counts only.
+impact-report (step 12) previews a write on the local profile (a clone of the Compose company_main),
+retrieves knowledge and calls SUMMARY_MODEL for real (it costs about a cent). It prints the report,
+where it came from, the tokens and the cost; never the prompt. `--env-file .env` puts the model's
+key (GOOGLE_API_KEY) into the environment, where LangChain reads it.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -26,17 +31,21 @@ import getpass
 import sys
 import time
 import uuid
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import Settings
-from app.core.clock import SystemClock
+from app.core.clock import Clock, FrozenClock, SystemClock
 from app.db.enums import UserRole
 from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
 from app.services.classifier import Kind, classify
 from app.services.embeddings import build_embedder
-from app.services.knowledge import DocumentError, KnowledgeService
+from app.services.impact import ImpactEngine
+from app.services.knowledge import DocumentError, KnowledgeService, Retrieval, RetrievalError
+from app.services.llm import LlmConfigError
 from app.services.neon import NeonApiClient, neon_client_for
 from app.services.policy import load_policy
 from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowRunner
@@ -75,6 +84,15 @@ def _parser() -> argparse.ArgumentParser:
     ingest.add_argument("--source", help="Name of the source (default: the file name)")
     ingest.add_argument("--tables", default="", help="Comma-separated tables to tag every chunk")
     commands.add_parser("reindex", help="Recompute every vector from the stored chunk text")
+
+    impact = commands.add_parser(
+        "impact-report", help="Preview one write locally and summarize it with SUMMARY_MODEL"
+    )
+    impact.add_argument("--sql", required=True)
+    impact.add_argument("--intent", required=True)
+    impact.add_argument(
+        "--now", help="Pin now() to this ISO time, e.g. 2026-10-01T00:00:00+00:00 (the seed anchor)"
+    )
     return parser
 
 
@@ -190,6 +208,93 @@ async def _knowledge(settings: Settings, args: argparse.Namespace) -> str:
         await engine.dispose()
 
 
+def _clock(now: str | None) -> Clock:
+    if now is None:
+        return SystemClock()
+    try:
+        at = datetime.fromisoformat(now)
+    except ValueError:
+        raise CliError("--now must be an ISO time such as 2026-10-01T00:00:00+00:00.") from None
+    return FrozenClock(at if at.tzinfo else at.replace(tzinfo=UTC))
+
+
+async def _retrieve(settings: Settings, intent: str, tables: Sequence[str]) -> Retrieval | None:
+    """Knowledge from Blastproof's database, or None when it is not set up (the summary then runs
+    without knowledge, as it would after a retrieval failure)."""
+    url = settings.blastproof_database_url
+    if url is None:
+        return None
+    engine = make_engine(url.get_secret_value())
+    try:
+        sessionmaker = make_sessionmaker(engine)
+        store = build_vector_store(settings, sessionmaker)
+        assert store is not None
+        service = KnowledgeService(sessionmaker, build_embedder(settings), store)
+        try:
+            return await service.retrieve(intent, tables)
+        except RetrievalError:
+            return None
+    finally:
+        await engine.dispose()
+
+
+async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
+    """A local-profile preview, retrieval and the summary. Prints the report and its cost; never
+    the prompt, rows, URLs or keys."""
+    clock = _clock(args.now)
+    client = neon_client_for("local", settings, clock)
+    if client is None:
+        raise CliError(
+            "impact-report previews on the local profile: set LOCAL_COMPANY_WRITER_URL and"
+            " FAKE_NEON_ADMIN_URL (see backend/.env.example)."
+        )
+    classification = classify(args.sql, now=clock.now())
+    if classification.kind != Kind.WRITE:
+        raise CliError(f"That is not a write (classified as {classification.kind.value}).")
+    policy = load_policy(settings.policy_file)
+    engine = ImpactEngine(settings, policy)
+    runner = ShadowRunner(
+        policy=policy,
+        clients={"local": client},
+        max_concurrent=1,
+        timeout_seconds=settings.shadow_timeout_seconds,
+    )
+    try:
+        preview = await runner.run(
+            action_id=uuid.uuid4(), profile="local", classification=classification
+        )
+    except (ShadowBusyError, ShadowFailedError) as exc:
+        raise CliError(f"The preview failed: {exc.reason_code}.") from None
+    retrieval = await _retrieve(settings, args.intent, classification.tables)
+    result = await engine.summarize(
+        action_id=uuid.uuid4(),
+        agent_id=uuid.uuid4(),
+        intent=args.intent,
+        classification=classification,
+        diff=preview.diff,
+        retrieval=retrieval,
+    )
+    report = result.report
+    lines = [f"Headline: {report.headline}", "Key points:"]
+    lines += [f"  - {p}" for p in report.key_points]
+    lines.append("Concerns:")
+    lines += [f"  - {c}" for c in report.concerns]
+    lines += [
+        f"Source: {result.source} (fallback reason: {result.fallback_reason or 'none'})",
+        f"Model: {settings.summary_model}",
+        f"Tokens: {result.input_tokens} in, {result.output_tokens} out;"
+        f" cost {result.cost_usd} USD; summary took {result.duration_ms} ms",
+        "Knowledge chunks: "
+        + (
+            "none (no database or retrieval failed)"
+            if retrieval is None
+            else str(len(retrieval.chunks))
+        ),
+        f"Preview took {preview.preview_ms} ms",
+    ]
+    return chr(10).join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = Settings()
@@ -202,6 +307,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command in ("knowledge-scan", "knowledge-ingest", "reindex"):
             print(asyncio.run(_knowledge(settings, args)))
             return 0
+        if args.command == "impact-report":
+            print(asyncio.run(_impact_report(settings, args)))
+            return 0
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
@@ -210,7 +318,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             asyncio.run(_run(args, settings.blastproof_database_url.get_secret_value(), password))
         )
-    except (CliError, DocumentError, auth_service.AccountError, WrongAppRoleError) as exc:
+    except (
+        CliError,
+        DocumentError,
+        auth_service.AccountError,
+        WrongAppRoleError,
+        LlmConfigError,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:  # one line, never the message: it may hold a URL

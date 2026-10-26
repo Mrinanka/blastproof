@@ -1,20 +1,44 @@
 """Settings, read once from environment variables (and backend/.env locally)."""
 
+import json
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, ValidationInfo, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.security import MIN_SECRET_BYTES
+from app.services.llm import RESERVED_OPTION_KEYS, LlmPrice
 
 DEFAULT_POLICY_FILE = Path(__file__).resolve().parent.parent / "policies" / "rules.yaml"
 
 DEFAULT_EMBEDDING_CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "fastembed"
 
+DEFAULT_SUMMARY_MODEL = "google_genai:gemini-3.8-flash"
+# Gemini 3.8 Flash list price through 2026-12-31; it doubles on 2027-01-01 (see PROGRESS.md).
+DEFAULT_LLM_PRICES = {
+    DEFAULT_SUMMARY_MODEL: LlmPrice(
+        input_per_million=Decimal("0.75"), output_per_million=Decimal("3.75")
+    )
+}
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+def _json_object(value: object, name: str) -> object:
+    """Our own JSON parse (NoDecode), so an empty value is the default and a bad one says so
+    without repeating the value, which could hold a key."""
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value, parse_float=Decimal)
+    except ValueError:
+        raise ValueError(f"{name} must be a JSON object") from None
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return parsed
 
 
 class Settings(BaseSettings):
@@ -69,6 +93,20 @@ class Settings(BaseSettings):
     embedding_cache_dir: Path = DEFAULT_EMBEDDING_CACHE_DIR
     vector_store: Literal["pgvector"] = "pgvector"
 
+    # The impact summary (step 12): any `provider:model` string for init_chat_model (ARCH-19). The
+    # provider's key (e.g. GOOGLE_API_KEY) is read by LangChain from the process environment.
+    summary_model: str = DEFAULT_SUMMARY_MODEL
+    # Extra constructor arguments as a JSON object, e.g. {"thinking_level": "low"}. Never logged
+    # (repr=False): they could hold a key.
+    summary_model_options: Annotated[dict[str, Any], NoDecode] = Field(
+        default_factory=dict, repr=False
+    )
+    # Price per million tokens per model, as JSON: {"<model>": {"input_per_million": 0.75,
+    # "output_per_million": 3.75}}. A set value replaces the default table.
+    llm_prices: Annotated[dict[str, LlmPrice], NoDecode] = Field(
+        default_factory=lambda: dict(DEFAULT_LLM_PRICES)
+    )
+
     # Tunables from backend plan §11. URLs, secrets and providers come with the step that uses them.
     review_wait_seconds: int = 20
     status_max_wait_seconds: int = 50
@@ -113,12 +151,33 @@ class Settings(BaseSettings):
         "embedding_model",
         "embedding_cache_dir",
         "vector_store",
+        "summary_model",
         mode="before",
     )
     @classmethod
     def _empty_is_default(cls, value: object, info: ValidationInfo) -> object:
         assert info.field_name is not None
         return cls.model_fields[info.field_name].default if value == "" else value
+
+    @field_validator("summary_model_options", mode="before")
+    @classmethod
+    def _parse_options(cls, value: object) -> object:
+        return {} if value == "" else _json_object(value, "SUMMARY_MODEL_OPTIONS")
+
+    @field_validator("llm_prices", mode="before")
+    @classmethod
+    def _parse_prices(cls, value: object) -> object:
+        return dict(DEFAULT_LLM_PRICES) if value == "" else _json_object(value, "LLM_PRICES")
+
+    @field_validator("summary_model_options")
+    @classmethod
+    def _no_reserved_options(cls, value: dict[str, Any]) -> dict[str, Any]:
+        reserved = sorted(RESERVED_OPTION_KEYS & set(value))
+        if reserved:
+            raise ValueError(
+                f"SUMMARY_MODEL_OPTIONS may not set {reserved}: Blastproof sets these itself"
+            )
+        return value
 
     @field_validator("public_base_url")
     @classmethod
