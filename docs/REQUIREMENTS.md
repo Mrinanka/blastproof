@@ -29,7 +29,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | ARCH-06 | Numbers come from the database, never from a model ("code counts, the LLM explains"). | CL; BE B12 | B10, B12 | DW-B10, DW-B12 |
 | [x] | ARCH-07 | Every number in an LLM summary must match the computed facts. | CL; BE B12 | B12 | DW-B12 (guardrail tests) |
 | [ ] | ARCH-08 | Rules run before the judge. | CL; SPEC §13; BE §7 | B9, B13, B14 | DW-B14 |
-| [ ] | ARCH-09 | The judge can only make a decision stricter, never looser. | CL; SPEC §13; BE B13; D-008 | B13 | DW-B13 |
+| [x] | ARCH-09 | The judge can only make a decision stricter, never looser. | CL; SPEC §13; BE B13; D-008 | B13 | DW-B13 |
 | [ ] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
 | [x] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
 | [x] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
@@ -38,7 +38,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
 | [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
 | [ ] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
-| [ ] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
+| [x] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
 | [ ] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
 | [x] | ARCH-20 | Knowledge text lives in Postgres (`knowledge_chunks`); vector stores hold only vectors. | CL; BE §5, B11 | B11 | TEST-12 |
 | [x] | ARCH-21 | The backend never imports from `demo_company/`. | CL; BE B1; D-047 | B1 (config), All | Ruff TID251 (banned imports) in CI |
@@ -166,11 +166,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-68 | Input and output tokens are recorded from `usage_metadata`; `llm_cost_usd` = tokens × the `LLM_PRICES` table. | BE B12 | B12 | *unit test* |
 | [x] | BE-69 | Summary calls have a 20-second timeout and a max-token cap (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`); on error or timeout the template summary is used. | BE B12, §11 | B12 | *unit test with failing fake* |
 | [ ] | BE-70 | After the summary call, if `llm_cost_usd` is over `MAX_LLM_COST_PER_ACTION_USD` (0.10), the judge is skipped and the write takes the judge-failure path (at least review, `ai_unavailable` message); the summary is kept. | BE §11, B14; D-033 | B14 | DW-B14 (cost cap branch) |
-| [ ] | BE-71 | `Judge.assess(context) -> JudgeResult` (risk_level low-critical, recommendation allow/review/block, confidence 0-1, reason); `JUDGE_PROVIDER` picks the implementation and the workflow never knows which ran. | BE B13 | B13 | DW-B13 |
+| [x] | BE-71 | `Judge.assess(context) -> JudgeResult` (risk_level low-critical, recommendation allow/review/block, confidence 0-1, reason); `JUDGE_PROVIDER` picks the implementation and the workflow never knows which ran. | BE B13 | B13 | DW-B13 |
 | [ ] | BE-72 | The judge runs only on writes the rules did not block, and never on the fast lane. | BE B13 | B13, B14 | DW-B14 |
-| [ ] | BE-73 | A `confidence` below `JUDGE_MIN_CONFIDENCE` (0.6) on an allow recommendation counts as review; confidence is stored for calibration. | BE B13 | B13 | *unit test* |
-| [ ] | BE-74 | On judge error, timeout (20 s) or unparseable result, the decision is at least review, with the `ai_unavailable` message. | BE B13; D-008 | B13 | DW-B13 |
-| [ ] | BE-75 | `LLMJudge` (MVP default) uses `JUDGE_MODEL` (Gemini Pro by default) with structured output and writes its own reason. | BE B13 | B13 | DW-B13 |
+| [x] | BE-73 | A `confidence` below `JUDGE_MIN_CONFIDENCE` (0.6) on an allow recommendation counts as review; confidence is stored for calibration. | BE B13 | B13 | *unit test* |
+| [x] | BE-74 | On judge error, timeout (20 s) or unparseable result, the decision is at least review, with the `ai_unavailable` message. | BE B13; D-008 | B13 | DW-B13 |
+| [ ] | BE-75 | `LLMJudge` (MVP default) uses `JUDGE_MODEL` (Gemini 3.8 Flash by default, D-158) with structured output and writes its own reason. | BE B13 | B13 | DW-B13 |
 
 ### Approval, commit, hook and API (B14-B20)
 
@@ -245,7 +245,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-10 | Agent SQL that touches the `blastproof` schema is blocked. | BE §5, B9 | B8, B9 | DW-B08 (`blastproof` schema case) |
 | [x] | SEC-11 | All DDL from agents is blocked in the MVP. | SPEC §8; BE B9 | B9 | DW-B09; MVP-B05 |
 | [ ] | SEC-12 | SQL, intents, uploaded documents and sample rows are wrapped as untrusted data in every prompt and never followed as instructions. | SPEC §13; BE B13, §12 | B12, B13 | *unit test on prompt construction* |
-| [ ] | SEC-13 | A prompt-injection pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review. | SPEC §7 (module 6, MVP); BE B13 | B13 | *unit test* |
+| [x] | SEC-13 | A prompt-injection pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review. | SPEC §7 (module 6, MVP); BE B13 | B13 | *unit test* |
 | [ ] | SEC-14 | Connection strings and keys are never logged; sensitive columns are masked in sample rows and PII-looking literals in SQL before they reach logs, LLM prompts, LangSmith or the API. | BE §12; SPEC §13, §15 | B8-B13, Security | *Security pass review; unit tests* |
 | [ ] | SEC-15 | LangSmith client-side masking (input/output hiding or anonymizer hooks) is a second layer behind prompt masking. | BE §12 | Security | *trace inspection* |
 | [ ] | SEC-16 | `before_images` are unmasked but never leave the backend and are deleted after `RETENTION_DAYS`. | BE §12 | B15, B16 | DW-B15; *authz test that no route returns them* |
@@ -389,7 +389,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B10 | A DELETE of users inactive 6 months (clock frozen at `ANCHOR_DATE`) returns exact counts incl. cascaded `orders`/`order_items` and the SET NULL on `invoices`, with correct breakdowns and derived groups matching `incidents.yaml`; runs with `FakeNeonClient` in CI (incl. two previews in a row) and with `NeonApiClient` once by hand; a test proves identical row hashes in shadow run and commit across session time zones. | BE B10 | B10 | Integration tests + manual Neon run |
 | [x] | DW-B11 | An action deleting users retrieves the "paying customer" and "enterprise contracts" rules. | BE B11 | B11 | Integration test |
 | [ ] | DW-B12 | The report reads like "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade," and guardrail tests cover commas, percentages, intent numbers and an invented number. | BE B12 | B12 | Unit tests + manual read |
-| [ ] | DW-B13 | Tests show the judge escalates a risky allowed action, cannot downgrade a blocked one, a raising or timing-out judge produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change. | BE B13 | B13 | Unit tests |
+| [x] | DW-B13 | Tests show the judge escalates a risky allowed action, cannot downgrade a blocked one, a raising or timing-out judge produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change. | BE B13 | B13 | Unit tests |
 | [ ] | DW-B14 | A test runs one write through every branch (fast lane, allow, review→approve, review→reject, block, judge failure→review, LLM cost cap exceeded→review); another proves the status after resume is `approved`, not `awaiting_review`. | BE B14 | B14 | Integration tests |
 | [ ] | DW-B15 | Tests prove two simultaneous approvals give one commit and one 409, an expired review cannot be approved, an approved-but-never-resumed action is resumed at startup, and an action left in `previewing` is failed at startup. | BE B15 | B15 | Integration tests |
 | [ ] | DW-B16 | Approved write commits with matching counts; drift path triggered by a changed row, by a new matching row and by a nulled child FK; committing twice applies once; a kill after company commit is marked committed with before-images on restart; a kill before it is re-run and committed once; a dropped COMMIT connection is resolved by the reconciler; a restart while awaiting review then approval still commits. | BE B16 | B16 | Integration tests |

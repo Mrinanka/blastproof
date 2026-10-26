@@ -107,6 +107,15 @@ class Settings(BaseSettings):
         default_factory=lambda: dict(DEFAULT_LLM_PRICES)
     )
 
+    # The risk judge (step 13). JUDGE_PROVIDER picks the implementation (`llm` is the only one
+    # until Jev); JUDGE_MODEL is any `provider:model` string, like SUMMARY_MODEL, and needs an
+    # LLM_PRICES entry too.
+    judge_provider: str = "llm"
+    judge_model: str = DEFAULT_SUMMARY_MODEL
+    judge_model_options: Annotated[dict[str, Any], NoDecode] = Field(
+        default_factory=dict, repr=False
+    )
+
     # Tunables from backend plan §11. URLs, secrets and providers come with the step that uses them.
     review_wait_seconds: int = 20
     status_max_wait_seconds: int = 50
@@ -152,6 +161,8 @@ class Settings(BaseSettings):
         "embedding_cache_dir",
         "vector_store",
         "summary_model",
+        "judge_provider",
+        "judge_model",
         mode="before",
     )
     @classmethod
@@ -159,23 +170,25 @@ class Settings(BaseSettings):
         assert info.field_name is not None
         return cls.model_fields[info.field_name].default if value == "" else value
 
-    @field_validator("summary_model_options", mode="before")
+    @field_validator("summary_model_options", "judge_model_options", mode="before")
     @classmethod
-    def _parse_options(cls, value: object) -> object:
-        return {} if value == "" else _json_object(value, "SUMMARY_MODEL_OPTIONS")
+    def _parse_options(cls, value: object, info: ValidationInfo) -> object:
+        assert info.field_name is not None
+        return {} if value == "" else _json_object(value, info.field_name.upper())
 
     @field_validator("llm_prices", mode="before")
     @classmethod
     def _parse_prices(cls, value: object) -> object:
         return dict(DEFAULT_LLM_PRICES) if value == "" else _json_object(value, "LLM_PRICES")
 
-    @field_validator("summary_model_options")
+    @field_validator("summary_model_options", "judge_model_options")
     @classmethod
-    def _no_reserved_options(cls, value: dict[str, Any]) -> dict[str, Any]:
+    def _no_reserved_options(cls, value: dict[str, Any], info: ValidationInfo) -> dict[str, Any]:
+        assert info.field_name is not None
         reserved = sorted(RESERVED_OPTION_KEYS & set(value))
         if reserved:
             raise ValueError(
-                f"SUMMARY_MODEL_OPTIONS may not set {reserved}: Blastproof sets these itself"
+                f"{info.field_name.upper()} may not set {reserved}: Blastproof sets these itself"
             )
         return value
 
