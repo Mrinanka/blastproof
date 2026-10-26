@@ -22,6 +22,12 @@ def test_not_found() -> None:
     assert agent_messages.not_found("abc") == "No action abc was found."
 
 
+def test_ai_unavailable() -> None:
+    assert agent_messages.ai_unavailable("abc") == (
+        "Held for review: the AI risk check is unavailable right now (action abc)."
+    )
+
+
 def test_not_supported() -> None:
     assert agent_messages.not_supported() == (
         "Blastproof can only run a single SELECT for now; writes are not supported yet."

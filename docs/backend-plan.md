@@ -434,9 +434,10 @@ Two layers catch "affects every row". The classifier sets `has_where: false` whe
     - **What it can do:** only make a decision stricter. It may raise allow to review or block, and review to block, but never lower anything. A `confidence` below `JUDGE_MIN_CONFIDENCE` (default 0.6) on an allow recommendation counts as review; otherwise confidence is stored for calibration evals.
     - **On error, timeout (20 s) or an unparseable result:** the decision becomes at least review, with the `ai_unavailable` message to the agent. The facts exist, so a human can still decide; a write is never allowed because the judge failed.
     - **Prompt-injection guard:** SQL, intent and sample rows are passed as clearly marked untrusted data, and a simple pattern check (e.g. "ignore previous instructions" in SQL comments or intent) forces review.
-    - `LLMJudge` (MVP default): any chat model set in `JUDGE_MODEL` (Gemini Pro by default), with structured output; writes the reason itself.
+    - `LLMJudge` (MVP default): any chat model set in `JUDGE_MODEL` (Gemini 3.8 Flash by default, D-158), with structured output; writes the reason itself.
     - `JevJudge` (right after the MVP): calls Jev through Vercel AI Gateway's `/v1/evaluate` HTTP API with `httpx`, asking a few boolean questions (affects paying customers? matches the stated intent? touches sensitive tables?). Code turns the probabilities into a recommendation using thresholds from config, takes `confidence` from them, and builds the reason from the questions that scored high. Request zero data retention in the provider options.
     - Shadow judging: the optional `JUDGE_SHADOW_PROVIDER` runs a second judge on the same context and logs its result to LangSmith and `audit_events`, without affecting the decision. Real comparison data at no risk.
+    *Step 13 as built (D-158 to D-164):* `Judge` is a protocol; `JUDGE_PROVIDERS` maps `JUDGE_PROVIDER` to a class, and an unknown name stops startup. `LLMJudge` follows the impact engine (lazy model, `with_structured_output(JudgeVerdict, include_raw=True)`, one attempt, price required, tokens kept on later failures). A verdict with a confidence outside 0 to 1 or a blank or over-long reason is `bad_shape`; a reason with an unmeasured number keeps the verdict but is replaced by a code-built sentence (`reason_withheld`). `assess_safely` turns any raise, hang or malformed result of any judge into a failure. `decide` is pure and strictest-wins: a rule block is final, injection hits force review, a failed or missing judge gives review with `ai_unavailable`, and an allow below `JUDGE_MIN_CONFIDENCE` is review. `save_judge` stores `actions.judge`, `risk_level` and adds tokens and cost. `judge-report` (CLI) runs a local preview, retrieval, the summary and the real judge. Wiring into the graph, the cost-cap skip and the `ai_unavailable` message to agents are steps 14 and 17.
     *Done when:* tests show the judge escalates a risky "allowed" action, cannot downgrade a blocked one, and a judge that raises or times out produces review (never allow), and switching `JUDGE_PROVIDER` needs no code change.
 
 ## 10. Build steps C: approval, commit, hook and dashboard API
@@ -516,7 +517,7 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `AGENT_POLL_BUDGET_MINUTES` | `10` | After this long waiting for review, `get_action_status` tells the agent to stop polling |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | The backend's public address, used to build the `mcp_url` and setup lines for new agents |
 | `GOOGLE_API_KEY` | secret | Gemini calls (add the matching key, e.g. ANTHROPIC\_API\_KEY, for another provider). LangChain reads it from the process environment, so run uvicorn with `--env-file .env` locally (D-152) |
-| `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:gemini-3.8-flash` / `google_genai:\<pro model>` | Any provider:model string, e.g. anthropic:\<claude model> |
+| `SUMMARY_MODEL` / `JUDGE_MODEL` | `google_genai:gemini-3.8-flash` / `google_genai:gemini-3.8-flash` | Any provider:model string, e.g. anthropic:\<claude model>; each needs an `LLM_PRICES` entry |
 | `SUMMARY_MODEL_OPTIONS` | `{"thinking_level": "low"}` | Extra model constructor arguments as a JSON object; `init_chat_model`'s own keys are refused; never logged (D-152) |
 | `EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embeddings |
 | `EMBEDDING_CACHE_DIR` | `backend/.cache/fastembed` | Where the model is downloaded once |
@@ -532,7 +533,7 @@ All settings come from environment variables, read once by `config.py`. Locally 
 | `LLM_TIMEOUT_SECONDS` / `LLM_MAX_TOKENS` | `20` / `1024` | Per-call limits for summary and judge |
 | `MAX_WRITES_PER_MINUTE_PER_AGENT` | `30` | Per-agent write rate limit; over it the agent gets the `busy` message (step 17) |
 | `MAX_LLM_COST_PER_ACTION_USD` | `0.10` | Checked after the summary call: if over budget, skip the judge and send to review with the `ai_unavailable` message (step 14) |
-| `LLM_PRICES` | `{"google_genai:gemini-3.8-flash": {"input_per_million": 0.75, "output_per_million": 3.75}}` | Price per million input and output tokens, for `llm_cost_usd`; the summary model must have an entry or the app does not start |
+| `LLM_PRICES` | `{"google_genai:gemini-3.8-flash": {"input_per_million": 0.75, "output_per_million": 3.75}}` | Price per million input and output tokens, for `llm_cost_usd`; the summary model and the judge model must each have an entry or the app does not start; a value replaces the whole table |
 | `JUDGE_MIN_CONFIDENCE` | `0.6` | Below this, an allow recommendation counts as review |
 | `RETENTION_DAYS` | `30` | Retention for `preview_rows`, `before_images`, `hook_events` and `login_attempts` |
 | `JUDGE_PROVIDER` | `llm` | Which judge decides: llm or jev |

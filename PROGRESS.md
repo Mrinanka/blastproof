@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: step 13 (Risk judge, pluggable). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+Next: the Stage 2 gate audit, then step 14. Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -35,6 +35,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Step 13, done 2026-10-26 (manual read of real wording deferred)
+- New: `app/services/judge.py` (`Judge` protocol, `JudgeContext`, `JudgeVerdict`, `JudgeResult`, `LLMJudge`, `JUDGE_PROVIDERS`, `build_judge`, `assess_safely`, `injection_signals`, `decide`), `app/db/judge.py` (`save_judge`). Changed: `config.py` (`JUDGE_PROVIDER`, `JUDGE_MODEL`, `JUDGE_MODEL_OPTIONS`), `llm.py` (`ModelFactory`, `usage_tokens` moved here), `impact.py` (`data_block` public), `db/impact.py` (`add_usage` public), `agent_messages.py` (`ai_unavailable`), `main.py` (`app.state.judge`), `cli.py` (`judge-report`), `.env.example`. No new dependency. Empty `JUDGE_PROVIDER`, `JUDGE_MODEL`, `JUDGE_MODEL_OPTIONS` appended to `backend/.env`.
+- Tests: about 330 new in 9 files (`test_judge_{decide,llm,safely,prompt,injection,config,scenarios,done_when}.py`, `judge_helpers.py`); full run 1,814 passed, 1 skipped (6 min 42 s); ruff check and format clean. Two existing tests changed: `test_impact_config.py` (the judge model needs a price too) and `test_agent_messages.py` (new template). Mutation checks: removing each of 29 guards turned a test red (block short-circuit, strictest wins, confidence rule, failure to review, `ai_unavailable`, injection to review, each of the 4 scanned fields, NFKC, format-character strip, whitespace collapse, reason masking, number check, withheld reason, rule numbers, shape check, both timeouts, price check, catching in `assess_safely`, consistency check, `sql_display` only, intent masking, impact report as untrusted, `<` escaping, tokens kept on parse error, `not_configured` cost). Whitespace collapse first survived and got its own test.
+- Done-when (DW-B13), automated: a fake judge saying block escalates an allowed small insert and a review to block; the three SQL-blocked incidents stay blocked whatever the judge says; the Replit review stays review with a judge saying allow 0.99; a raising, hanging or unparseable judge gives review with `ai_unavailable`; a second registered provider works with no other change; on the real Replit preview with real retrieval the prompt holds the business rules, and the poisoned upload is flagged; `save_judge` on a real `actions` row writes the judge, risk level and adds cost. Sweep over all 16 measured scenarios: an always-allow judge never changes a rule decision, an always-block judge blocks all.
+- Requirements ticked: BE-71, BE-73, BE-74, ARCH-09, ARCH-18, SEC-13, DW-B13. Left open: BE-75 (the real model never answered), BE-72 and BE-70 (graph and cost cap, step 14), ARCH-02, ARCH-08, ARCH-19, BE-66, SEC-12, SEC-14, OBS-07, EVAL-05 (graph, real-model or later-step halves).
 
 ### Step 12, done 2026-10-26 (manual read of real wording deferred)
 - New: `app/services/impact.py` (facts, number guardrail, prompt, template, `ImpactEngine`), `app/services/llm.py` (`build_chat_model`, `LazyModel`, `LlmPrice`, `price_for`, `cost_usd`; step 13 reuses it), `app/db/impact.py` (`save_impact`, adds tokens and cost). Changed: `config.py` (`SUMMARY_MODEL`, `SUMMARY_MODEL_OPTIONS`, `LLM_PRICES`), `policy.py` (a sensitive important column is refused), `main.py` (`app.state.impact`, builds nothing), `cli.py` (`impact-report`, with `--now`), `conftest.py` (autouse: no model keys, tracing off), `.env.example`, CLAUDE.md run command (`--env-file .env`). No new dependency. Empty `SUMMARY_MODEL`, `SUMMARY_MODEL_OPTIONS`, `LLM_PRICES` appended to `backend/.env`.
@@ -360,6 +366,8 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Step 13 (deferred): the manual `judge-report` run on 2026-10-26 got `503` from Gemini 3.8 Flash for both the summary and the judge; the failure path worked for real (review, `ai_unavailable`, cost unknown). Re-run when Gemini answers: `uv run --env-file .env python -m app.cli judge-report --sql "DELETE FROM users WHERE last_login_at < now() - interval '6 months'" --intent "Clean up inactive users" --now 2026-10-01T00:00:00+00:00`, twice; check the verdict, reason, tokens, cost and that no `parse_error` came from the thinking-token cap, then tick BE-75. If thinking truncates answers, raise `LLM_MAX_TOKENS` or add a separate `JUDGE_MAX_TOKENS`.
+- Step 13: `close-one-ticket` stays a known false block: the rules review it and the judge can only add caution. Setting `LLM_PRICES` replaces the whole table, so list the summary and the judge model. The injection list misses rewordings (D-160). The judge's cost is added after the cost-cap check (D-033), so worst case is one Flash call over the cap. Step 14 builds `JudgeContext`, calls `assess_safely`, `injection_signals` and `decide`, routes a `RetrievalError`, and uses `JudgeResult.unavailable(..., 'skipped_cost_cap')`; step 17 sends the `ai_unavailable` message; step 19 adds `JudgeView`.
 - Step 12 (deferred): DW-B12's manual read of real Gemini wording. Re-run when Gemini 3.8 Flash answers again: `uv run --env-file .env python -m app.cli impact-report --sql "DELETE FROM users WHERE last_login_at < now() - interval '6 months'" --intent "Clean up inactive users" --now 2026-10-01T00:00:00+00:00` (after `knowledge-scan` and `knowledge-ingest --file ../demo_company/schema_docs.md`), run it twice, check the wording, `source: llm`, tokens and cost, then tick BE-65 and DW-B12.
 - Step 12: JSON values in `backend/.env` must be single-quoted (`SUMMARY_MODEL_OPTIONS='{"thinking_level": "low"}'`): `uv run --env-file` cannot parse bare JSON and warns "Failed to parse environment file". Model options stay in config, never in code (an empty value means `{}`, so 3.8 Flash would think at `medium`, which counts against `LLM_MAX_TOKENS`).
 - Step 12: on 2026-10-26 Gemini 3.8 Flash returned 503 (high demand) or 504 for every call. If that persists, a different `SUMMARY_MODEL` (with its `LLM_PRICES` entry) is a config change only.
@@ -551,7 +559,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 10. Neon client and shadow executor
 - [x] 11. Knowledge and RAG, swappable vector store
 - [x] 12. Impact engine (manual read of real Gemini wording deferred, Known issues)
-- [ ] 13. Risk judge, pluggable
+- [x] 13. Risk judge, pluggable (manual read of real Gemini wording deferred, Known issues)
 - [ ] GATE AUDIT: exact diffs and correct retrieval
 
 ## Stage 3: the flow + dashboard start

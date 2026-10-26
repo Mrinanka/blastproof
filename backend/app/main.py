@@ -30,6 +30,7 @@ from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
 from app.services.embeddings import EmbeddingError, build_embedder
 from app.services.impact import ImpactEngine
+from app.services.judge import build_judge
 from app.services.knowledge import KnowledgeService
 from app.services.neon import BRANCH_LIFETIME, build_neon_clients, sweep_stale_shadows
 from app.services.policy import load_policy
@@ -144,6 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Builds no model and calls nothing: the summary model is created on the first summary. A model
     # without an LLM_PRICES entry stops startup (LlmConfigError).
     app.state.impact = ImpactEngine(settings, app.state.policy)
+    # Same for the judge: JUDGE_PROVIDER must name a judge and JUDGE_MODEL must have a price, or
+    # startup stops (JudgeConfigError, LlmConfigError).
+    app.state.judge = build_judge(settings, app.state.policy)
 
     store = build_vector_store(settings, app.state.sessionmaker)
     app.state.knowledge = (

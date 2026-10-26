@@ -137,6 +137,7 @@ def test_a_price_for_another_model_is_accepted() -> None:
         _env_file=None,
         app_env="test",
         summary_model="anthropic:claude-haiku-5-5",
+        judge_model="anthropic:claude-haiku-5-5",  # the judge needs a price too (step 13)
         llm_prices={
             "anthropic:claude-haiku-5-5": {"input_per_million": 1, "output_per_million": 5}
         },

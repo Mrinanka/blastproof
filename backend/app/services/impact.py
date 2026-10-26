@@ -16,7 +16,7 @@ import json
 import re
 import time
 import unicodedata
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final, Literal
@@ -27,7 +27,14 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.services.classifier import Classification
 from app.services.knowledge import Retrieval, RetrievedChunk
-from app.services.llm import LazyModel, build_chat_model, cost_usd, price_for
+from app.services.llm import (
+    LazyModel,
+    ModelFactory,
+    build_chat_model,
+    cost_usd,
+    price_for,
+    usage_tokens,
+)
 from app.services.masking import mask_text
 from app.services.policy import DIFF_KEYS, Policy
 from app.services.shadow import Diff
@@ -558,7 +565,7 @@ rows removed through cascades, business rules from the knowledge). An empty list
 """
 
 
-def _data_block(kind: str, value: object) -> str:
+def data_block(kind: str, value: object) -> str:
     """JSON-encoded, with `<` escaped, so nothing inside can close or open a tag."""
     body = json.dumps(value, ensure_ascii=False, default=str).replace("<", "\\u003c")
     return f'<untrusted_data kind="{kind}">\n{body}\n</untrusted_data>'
@@ -642,13 +649,13 @@ def build_messages(
         "FACTS (computed by code from the measured preview; the only numbers you may use):",
         facts_json,
         "The agent's stated intent:",
-        _data_block("intent", mask_text(intent[:MAX_INTENT_CHARS])),
+        data_block("intent", mask_text(intent[:MAX_INTENT_CHARS])),
         "The SQL (personal data masked):",
-        _data_block("sql", classification.sql_display[:MAX_SQL_CHARS]),
+        data_block("sql", classification.sql_display[:MAX_SQL_CHARS]),
         "Sample rows from the preview (sensitive values masked):",
-        _data_block("samples", prompt_samples(diff)),
+        data_block("samples", prompt_samples(diff)),
         "Knowledge about the tables and business rules:",
-        _data_block("knowledge", prompt_knowledge(retrieval, facts.target_tables)),
+        data_block("knowledge", prompt_knowledge(retrieval, facts.target_tables)),
         "Write the ImpactReport.",
     ]
     return [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content="\n\n".join(parts))]
@@ -676,19 +683,6 @@ class ImpactResult:
             "source": self.source,
             "fallback_reason": self.fallback_reason,
         }
-
-
-ModelFactory = Callable[[str, Mapping[str, Any], "Settings"], Any]
-
-
-def _usage(raw: object) -> tuple[int, int] | None:
-    usage = getattr(raw, "usage_metadata", None)
-    if not isinstance(usage, Mapping):
-        return None
-    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
-    if not isinstance(tokens_in, int) or not isinstance(tokens_out, int):
-        return None
-    return tokens_in, tokens_out
 
 
 class ImpactEngine:
@@ -794,7 +788,7 @@ class ImpactEngine:
         # message exists, even if what follows fails.
         if not isinstance(output, Mapping):
             return self._template(facts, "parse_error", started, None, None)
-        tokens = _usage(output.get("raw"))
+        tokens = usage_tokens(output.get("raw"))
         cost = cost_usd(self._price, *tokens) if tokens is not None else None
         parsed = output.get("parsed")
         if output.get("parsing_error") is not None or parsed is None:

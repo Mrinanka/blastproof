@@ -87,6 +87,20 @@ def build_chat_model(
     )
 
 
+ModelFactory = Callable[[str, Mapping[str, Any], "Settings"], Any]
+
+
+def usage_tokens(raw: object) -> tuple[int, int] | None:
+    """(input, output) tokens from a raw model message, or None when the usage is unknown."""
+    usage = getattr(raw, "usage_metadata", None)
+    if not isinstance(usage, Mapping):
+        return None
+    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
+    if not isinstance(tokens_in, int) or not isinstance(tokens_out, int):
+        return None
+    return tokens_in, tokens_out
+
+
 class LazyModel[T]:
     """Builds its value on first use and keeps it. A failed build is retried on the next call.
 
@@ -112,7 +126,9 @@ __all__ = [
     "LazyModel",
     "LlmConfigError",
     "LlmPrice",
+    "ModelFactory",
     "build_chat_model",
     "cost_usd",
     "price_for",
+    "usage_tokens",
 ]

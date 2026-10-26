@@ -7,6 +7,7 @@
     uv run python -m app.cli knowledge-ingest --file ../demo_company/schema_docs.md [--tables a,b]
     uv run python -m app.cli reindex
     uv run --env-file .env python -m app.cli impact-report --sql "DELETE ..." --intent "..."
+    uv run --env-file .env python -m app.cli judge-report --sql "DELETE ..." --intent "..."
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -22,6 +23,9 @@ impact-report (step 12) previews a write on the local profile (a clone of the Co
 retrieves knowledge and calls SUMMARY_MODEL for real (it costs about a cent). It prints the report,
 where it came from, the tokens and the cost; never the prompt. `--env-file .env` puts the model's
 key (GOOGLE_API_KEY) into the environment, where LangChain reads it.
+judge-report (step 13) does the same preview, retrieval and summary, then calls JUDGE_MODEL for
+real and prints the verdict, the final decision and the cost. It does not call the judge when the
+rules already block.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -32,23 +36,32 @@ import sys
 import time
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import Settings
 from app.core.clock import Clock, FrozenClock, SystemClock
-from app.db.enums import UserRole
+from app.db.enums import Decision, UserRole
 from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
-from app.services.classifier import Kind, classify
+from app.services.classifier import Classification, Kind, classify
 from app.services.embeddings import build_embedder
-from app.services.impact import ImpactEngine
+from app.services.impact import ImpactEngine, ImpactResult
+from app.services.judge import (
+    JudgeConfigError,
+    JudgeContext,
+    assess_safely,
+    build_judge,
+    decide,
+    injection_signals,
+)
 from app.services.knowledge import DocumentError, KnowledgeService, Retrieval, RetrievalError
 from app.services.llm import LlmConfigError
 from app.services.neon import NeonApiClient, neon_client_for
-from app.services.policy import load_policy
-from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowRunner
+from app.services.policy import Policy, evaluate_pass_two, load_policy
+from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowResult, ShadowRunner
 from app.services.vectorstores import build_vector_store
 
 
@@ -93,6 +106,13 @@ def _parser() -> argparse.ArgumentParser:
     impact.add_argument(
         "--now", help="Pin now() to this ISO time, e.g. 2026-10-01T00:00:00+00:00 (the seed anchor)"
     )
+
+    judge = commands.add_parser(
+        "judge-report", help="Preview one write locally, summarize it and judge it with JUDGE_MODEL"
+    )
+    judge.add_argument("--sql", required=True)
+    judge.add_argument("--intent", required=True)
+    judge.add_argument("--now", help="Pin now() to this ISO time, as for impact-report")
     return parser
 
 
@@ -238,21 +258,29 @@ async def _retrieve(settings: Settings, intent: str, tables: Sequence[str]) -> R
         await engine.dispose()
 
 
-async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
-    """A local-profile preview, retrieval and the summary. Prints the report and its cost; never
-    the prompt, rows, URLs or keys."""
+@dataclass(frozen=True)
+class _LocalRun:
+    clock: Clock
+    policy: Policy
+    classification: Classification
+    preview: ShadowResult
+    retrieval: Retrieval | None
+    summary: ImpactResult
+
+
+async def _local_run(settings: Settings, args: argparse.Namespace) -> _LocalRun:
+    """A local-profile preview, retrieval and the summary: the inputs both reports start from."""
     clock = _clock(args.now)
     client = neon_client_for("local", settings, clock)
     if client is None:
         raise CliError(
-            "impact-report previews on the local profile: set LOCAL_COMPANY_WRITER_URL and"
+            f"{args.command} previews on the local profile: set LOCAL_COMPANY_WRITER_URL and"
             " FAKE_NEON_ADMIN_URL (see backend/.env.example)."
         )
     classification = classify(args.sql, now=clock.now())
     if classification.kind != Kind.WRITE:
         raise CliError(f"That is not a write (classified as {classification.kind.value}).")
     policy = load_policy(settings.policy_file)
-    engine = ImpactEngine(settings, policy)
     runner = ShadowRunner(
         policy=policy,
         clients={"local": client},
@@ -266,7 +294,7 @@ async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
     except (ShadowBusyError, ShadowFailedError) as exc:
         raise CliError(f"The preview failed: {exc.reason_code}.") from None
     retrieval = await _retrieve(settings, args.intent, classification.tables)
-    result = await engine.summarize(
+    summary = await ImpactEngine(settings, policy).summarize(
         action_id=uuid.uuid4(),
         agent_id=uuid.uuid4(),
         intent=args.intent,
@@ -274,6 +302,22 @@ async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
         diff=preview.diff,
         retrieval=retrieval,
     )
+    return _LocalRun(clock, policy, classification, preview, retrieval, summary)
+
+
+def _knowledge_line(retrieval: Retrieval | None) -> str:
+    return "Knowledge chunks: " + (
+        "none (no database or retrieval failed)"
+        if retrieval is None
+        else str(len(retrieval.chunks))
+    )
+
+
+async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
+    """A local-profile preview, retrieval and the summary. Prints the report and its cost; never
+    the prompt, rows, URLs or keys."""
+    run = await _local_run(settings, args)
+    result = run.summary
     report = result.report
     lines = [f"Headline: {report.headline}", "Key points:"]
     lines += [f"  - {p}" for p in report.key_points]
@@ -284,13 +328,60 @@ async def _impact_report(settings: Settings, args: argparse.Namespace) -> str:
         f"Model: {settings.summary_model}",
         f"Tokens: {result.input_tokens} in, {result.output_tokens} out;"
         f" cost {result.cost_usd} USD; summary took {result.duration_ms} ms",
-        "Knowledge chunks: "
-        + (
-            "none (no database or retrieval failed)"
-            if retrieval is None
-            else str(len(retrieval.chunks))
-        ),
-        f"Preview took {preview.preview_ms} ms",
+        _knowledge_line(run.retrieval),
+        f"Preview took {run.preview.preview_ms} ms",
+    ]
+    return chr(10).join(lines)
+
+
+async def _judge_report(settings: Settings, args: argparse.Namespace) -> str:
+    """The same inputs, then the real judge. Prints the verdict, the final decision and the cost;
+    never the prompt, rows, URLs or keys."""
+    run = await _local_run(settings, args)
+    rules = evaluate_pass_two(run.policy, run.classification, run.preview.diff.facts())
+    lines = [f"Rules decided: {rules.decision.value} ({rules.reason})"]
+    context = JudgeContext(
+        action_id=uuid.uuid4(),
+        agent_id=uuid.uuid4(),
+        intent=args.intent,
+        classification=run.classification,
+        diff=run.preview.diff,
+        facts=run.summary.facts,
+        report=run.summary.report,
+        rules=rules,
+        retrieval=run.retrieval,
+    )
+    judged = None
+    if rules.decision != Decision.BLOCK:
+        judge = build_judge(settings, run.policy)
+        judged = await assess_safely(judge, context, settings.llm_timeout_seconds + 5)
+        if judged.verdict is not None:
+            v = judged.verdict
+            lines += [
+                f"Judge: {v.recommendation}, risk {v.risk_level}, confidence {v.confidence}",
+                f"Reason: {v.reason}"
+                + (" (withheld by the number check)" if judged.reason_withheld else ""),
+            ]
+        else:
+            lines.append(f"Judge failed: {judged.failure}")
+        lines.append(
+            f"Model: {settings.judge_model}; tokens {judged.input_tokens} in,"
+            f" {judged.output_tokens} out; cost {judged.cost_usd} USD;"
+            f" judge took {judged.duration_ms} ms"
+        )
+    else:
+        lines.append("The rules block this write, so the judge was not called.")
+    final = decide(
+        rules, judged, injection_signals(context), min_confidence=settings.judge_min_confidence
+    )
+    lines += [
+        f"Final decision: {final.decision.value} (decided by {final.deciding};"
+        f" ai_unavailable {final.ai_unavailable})",
+        f"Final reason: {final.reason}",
+        f"Injection hits: {', '.join(f'{h.field}:{h.pattern}' for h in final.injection) or 'none'}",
+        f"Summary source: {run.summary.source}",
+        _knowledge_line(run.retrieval),
+        f"Preview took {run.preview.preview_ms} ms",
     ]
     return chr(10).join(lines)
 
@@ -310,6 +401,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "impact-report":
             print(asyncio.run(_impact_report(settings, args)))
             return 0
+        if args.command == "judge-report":
+            print(asyncio.run(_judge_report(settings, args)))
+            return 0
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
@@ -324,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         auth_service.AccountError,
         WrongAppRoleError,
         LlmConfigError,
+        JudgeConfigError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

@@ -20,6 +20,10 @@ def not_found(action_id: str) -> str:
     return f"No action {action_id} was found."
 
 
+def ai_unavailable(action_id: str) -> str:
+    return f"Held for review: the AI risk check is unavailable right now (action {action_id})."
+
+
 def not_supported() -> str:
     return (
         "Blastproof can only run a single SELECT for now; writes are not supported yet."
