@@ -98,6 +98,9 @@ class Classification:
     # LIMIT, OFFSET or FETCH without ORDER BY on the same node, inside a write.
     unordered_limit: bool = False
     fast_lane_eligible: bool = False
+    # Rows in a fast-lane INSERT's VALUES list (1 to FAST_LANE_MAX_ROWS); None otherwise.
+    # The fast lane skips the preview, so this is the only count of what it will write.
+    insert_rows: int | None = None
     side_effect_functions: tuple[str, ...] = ()
     unknown_functions: tuple[str, ...] = ()
     pinned_sql: str = ""
@@ -819,6 +822,7 @@ def _analyze(sql: str) -> tuple[Classification, _Acc]:
 
     acc = _Acc()
     fast_lane = False
+    insert_rows: int | None = None
     first_transaction_type: str | None = None
     for group, statement in zip(groups, statements, strict=True):
         transaction_type = _transaction_type(group)
@@ -830,6 +834,7 @@ def _analyze(sql: str) -> tuple[Classification, _Acc]:
             continue
         # The first statement that is not transaction control gives the statement type.
         fast_lane = _analyze_statement(statement, acc)
+        insert_rows = len(_root_of(statement).expression.expressions) if fast_lane else None
     multi = len(groups) > 1
     result = Classification(
         kind=acc.kind,
@@ -846,6 +851,7 @@ def _analyze(sql: str) -> tuple[Classification, _Acc]:
         volatile_in_where=acc.volatile_in_where,
         unordered_limit=acc.unordered_limit,
         fast_lane_eligible=fast_lane and not multi and acc.kind == Kind.WRITE,
+        insert_rows=insert_rows if fast_lane and not multi and acc.kind == Kind.WRITE else None,
         side_effect_functions=tuple(sorted(acc.side_effects)),
         unknown_functions=tuple(sorted(acc.unknown_functions)),
         pinned_sql=sql,

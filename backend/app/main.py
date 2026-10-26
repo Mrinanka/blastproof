@@ -28,6 +28,7 @@ from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
+from app.services.commit import StubCommitter
 from app.services.embeddings import EmbeddingError, build_embedder
 from app.services.impact import ImpactEngine
 from app.services.judge import build_judge
@@ -36,6 +37,8 @@ from app.services.neon import BRANCH_LIFETIME, build_neon_clients, sweep_stale_s
 from app.services.policy import load_policy
 from app.services.shadow import ShadowRunner
 from app.services.vectorstores import build_vector_store
+from app.workflow.checkpointer import make_checkpointer, make_checkpointer_pool
+from app.workflow.graph import WorkflowDeps, build_graph
 
 logger = structlog.get_logger()
 
@@ -56,6 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     app.state.neon_clients, app.state.engine, older_than=BRANCH_LIFETIME
                 )
             )
+        # The checkpointer's pool opens here, not in create_app (tests skip it, TEST-07). With
+        # wait=False a database that is down does not stop the app from starting; the graph then
+        # fails closed on its first run.
+        pool = app.state.checkpointer_pool
+        if pool is not None:
+            app.state.workflow = build_graph(app.state.workflow_deps, make_checkpointer(pool))
+            if settings.app_env != "test":
+                await pool.open(wait=False)
         # Load the embedding model after startup, so the first retrieval does not wait for it.
         warm_up = None
         if settings.app_env != "test":
@@ -68,6 +79,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
+            if pool is not None and settings.app_env != "test":
+                await pool.close()
     for client in app.state.neon_clients.values():
         await client.aclose()
     if app.state.engine is not None:
@@ -97,6 +110,7 @@ def _check_production_settings(settings: Settings) -> None:
         name
         for name, value in (
             ("BLASTPROOF_DATABASE_URL", settings.blastproof_database_url),
+            ("CHECKPOINTER_DATABASE_URL", settings.checkpointer_database_url),
             ("JWT_SECRET", settings.jwt_secret),
             ("COMPANY_DB_READER_URL", settings.company_db_reader_url),
             ("COMPANY_DB_WRITER_URL", settings.company_db_writer_url),
@@ -161,6 +175,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if store is not None and app.state.sessionmaker is not None
         else None
     )
+
+    # The write workflow (step 14). Only the closed pool is built here: the saver needs a running
+    # event loop, so the lifespan builds it and the graph. Neither opens a connection (TEST-07);
+    # the lifespan opens the pool. Nothing calls the graph yet (step 15 starts it, 17 feeds it).
+    checkpointer_url = settings.checkpointer_database_url
+    app.state.checkpointer_pool = None
+    app.state.workflow_deps = None
+    app.state.workflow = None
+    if checkpointer_url is not None and app.state.sessionmaker is not None:
+        app.state.checkpointer_pool = make_checkpointer_pool(checkpointer_url.get_secret_value())
+        app.state.workflow_deps = WorkflowDeps(
+            sessionmaker=app.state.sessionmaker,
+            policy=app.state.policy,
+            shadow=app.state.shadow_runner,
+            impact=app.state.impact,
+            judge=app.state.judge,
+            knowledge=app.state.knowledge,
+            committer=StubCommitter(),
+            clock=SystemClock(),
+            settings=settings,
+        )
 
     # One MCP server per app (D-096). Its single /mcp route joins FastAPI's own router, so unknown
     # paths still get FastAPI's 404 and /mcp stays out of the OpenAPI schema.

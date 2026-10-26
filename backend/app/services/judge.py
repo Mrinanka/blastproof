@@ -78,6 +78,7 @@ JudgeFailure = Literal[
     "bad_shape",
     "judge_error",
     "skipped_cost_cap",
+    "knowledge_unavailable",
 ]
 Deciding = Literal["rules", "judge", "low_confidence", "injection", "judge_unavailable"]
 

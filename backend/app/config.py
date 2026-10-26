@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # The running app, as blastproof_app (postgresql+asyncpg://...). On Neon: the direct endpoint
     # and no channel_binding parameter (asyncpg would send it to Postgres as a setting).
     blastproof_database_url: SecretStr | None = None
+    # LangGraph's checkpointer, as blastproof_app (plain postgresql:// URL: psycopg 3, no +asyncpg).
+    # On Neon: the direct endpoint and no channel_binding. Required when APP_ENV=production.
+    checkpointer_database_url: SecretStr | None = None
     # Signs dashboard tokens (HS256): at least 32 bytes. Required when APP_ENV=production.
     jwt_secret: SecretStr | None = None
 
@@ -183,6 +186,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "blastproof_database_url",
+        "checkpointer_database_url",
         "jwt_secret",
         "company_db_reader_url",
         "local_company_reader_url",
@@ -273,6 +277,19 @@ class Settings(BaseSettings):
         # asyncpg passes unknown URL parameters to Postgres as settings, and the connection fails.
         if value is not None and "channel_binding" in value.get_secret_value().lower():
             raise ValueError("Remove channel_binding from the company database URL")
+        return value
+
+    @field_validator("checkpointer_database_url")
+    @classmethod
+    def _checkpointer_url_is_plain(cls, value: SecretStr | None) -> SecretStr | None:
+        # psycopg 3 reads postgresql:// URLs; "+asyncpg" is SQLAlchemy's driver suffix. The value is
+        # never repeated in the error.
+        if value is not None:
+            scheme = urlsplit(value.get_secret_value()).scheme
+            if scheme not in ("postgresql", "postgres"):
+                raise ValueError(
+                    "CHECKPOINTER_DATABASE_URL must be a plain postgresql:// URL (no +asyncpg)"
+                )
         return value
 
     @field_validator("jwt_secret")
