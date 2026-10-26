@@ -233,17 +233,17 @@ class ActionDetail(BaseModel):
     id: str; status: ActionStatus; decision: Decision | None; risk_level: RiskLevel | None
     agent: AgentRef                      # id, name
     owner: UserRef                       # id, display_name
-    intent: str
-    sql_display: str                     # pinned and masked; raw SQL is never returned
+    intent: str | None                   # masked; null on reads that carry none
+    sql_display: str | None              # pinned and masked; raw SQL is never returned; null on reads
     pinned_values: dict[str, str]        # e.g. {"now()": "2026-10-24T12:00:00Z"}; empty if nothing pinned
     original_sql_display: str | None     # masked original, shown only when pinning changed it
-    statement_type: str; tables: list[str]
-    impact_report: ImpactReport | None   # headline, key_points, concerns
+    statement_type: str | None; tables: list[str]
+    impact_report: ImpactReport | None   # headline, key_points, concerns, source (llm or template)
     table_changes: list[TableChange]     # table, deleted, updated, inserted, is_cascade
     breakdowns: list[Breakdown]          # column, counts by value, e.g. plan: free 48,201, pro 9
     derived_groups: list[DerivedGroup]   # name, count, definition, e.g. paying: 12
-    samples: list[SampleRow]             # table, change, masked row values (max 50)
-    judge: JudgeView | None              # provider, model, recommendation, risk_level, confidence, reason
+    samples: list[SampleRow]             # table, change, side (before or after), masked row values (max 50 in all)
+    judge: JudgeView | None              # provider, model, recommendation, risk_level, confidence, reason, failure (verdict fields are null when set)
     matched_rules: list[MatchedRule]     # name, outcome, reason, pass ("pre" or "post")
     knowledge_used: list[KnowledgeRef]   # chunk id, source, table_names, first line, match (table or similar), score
     policy_reason: str | None; reviewer_note: str | None

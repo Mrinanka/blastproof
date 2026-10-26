@@ -34,8 +34,8 @@ D-055). Tick a box only when its verification has passed.
 | [x] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
 | [x] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
 | [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
-| [ ] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
-| [ ] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
+| [x] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
+| [x] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
 | [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
 | [ ] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
 | [x] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
@@ -210,8 +210,8 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | BE-107 | Every hook call writes a `hook_events` row with a masked summary; hook calls never create `actions`. | BE §5, B18; D-014 | B18 | *integration test* |
 | [ ] | BE-127 | The hook endpoint checks `BLASTPROOF_AGENT_KEY` with `get_current_agent` (wrong or deactivated key → 401, which the script treats as a deny for every tool) and stores the calling agent and its owner on each `hook_events` row. | BE B18, §14; D-031 | B18 | TEST-03 (hook key cases); *integration test* |
 | [ ] | BE-108 | Auth routes: `POST /v1/auth/login` (anyone) and `GET /v1/auth/me` (ID, name, email, role). | BE §6, B5, B19 | B5, B19 (pulled forward) | TEST-03 |
-| [ ] | BE-109 | `GET /v1/actions` returns the caller's actions (admin: all) as `ActionSummary` items with filters status, agent_id, table, from, to and limit/offset paging. | BE §6, B19 | B19 (pulled forward) | TEST-03 |
-| [ ] | BE-110 | `GET /v1/actions/{id}` returns the `ActionDetail` shape in BE §6, including `can_decide`; raw `sql` is never returned. | BE §6, B19 | B19 (pulled forward) | TEST-03; OPS-05 |
+| [x] | BE-109 | `GET /v1/actions` returns the caller's actions (admin: all) as `ActionSummary` items with filters status, agent_id, table, from, to and limit/offset paging. | BE §6, B19 | B19 (pulled forward) | TEST-03 |
+| [x] | BE-110 | `GET /v1/actions/{id}` returns the `ActionDetail` shape in BE §6, including `can_decide`; raw `sql` is never returned. | BE §6, B19 | B19 (pulled forward) | TEST-03; OPS-05 |
 | [ ] | BE-111 | `POST /v1/actions/{id}/approve` and `/reject` are allowed for the owner or an admin, go through the conditional claim, record `decided_by`, and reject requires a reason of at least 10 characters that is sent to the agent. Pulled forward with their authorization tests, because DW-B17 and GATE-03 use them. | BE §6, B19; D-053 | B19 (pulled forward after B15) | DW-B17; DW-B19; TEST-03 |
 | [ ] | BE-112 | `GET /v1/stats` returns counts by status and decision, average shadow-run time and LLM cost today from the `actions` table, scoped to the caller (admin: all); "today" is the UTC day. | BE §6, §13; D-051 | B19 | DW-F09 |
 | [ ] | BE-113 | `GET /v1/policies` returns the active rules read-only to any signed-in user. | BE §6 | B19 | TEST-03 |

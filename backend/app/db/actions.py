@@ -6,13 +6,16 @@ the owner's `user_id` unless admin widening is on. Agents always call it with `i
 """
 
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import ColumnElement, Select, any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.enums import ActionStatus, AuditEventType
-from app.db.models import Action, AuditEvent
+from app.db.models import Action, Agent, AuditEvent, User
 
 
 def visible_actions(user_id: uuid.UUID, *, is_admin: bool) -> Select[tuple[Action]]:
@@ -84,3 +87,135 @@ async def set_status(
         AuditEvent(action_id=action_id, event_type=AuditEventType(status.value), data=data or {})
     )
     await session.flush()
+
+
+@dataclass(frozen=True)
+class ListFilters:
+    statuses: tuple[ActionStatus, ...] = ()
+    agent_id: uuid.UUID | None = None
+    table: str | None = None
+    created_from: datetime | None = None  # inclusive
+    created_to: datetime | None = None  # exclusive
+    newest_first: bool = True
+    limit: int = 25
+    offset: int = 0
+
+
+@dataclass(frozen=True)
+class SummaryRow:
+    id: uuid.UUID
+    status: str
+    decision: str | None
+    risk_level: str | None
+    intent: str | None
+    headline: str | None
+    tables: list[str]
+    created_at: datetime
+    agent_id: uuid.UUID
+    agent_name: str
+    decider_id: uuid.UUID | None
+    decider_name: str | None
+
+
+def _conditions(filters: ListFilters) -> list[ColumnElement[bool]]:
+    conditions: list[ColumnElement[bool]] = []
+    if filters.statuses:
+        conditions.append(Action.status.in_([status.value for status in filters.statuses]))
+    if filters.agent_id is not None:
+        conditions.append(Action.agent_id == filters.agent_id)
+    if filters.table is not None:
+        conditions.append(filters.table == any_(Action.tables))
+    if filters.created_from is not None:
+        conditions.append(Action.created_at >= filters.created_from)
+    if filters.created_to is not None:
+        conditions.append(Action.created_at < filters.created_to)
+    return conditions
+
+
+async def list_visible_actions(
+    session: AsyncSession, user_id: uuid.UUID, *, is_admin: bool, filters: ListFilters
+) -> tuple[list[SummaryRow], int]:
+    """One page of the actions this user may see, and how many match in all.
+
+    Selects only the columns a list row needs; the impact report's headline is pulled out in SQL so
+    the large JSONB columns are never loaded. Ordered by `created_at`, then `id`: stable paging.
+    """
+    conditions = _conditions(filters)
+    decider = aliased(User)
+    total = (
+        await session.execute(
+            visible_actions(user_id, is_admin=is_admin)
+            .with_only_columns(func.count(), maintain_column_froms=True)
+            .where(*conditions)
+        )
+    ).scalar_one()
+    direction = (lambda column: column.desc()) if filters.newest_first else (lambda c: c.asc())
+    query = (
+        visible_actions(user_id, is_admin=is_admin)
+        .with_only_columns(
+            Action.id,
+            Action.status,
+            Action.decision,
+            Action.risk_level,
+            Action.intent,
+            Action.impact_report["headline"].astext.label("headline"),
+            Action.tables,
+            Action.created_at,
+            Agent.id.label("agent_id"),
+            Agent.name.label("agent_name"),
+            decider.id.label("decider_id"),
+            decider.display_name.label("decider_name"),
+        )
+        .join_from(Action, Agent, Action.agent_id == Agent.id)
+        .outerjoin(decider, Action.decided_by == decider.id)
+        .where(*conditions)
+        .order_by(direction(Action.created_at), direction(Action.id))
+        .limit(filters.limit)
+        .offset(filters.offset)
+    )
+    rows = (await session.execute(query)).all()
+    return [SummaryRow(**row._asdict()) for row in rows], total
+
+
+@dataclass(frozen=True)
+class DetailRows:
+    action: Action
+    agent: Agent
+    owner: User
+    decider: User | None
+    events: list[AuditEvent]
+    retried_by: uuid.UUID | None
+
+
+async def get_action_detail_rows(
+    session: AsyncSession, action_id: uuid.UUID, user_id: uuid.UUID, *, is_admin: bool
+) -> DetailRows | None:
+    """An action with what its detail page shows, or None for an unknown or someone else's."""
+    action = await get_visible_action(session, action_id, user_id, is_admin=is_admin)
+    if action is None:
+        return None
+    agent = await session.get(Agent, action.agent_id)
+    owner = await session.get(User, action.user_id)
+    decider = await session.get(User, action.decided_by) if action.decided_by else None
+    assert agent is not None and owner is not None  # foreign keys
+    events = (
+        (
+            await session.execute(
+                select(AuditEvent)
+                .where(AuditEvent.action_id == action_id)
+                .order_by(AuditEvent.created_at, AuditEvent.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    retried_by = (
+        await session.execute(
+            visible_actions(user_id, is_admin=is_admin)
+            .with_only_columns(Action.id)
+            .where(Action.retry_of == action_id)
+            .order_by(Action.created_at.desc(), Action.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    return DetailRows(action, agent, owner, decider, list(events), retried_by)
