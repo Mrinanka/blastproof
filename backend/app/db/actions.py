@@ -14,7 +14,7 @@ from sqlalchemy import ColumnElement, Select, any_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.db.enums import ActionStatus, AuditEventType
+from app.db.enums import ALLOWED_TRANSITIONS, ActionStatus, AuditEventType, Decision
 from app.db.models import Action, Agent, AuditEvent, User
 
 
@@ -62,6 +62,10 @@ async def create_action(
     return action
 
 
+class IllegalTransitionError(RuntimeError):
+    """A status change the state machine does not allow (BE-16). Callers fail closed."""
+
+
 async def set_status(
     session: AsyncSession,
     action_id: uuid.UUID,
@@ -70,21 +74,64 @@ async def set_status(
     failure_reason: str | None = None,
     total_ms: int | None = None,
     data: dict[str, Any] | None = None,
+    decision: Decision | None = None,
+    policy_reason: str | None = None,
+    decided_at: datetime | None = None,
+    expires_at: datetime | None = None,
 ) -> None:
     """Move an action to `status` and add the audit event named after it (D-037).
 
     Run it inside one transaction, so the status and its event are saved together or not at all.
+    Refuses a move the state machine does not allow (`IllegalTransitionError`, BE-16).
     """
     action = await session.get(Action, action_id, with_for_update=True)
     if action is None:
         raise LookupError("action not found")
+    if status not in ALLOWED_TRANSITIONS[ActionStatus(action.status)]:
+        raise IllegalTransitionError(f"{action.status} -> {status.value}")
     action.status = status.value
     if failure_reason is not None:
         action.failure_reason = failure_reason
     if total_ms is not None:
         action.total_ms = total_ms
+    if decision is not None:
+        action.decision = decision.value
+    if policy_reason is not None:
+        action.policy_reason = policy_reason
+    if decided_at is not None:
+        action.decided_at = decided_at
+    if expires_at is not None:
+        action.expires_at = expires_at
     session.add(
-        AuditEvent(action_id=action_id, event_type=AuditEventType(status.value), data=data or {})
+        AuditEvent(
+            action_id=action_id,
+            event_type=AuditEventType(status.value),
+            data=data or {},
+            created_at=func.clock_timestamp(),
+        )
+    )
+    await session.flush()
+
+
+async def add_event(
+    session: AsyncSession,
+    action_id: uuid.UUID,
+    event_type: AuditEventType,
+    data: dict[str, Any] | None = None,
+) -> None:
+    """An audit event that is not a status change (`shadow_done`, `decided`, `fail_closed`).
+
+    `clock_timestamp()`, not the column default `now()`: `now()` is the start of the transaction, so
+    two events written together would tie and the timeline (ordered by time, then a random id)
+    could show them in the wrong order.
+    """
+    session.add(
+        AuditEvent(
+            action_id=action_id,
+            event_type=event_type.value,
+            data=data or {},
+            created_at=func.clock_timestamp(),
+        )
     )
     await session.flush()
 

@@ -1427,3 +1427,32 @@ existing setting.
 **Decision:** `uv run pytest` runs only the unit tests (no Docker). `uv run pytest --integration` runs all of them; CI uses that flag, so every test still runs before merge. CI is split into a `lint + unit` job and a parallel `integration` job. Details and how to reverse it: `docs/test-speed.md`. Status: implemented.
 **Why:** The full suite was 1,975 tests and 554 s; the 1,552 unit tests take 42 s, and the 423 integration tests (mostly shadow/preview tests that clone the 273k-row company database) take about 510 s. That blocked local work and slowed CI.
 **Rejected:** `addopts = "-m 'not integration'"` (applies to CI too, and `test_ci_workflow.py` forbids a `-m` filter in CI); deleting or shrinking the shadow tests (loses coverage).
+
+## D-180 · 2026-10-26 · The graph state holds no raw agent text and no per-row changes
+**Decision:** `WriteState` (`workflow/state.py`) holds only JSON types: the classification with `pinned_sql` blanked (`sql_display` stays, it is masked), the masked intent, `Diff.impact_json()` plus `Diff.cascade_json()` instead of the diff, masked knowledge chunks, and the rule, judge and decision results. A node that needs `pinned_sql` reads it from `actions`. The per-row changes go to `preview_rows` in the shadow node. A rebuilt diff has `changes=()`. This differs from BE-76's list ("pinned SQL, intent ... in the state"); BE-76 is ticked with this note.
+**Why:** LangGraph writes the state into every checkpoint and traces node inputs and outputs, so raw SQL and the raw intent would reach checkpoints and LangSmith unmasked (SEC-14, ARCH-17). The Replit delete has about 246k row changes, checkpointed after every step. A test plants an email in the SQL and the intent and searches the log lines, the checkpoint tables and both model prompts for it.
+**Rejected:** registering model classes for the state (D-178's other option): it keeps raw text in checkpoints.
+
+## D-181 · 2026-10-26 · A failed retrieval skips the judge and goes to review
+**Decision:** If retrieval raises `RetrievalError` (or no knowledge service exists), the graph goes on without knowledge: the summary still runs, the judge is not called and is recorded as `JudgeResult.unavailable(..., "knowledge_unavailable")` (a new `JudgeFailure`), and `decide` then gives at least review with `ai_unavailable`. D-147 left this to step 14. The cost-cap check comes first: a summary over the cap (or with an unknown cost) is recorded as `skipped_cost_cap`.
+**Why:** A judge without the business rules is the case where it is least reliable, so asking it only costs money. Review is what D-147 asked for ("at least review, like a judge failure").
+
+## D-182 · 2026-10-26 · The fast lane writes a predicted one-table diff
+**Decision:** The classifier exposes `insert_rows` (the VALUES row count, set only when `fast_lane_eligible`). The fast-lane node builds a one-table `Diff` with `inserted = insert_rows` (`rows_before` is 0: nothing is read), saves it in `actions.impact`, and uses `ImpactEngine.template` for the summary. No shadow run, retrieval, judge or LLM call.
+**Why:** With no diff the template would say "no changes", and step 16's row-count check needs the expected number.
+
+## D-183 · 2026-10-26 · Pass-2 blocks, shadow failures and resumes
+**Decision:** (1) A pass-2 block gets the free template summary and skips retrieval, the LLM and the judge (BE-72). (2) A shadow failure ends as `failed` with the error's reason code (`shadow_busy`, `shadow_timeout`, ...) and decision `block`; `blocked` is kept for rule and judge blocks. Any other exception is `failed: workflow_error`; only the exception class is logged. (3) The resume value must be exactly `{"approved": True}` to commit, checked with `is True` (in Python `{"approved": 1} == {"approved": True}`; a test found this). (4) The commit node re-reads the row and, if its status is not `approved`, writes a `fail_closed` event with `resume_mismatch` and changes nothing. (5) `total_ms` is the sum of node durations (`work_ms`), never the wait for a reviewer; it is written at `blocked`, `failed` and `committed`.
+**Why:** Rules before the judge and no spend on blocked writes; the agent's `failed` message needs a code; the SQL claim in step 15 is the only guard against double decisions (D-177), so the graph must not trust the resume value alone.
+
+## D-184 · 2026-10-26 · A transition guard in `set_status`, and ordered events
+**Decision:** `ALLOWED_TRANSITIONS` (`db/enums.py`) encodes the §5 state machine; `set_status` raises `IllegalTransitionError` for any other move (BE-16). `set_status` and the new `add_event` stamp audit events with `clock_timestamp()` instead of the column default `now()`.
+**Why:** A wrong edge is now a fail-closed error instead of a silent bad history. `now()` is the start of the transaction, so two events written together tied and the timeline (ordered by time, then a random id) could show `approved` before `decided`.
+
+## D-185 · 2026-10-26 · A judge that made no call adds nothing to the cost
+**Decision:** `save_judge` leaves the token and cost columns alone when the result spent nothing (cost 0, no tokens: a skipped judge).
+**Why:** The unknown-cost test showed that adding the skipped judge's 0 to an unknown (NULL) total made it 0, which the cost cap then reads as free. This is the caveat noted under step 12 in Known issues.
+
+## D-186 · 2026-10-26 · Where the checkpointer is built, and `psycopg-pool`
+**Decision:** `create_app` builds only the closed `AsyncConnectionPool` and the `WorkflowDeps`; the lifespan builds the `AsyncPostgresSaver` and the graph (the saver needs a running event loop) and opens the pool with `wait=False` unless `APP_ENV=test`. `CHECKPOINTER_DATABASE_URL` is a plain `postgresql://` URL for `blastproof_app`, required in production; every new connection is checked to log in as `blastproof_app`. The saver uses strict serde (`allowed_msgpack_modules=None`). `psycopg-pool==3.3.3` is a new direct dependency (already in `uv.lock`), approved by "implement the plan". Runs use `durability="sync"` and `version="v2"` (D-176, D-177).
+**Why:** TEST-07 (startup opens no connection), SEC-09, SPIKE-04. On Windows, psycopg's async mode cannot use the default ProactorEventLoop: the tests select the Selector loop (`pytest_asyncio_loop_factories` in `conftest.py`), and a Windows dev server needs `--reload` (which uses it) until the deploy on Linux.

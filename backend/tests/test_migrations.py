@@ -38,6 +38,10 @@ ELEVEN_TABLES = {
     "users", "login_attempts", "agents", "systems", "actions", "audit_events", "preview_rows",
     "before_images", "hook_events", "knowledge_chunks", "chunk_embeddings",
 }  # fmt: skip
+# LangGraph's tables (step 14, D-173): created by migration 0003, which holds the library's DDL.
+CHECKPOINT_TABLES = {
+    "checkpoint_migrations", "checkpoints", "checkpoint_blobs", "checkpoint_writes",
+}  # fmt: skip
 
 
 def public_tables(database: str) -> dict[str, str]:
@@ -53,9 +57,9 @@ def owner_url(database: str) -> str:
     return on_database(BLASTPROOF_OWNER_URL, database)
 
 
-def test_upgrade_creates_the_eleven_tables_owned_by_the_owner(migrated_db: str) -> None:
+def test_upgrade_creates_the_tables_owned_by_the_owner(migrated_db: str) -> None:
     tables = public_tables(migrated_db)
-    assert set(tables) == ELEVEN_TABLES | {"alembic_version"}
+    assert set(tables) == ELEVEN_TABLES | CHECKPOINT_TABLES | {"alembic_version"}
     assert set(tables.values()) == {"blastproof_owner"}
 
 
@@ -131,7 +135,7 @@ def test_downgrade_then_upgrade_round_trips() -> None:
         alembic_command.downgrade(config, "base")
         assert set(public_tables(name)) == {"alembic_version"}
         alembic_command.upgrade(config, "head")
-        assert set(public_tables(name)) == ELEVEN_TABLES | {"alembic_version"}
+        assert set(public_tables(name)) == ELEVEN_TABLES | CHECKPOINT_TABLES | {"alembic_version"}
     finally:
         drop_blastproof_scratch(name)
 

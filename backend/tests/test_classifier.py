@@ -159,12 +159,20 @@ CASES = [
         statement_type="insert",
         target_tables=("customer_notes",),
         fast_lane_eligible=True,
+        insert_rows=1,
+    ),
+    row(
+        "INSERT INTO customer_notes (user_id, body) VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+        "fast-three-rows",
+        fast_lane_eligible=True,
+        insert_rows=3,
     ),
     row(
         "INSERT INTO customer_notes (user_id, body) VALUES "
         + ", ".join(f"({i}, 'n')" for i in range(10)),
         "fast-ten-rows",
         fast_lane_eligible=True,
+        insert_rows=10,
     ),
     row(
         "INSERT INTO t (a, b, c, d, e) VALUES (now(), NULL, DEFAULT, -5, '2026-01-01'::date)",
@@ -183,6 +191,16 @@ CASES = [
         "slow-eleven-rows",
         kind=Kind.WRITE,
         fast_lane_eligible=False,
+        insert_rows=None,
+    ),
+    row("INSERT INTO t (a) SELECT a FROM u", "slow-select-has-no-row-count", insert_rows=None),
+    row("DELETE FROM t WHERE a = 1", "delete-has-no-row-count", insert_rows=None),
+    row("SELECT 1", "read-has-no-row-count", insert_rows=None),
+    row(
+        "BEGIN; INSERT INTO t (a) VALUES (1); COMMIT",
+        "multi-statement-has-no-row-count",
+        fast_lane_eligible=False,
+        insert_rows=None,
     ),
     row(
         "INSERT INTO t (a) VALUES (upper('x'))", "slow-function-in-values", fast_lane_eligible=False

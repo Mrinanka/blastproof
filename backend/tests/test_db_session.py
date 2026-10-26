@@ -33,6 +33,7 @@ def test_only_the_app_role_passes() -> None:
     [
         ({"jwt_secret": None}, "JWT_SECRET"),
         ({"blastproof_database_url": None}, "BLASTPROOF_DATABASE_URL"),
+        ({"checkpointer_database_url": None}, "CHECKPOINTER_DATABASE_URL"),
         ({"company_db_reader_url": None}, "COMPANY_DB_READER_URL"),
         # The local Compose company-db is for tests and seeded actions, never production.
         ({"company_connection_profile": "local"}, "COMPANY_CONNECTION_PROFILE=neon"),
@@ -44,6 +45,7 @@ def test_production_refuses_to_start_without_its_settings(update: dict, missing:
         app_env="production",
         neon_client="api",  # CI sets NEON_CLIENT=fake, which production refuses
         blastproof_database_url="postgresql+asyncpg://blastproof_app:x@db.invalid/blastproof",
+        checkpointer_database_url="postgresql://blastproof_app:x@db.invalid/blastproof",
         jwt_secret=TEST_JWT_SECRET,
         company_db_reader_url="postgresql://blastproof_reader:x@db.invalid/neondb",
         company_db_writer_url="postgresql://blastproof_writer:x@db.invalid/neondb",

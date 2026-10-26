@@ -31,11 +31,23 @@ if explicit_url is None:
 target_metadata = Base.metadata
 
 
+def include_object(
+    obj: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    """Leave LangGraph's tables to the migration that holds their DDL (D-173): without this,
+    `alembic check` lists them, and their indexes, as drift. Indexes follow their table."""
+    if type_ == "table" and name is not None and name.startswith("checkpoint"):
+        return False
+    table = getattr(obj, "table", None)
+    return not (type_ == "index" and table is not None and table.name.startswith("checkpoint"))
+
+
 def run_migrations_offline() -> None:
     """`alembic upgrade head --sql`: print the SQL instead of running it."""
     context.configure(
         url=migrator_url(explicit_url, settings),
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -50,7 +62,11 @@ def run_migrations_online() -> None:
             # One transaction for the whole run: a failure leaves nothing half-built. The role
             # check runs inside it: a query before begin_transaction() would start a transaction
             # Alembic then joins and never commits.
-            context.configure(connection=connection, target_metadata=target_metadata)
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                include_object=include_object,
+            )
             with context.begin_transaction():
                 check_migrator_role(connection.execute(text("SELECT current_user")).scalar_one())
                 context.run_migrations()

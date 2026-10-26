@@ -171,6 +171,22 @@ def migrated_db(blastproof_db_reachable: None) -> Iterator[str]:
         drop_blastproof_scratch(name)
 
 
+if sys.platform == "win32":
+
+    def pytest_asyncio_loop_factories(config, item):  # type: ignore[no-untyped-def]
+        # psycopg's async mode (the LangGraph checkpointer, step 14) cannot use the default
+        # ProactorEventLoop on Windows.
+        return {"selector": asyncio.SelectorEventLoop}
+
+
+@pytest.fixture(scope="module")
+def wf_env(auth_db: "AuthDb"):  # type: ignore[no-untyped-def]
+    """A user, an agent and a system in the scratch database, for the workflow tests (step 14)."""
+    from tests.workflow_helpers import make_env
+
+    return make_env(auth_db)
+
+
 @pytest.fixture
 def settings() -> Settings:
     # _env_file=None: tests never read backend/.env.

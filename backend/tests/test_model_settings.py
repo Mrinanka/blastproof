@@ -84,6 +84,7 @@ PRODUCTION = {
     "app_env": "production",
     "neon_client": "api",  # CI sets NEON_CLIENT=fake
     "blastproof_database_url": "postgresql+asyncpg://blastproof_app:x@db.invalid/blastproof",
+    "checkpointer_database_url": "postgresql://blastproof_app:x@db.invalid/blastproof",
     "jwt_secret": TEST_JWT_SECRET,
     "company_db_reader_url": "postgresql://blastproof_reader:x@db.invalid/neondb",
     "company_db_writer_url": "postgresql://blastproof_writer:x@db.invalid/neondb",
