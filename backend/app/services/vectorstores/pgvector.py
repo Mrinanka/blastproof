@@ -45,6 +45,9 @@ class PgVectorStore(VectorStore):
     async def search(
         self, vector: list[float], k: int, tables: Sequence[str] | None = None
     ) -> list[SearchHit]:
+        # Postgres checks the length only while computing a distance; an empty table never does.
+        if len(vector) != EMBEDDING_DIMENSIONS:
+            raise ValueError(f"expected {EMBEDDING_DIMENSIONS} dimensions, got {len(vector)}")
         async with self._sessionmaker() as session, session.begin():
             if tables is None:
                 result = await session.execute(_SEARCH, {"vector": vector, "k": k})
