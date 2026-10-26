@@ -50,6 +50,14 @@ async def aboom(*_args: Any, **_kwargs: Any) -> Any:
     raise RuntimeError(f"secret detail {PLANTED_EMAIL}")
 
 
+@pytest.fixture(autouse=True)
+def uncached_graph_logger() -> None:
+    """`configure_logging` caches a logger on its first use, with the processor list of the
+    configuration then in force; `capture_logs` swaps the current list and would miss it. Which
+    earlier tests ran decides whether that happens, so forget the cached binding here."""
+    graph_module.logger.__dict__.pop("bind", None)
+
+
 def fail_closed_logs(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [entry for entry in logs if entry["event"] == "fail_closed"]
 

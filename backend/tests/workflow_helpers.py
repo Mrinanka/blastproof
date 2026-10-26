@@ -28,9 +28,18 @@ from app.workflow.graph import (
     run_config,
     run_write,
 )
+from app.workflow.runner import Decider, WorkflowRunner
 from tests.action_helpers import make_system
 from tests.conftest import AuthDb, TestUser, asyncpg_url
-from tests.impact_helpers import POLICY, FakeLlm, engine_with, report
+from tests.impact_helpers import (
+    POLICY,
+    REPLIT_INTENT,
+    REPLIT_SQL,
+    FakeLlm,
+    engine_with,
+    replit_diff,
+    report,
+)
 from tests.judge_helpers import FakeJudgeLlm, judge_with, verdict
 
 FAST_LANE_SQL = "INSERT INTO customer_notes (user_id, body) VALUES (42, 'Called about renewal')"
@@ -281,3 +290,33 @@ def status_history(env: WorkflowEnv, action_id: uuid.UUID) -> list[str]:
     """The audit events that are status changes, in order."""
     extras = {"shadow_done", "decided", "fail_closed"}
     return [kind for kind in event_types(env, action_id) if kind not in extras]
+
+
+# --- The runner (step 15) -----------------------------------------------------------------------
+
+
+def runner_for(r: Rig, *, recovered: bool = True, clock: Clock | None = None) -> WorkflowRunner:
+    """A runner on the rig's graph. `recovered` skips startup recovery, which would otherwise act on
+    every action the module's other tests left behind."""
+    runner = WorkflowRunner(r.graph, r.deps.sessionmaker, clock or r.deps.clock, r.settings)
+    if recovered:
+        runner.mark_recovered()
+    return runner
+
+
+def decider_for(user: TestUser, *, name: str | None = None, is_admin: bool = False) -> Decider:
+    return Decider(user.id, name or f"User {user.email[:10]}", is_admin)
+
+
+async def paused_action(r: Rig, env: WorkflowEnv | None = None) -> uuid.UUID:
+    """A Replit-style delete that ran to `awaiting_review` (paused at `human_review`)."""
+    env = env or r.env
+    action_id = new_action(env, REPLIT_SQL, intent=REPLIT_INTENT)
+    await r.run(action_id)
+    assert action_row(env, action_id)["status"] == "awaiting_review"
+    return action_id
+
+
+def paused_rig(env: WorkflowEnv, **options: Any) -> Any:
+    """`rig` with the Replit diff, so `paused_action` reaches review."""
+    return rig(env, diff=replit_diff(), **options)
