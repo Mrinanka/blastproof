@@ -163,7 +163,7 @@ When I approve, build it with these rules:
 ### Prompt 2: verify with evidence
 
 ```text
-Verify this step:
+Verify this step that you build:
 1. Run the test suite and lint for every part you touched (backend and/or
    frontend). Paste the actual output summary, not a description of it.
 2. Run the step's "Done when" check. Paste the actual output.
