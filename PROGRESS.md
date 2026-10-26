@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). Next: Stage 3, the LangGraph interrupt and resume spike. The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Next: step 14 (LangGraph workflow). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -35,6 +35,14 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Spike: LangGraph interrupt and resume, done 2026-10-26, D-173 to D-178
+- Throwaway code and findings in `spikes/`: `langgraph_interrupt.py` (`probe`, `migrate`, `cleanup`) and `langgraph_interrupt.md` (answers, plan edits, real output). Local Docker Postgres only; no `backend/app` change, no new dependency; scratch databases dropped.
+- Findings: `setup()` from a migration does not hang but is not atomic, so the migration holds the library DDL itself (D-173); no `ALTER DEFAULT PRIVILEGES` (D-174); without `autocommit` the graph stores nothing, and a pool needs `check_connection` to survive killed connections (D-175); `durability="sync"` (D-176); LangGraph does not stop a double resume, the SQL claim does (D-177); plain state types or registered models (D-178). The interrupt re-runs only its own node; restart and crash recovery work as the plan assumed.
+- Plan edits: backend plan section 5 and step 14, BE-78 wording. Requirements ticked: SPIKE-04. Step 14 must ask before pinning `psycopg-pool` (new direct dependency).
+- Not tested: a migration holding a snapshot before `setup()`, pgbouncer or Neon's pooled endpoint, `LANGGRAPH_AES_KEY`, `interrupt()` inside try/except.
+- Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
+- Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
 
 ### Actions read routes (Stage 3 pull-forward), done 2026-10-26, D-168 to D-172
 - New: `app/api/actions.py`, `app/schemas/actions.py`, `app/services/actions.py`; `app/db/actions.py` gained `list_visible_actions` and `get_action_detail_rows` (both start from `visible_actions`); `classifier.py` gained public `display_sql` and `display_in_worker`; `main.py` includes the router. No migration, no new dependency.
@@ -379,7 +387,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
-- Flaky test (step 11): `test_vector_store_contract.py::test_the_wrong_dimension_raises_and_stores_nothing[pgvector]` failed once on CI for PR #20 ("DID NOT RAISE" on the empty-table `search` with a 3-number vector) and passed on re-run, with no related change. Likely cause (not confirmed): `PgVectorStore.search` relies on Postgres raising a dimension error while evaluating a distance, which an empty table can skip depending on the query plan. Fix if it returns: make `search` check the vector length itself (a step 11 code change).
+- Full suite on 2026-10-26 (after the spike, three runs): 5, a different set, and 15 failures, all in `test_shadow_*`, `test_fake_neon_client`, `test_judge_done_when` and `test_knowledge_done_when`; every one passes when its file is run alone, and the last had `ConnectionDoesNotExistError` from `company-db`. The earlier full runs (1,975 passed) did not show it. Nothing in the changed files touches these tests; suspect load on Docker Desktop (3.7 GB) or the interrupted runs overlapping. Re-run the full suite on a quiet machine before relying on it.
 - Actions routes: step 14 must write `matched_rules` as `[{name, outcome, reason, pass}]` with `pass` `pre` or `post` (D-171). A stored shape the views cannot parse is a 500 (D-170). In `from`/`to` query values, write the offset as `Z` or `%2B00:00`. The 404 for unknown routes is still FastAPI's default (step 19).
 - Gate audit 2, finding 6 (fixed, D-167): one path still logs exception text: when a response has already started, the middleware re-raises and uvicorn's `uvicorn.error` logger prints the traceback with the message. No route streams a response today (MCP tool errors are caught by the SDK and filtered by `StripMcpDetails`); revisit if a streaming route is added. Logs from other code that call `logger.exception` would also print text; none do in `app/` today.
 - Gate audit 2, finding 4 (Deploy): Neon documents `branch.expires_at` as Early Access only. It works on `blastproof-company-dev`; at deploy, run one `preview-sql --confirm-project blastproof-company` (owner-approved) and, if Neon refuses it, make `expires_at` a setting and rely on the sweep.
@@ -579,7 +587,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 
 ## Stage 3: the flow + dashboard start
 - [x] Pull forward: GET /v1/actions, GET /v1/actions/{id} (`/v1/auth/me` done in step 5, D-092)
-- [ ] Spike: LangGraph interrupt and resume
+- [x] Spike: LangGraph interrupt and resume
 - [ ] 14. LangGraph workflow
 - [ ] 15. Workflow runner
 - [ ] Pull forward: POST /v1/actions/{id}/approve and /reject (D-053)

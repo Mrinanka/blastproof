@@ -178,7 +178,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [ ] | BE-76 | A LangGraph graph handles writes only; its state holds action ID, pinned SQL, intent, classification, diff, knowledge, impact, judge result, decision and reviewer note; nodes and edges follow BE §7 plus the fast-lane edge. | BE §7, B14 | B14 | DW-B14 |
 | [ ] | BE-77 | Review is two nodes: `request_review` sets `awaiting_review` and writes the audit event; `human_review` contains only `interrupt()`. | BE B14; D-025 | B14 | DW-B14 (status after resume) |
-| [ ] | BE-78 | The checkpointer is `AsyncPostgresSaver` with `thread_id = action_id`; its tables are created by a migration that runs `setup()` as `blastproof_owner`, grants `blastproof_app` CRUD on them and sets `ALTER DEFAULT PRIVILEGES`; the app never calls `setup()`. | BE §5, B14; D-013 | B14 | *migration test* |
+| [ ] | BE-78 | The checkpointer is `AsyncPostgresSaver` with `thread_id = action_id`; its tables are created by a migration, run as `blastproof_owner`, that holds the library's DDL (no `setup()` call, D-173), grants `blastproof_app` CRUD on the three data tables and `SELECT` on `checkpoint_migrations`, and sets no `ALTER DEFAULT PRIVILEGES` (D-174); the app never calls `setup()`. | BE §5, B14; D-013 | B14 | *migration test* |
 | [ ] | BE-79 | Each node updates `actions.status` and writes an audit event; any exception sets the action to failed and blocks it. | BE B14 | B14 | DW-B14 |
 | [ ] | BE-80 | The fast lane skips the shadow run, judge and LLM summary, uses a template summary, goes to commit (which checks the row count), and still runs through the graph with a full audit timeline. | BE §7; D-007 | B14, B16 | DW-B14; MVP-B02 |
 | [ ] | BE-81 | `start(action)` launches the graph with `asyncio.create_task` and keeps the task in a module-level set until done. | BE B15 | B15 | *unit test* |
@@ -358,7 +358,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SPIKE-01 | MCP spike: mount path (`streamable_http_app()` serves at `/mcp`), lifespan and `session_manager.run()`, stateless vs session mode, how a tool reads request data, and Claude Code's MCP tool timeout vs the 50 s long poll. | BE §6, B6; WF Part 3 | before B6 | Spike output pasted; decisions.md |
 | [x] | SPIKE-02 | Hook spike: matcher tool names (Read, Grep, Glob, MultiEdit, NotebookEdit), default hook timeout and whether a timeout fails open, `permissions.deny` path syntax, hook snapshot at startup, `disableAllHooks` and settings precedence, behaviour in bypass-permissions mode. | WF Part 3; BE B7, B18; SPEC §9 | before B7 | Spike output pasted |
 | [x] | SPIKE-03 | Neon spike: create-branch payload, waiting on operations, non-owner role connection URIs, branch `expires_at`, free-plan caps, default Postgres version, pooled vs direct endpoint with asyncpg, project-scoped API keys, and measured create-to-first-query p50/p95. | BE §2, B10 | before B10 | Spike output; sets NFR-03 |
-| [ ] | SPIKE-04 | LangGraph spike: psycopg 3 setup (`autocommit=True`, `dict_row`, plain URL), `setup()` from an Alembic migration as `blastproof_owner`, and `interrupt()` re-running its node on resume. | BE B14 | before B14 | Spike output pasted |
+| [x] | SPIKE-04 | LangGraph spike: psycopg 3 setup (`autocommit=True`, `dict_row`, plain URL), `setup()` from an Alembic migration as `blastproof_owner`, and `interrupt()` re-running its node on resume. | BE B14 | before B14 | Spike output pasted |
 
 ## NFR: non-functional targets (spec §10)
 
