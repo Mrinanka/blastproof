@@ -26,8 +26,8 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | ARCH-03 | `pinned_sql` is what is previewed, approved and committed. | CL; BE §5, §7, B8; D-005 | B8, B10, B16 | DW-B08, DW-B16 |
 | [ ] | ARCH-04 | The commit must reproduce the approved diff or roll back. | CL; BE B16; D-005 | B16 | DW-B16 |
 | [ ] | ARCH-05 | The security boundary is credential isolation; hook rules are guardrails only. | CL; SPEC §13; BE §12; D-001 | B7, B18, Deploy | DW-B07, MVP-B01 |
-| [ ] | ARCH-06 | Numbers come from the database, never from a model ("code counts, the LLM explains"). | CL; BE B12 | B10, B12 | DW-B10, DW-B12 |
-| [ ] | ARCH-07 | Every number in an LLM summary must match the computed facts. | CL; BE B12 | B12 | DW-B12 (guardrail tests) |
+| [x] | ARCH-06 | Numbers come from the database, never from a model ("code counts, the LLM explains"). | CL; BE B12 | B10, B12 | DW-B10, DW-B12 |
+| [x] | ARCH-07 | Every number in an LLM summary must match the computed facts. | CL; BE B12 | B12 | DW-B12 (guardrail tests) |
 | [ ] | ARCH-08 | Rules run before the judge. | CL; SPEC §13; BE §7 | B9, B13, B14 | DW-B14 |
 | [ ] | ARCH-09 | The judge can only make a decision stricter, never looser. | CL; SPEC §13; BE B13; D-008 | B13 | DW-B13 |
 | [ ] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
@@ -159,12 +159,12 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-61 | `Embedder.embed(texts)` defaults to fastembed `BAAI/bge-small-en-v1.5` (384 dims); stores never embed. | BE B11 | B11 | *unit test with fake embedder* |
 | [x] | BE-62 | `VectorStore` has `upsert`, `search(vector, k, tables=None) -> [(chunk_id, score)]` and `delete`; results are chunk IDs and text is read from Postgres; `PgVectorStore` is the default (`VECTOR_STORE`). | BE B11 | B11 | TEST-12 |
 | [x] | BE-63 | A `reindex` command rebuilds the active vector store from `knowledge_chunks`. | BE B11 | B11 | *integration test* |
-| [ ] | BE-64 | The impact engine computes deterministic facts in code: affected rows by important column, derived groups, cascades and any percentage needed. | BE B12 | B12 | DW-B12 |
+| [x] | BE-64 | The impact engine computes deterministic facts in code: affected rows by important column, derived groups, cascades and any percentage needed. | BE B12 | B12 | DW-B12 |
 | [ ] | BE-65 | The summary model (`SUMMARY_MODEL`, Gemini Flash by default) writes an `ImpactReport` (headline, key points, concerns) via structured output from the facts and retrieved knowledge, told to use only the given numbers, as digits. | BE B12 | B12 | DW-B12 |
 | [ ] | BE-66 | Summary and judge prompts see only `sql_display` and masked samples. | BE B12, §12 | B12, B13 | *unit test on prompt contents* |
-| [ ] | BE-67 | Number guardrail: every number in the output (regex `\d[\d,]*(\.\d+)?%?`, commas stripped) must be in the allowed set (facts, numbers in the intent, rule thresholds), else a template summary is used. | BE B12 | B12 | DW-B12 |
-| [ ] | BE-68 | Input and output tokens are recorded from `usage_metadata`; `llm_cost_usd` = tokens × the `LLM_PRICES` table. | BE B12 | B12 | *unit test* |
-| [ ] | BE-69 | Summary calls have a 20-second timeout and a max-token cap (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`); on error or timeout the template summary is used. | BE B12, §11 | B12 | *unit test with failing fake* |
+| [x] | BE-67 | Number guardrail: every number in the output (regex `\d[\d,]*(\.\d+)?(\s*(%|percent\b))?`, commas stripped, after NFKC; number words too) must be in the allowed set (facts, numbers in the intent and in `sql_display`, rule thresholds; D-150), else a template summary is used. | BE B12 | B12 | DW-B12 |
+| [x] | BE-68 | Input and output tokens are recorded from `usage_metadata`; `llm_cost_usd` = tokens × the `LLM_PRICES` table. | BE B12 | B12 | *unit test* |
+| [x] | BE-69 | Summary calls have a 20-second timeout and a max-token cap (`LLM_TIMEOUT_SECONDS`, `LLM_MAX_TOKENS`); on error or timeout the template summary is used. | BE B12, §11 | B12 | *unit test with failing fake* |
 | [ ] | BE-70 | After the summary call, if `llm_cost_usd` is over `MAX_LLM_COST_PER_ACTION_USD` (0.10), the judge is skipped and the write takes the judge-failure path (at least review, `ai_unavailable` message); the summary is kept. | BE §11, B14; D-033 | B14 | DW-B14 (cost cap branch) |
 | [ ] | BE-71 | `Judge.assess(context) -> JudgeResult` (risk_level low-critical, recommendation allow/review/block, confidence 0-1, reason); `JUDGE_PROVIDER` picks the implementation and the workflow never knows which ran. | BE B13 | B13 | DW-B13 |
 | [ ] | BE-72 | The judge runs only on writes the rules did not block, and never on the fast lane. | BE B13 | B13, B14 | DW-B14 |

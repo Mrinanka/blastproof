@@ -295,6 +295,15 @@ class Policy(BaseModel):
                 _lower_names(columns, _IDENTIFIER_RE, "column name")
         for table, groups in self.derived_groups.items():
             _lower_names([table, *groups], _IDENTIFIER_RE, "table or group name")
+        # Breakdown labels are raw column values: they reach the summary prompt, actions.impact
+        # and the dashboard as they are, so a sensitive column can never be one.
+        for table, columns in self.important_columns.items():
+            for column in columns:
+                if self.is_sensitive(table, column):
+                    raise ValueError(
+                        f"important_columns: {table}.{column} is a sensitive column; its values"
+                        " would be shown unmasked in the impact breakdown"
+                    )
         return self
 
     def is_sensitive(self, table: str, column: str) -> bool:

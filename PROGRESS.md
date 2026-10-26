@@ -1,7 +1,8 @@
 # Progress
 
 ## Current focus
-Step 11 (Knowledge and RAG) is done on `feat/step-11`. Next: step 12 (impact engine). Retrieval takes the top 10 similar chunks (D-148).
+Next: step 13 (Risk judge, pluggable). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
 (PR #9). The Claude Code hook spike is done on `spike/claude-hook`; step 6 (MCP server) is done on `feat/step-6`.
@@ -34,6 +35,13 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
   `expires_at` accepted on create; branch cap 10 (422 `BRANCHES_LIMIT_EXCEEDED`); second DELETE returns 204; two parallel creates fine.
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
+
+### Step 12, done 2026-10-26 (manual read of real wording deferred)
+- New: `app/services/impact.py` (facts, number guardrail, prompt, template, `ImpactEngine`), `app/services/llm.py` (`build_chat_model`, `LazyModel`, `LlmPrice`, `price_for`, `cost_usd`; step 13 reuses it), `app/db/impact.py` (`save_impact`, adds tokens and cost). Changed: `config.py` (`SUMMARY_MODEL`, `SUMMARY_MODEL_OPTIONS`, `LLM_PRICES`), `policy.py` (a sensitive important column is refused), `main.py` (`app.state.impact`, builds nothing), `cli.py` (`impact-report`, with `--now`), `conftest.py` (autouse: no model keys, tracing off), `.env.example`, CLAUDE.md run command (`--env-file .env`). No new dependency. Empty `SUMMARY_MODEL`, `SUMMARY_MODEL_OPTIONS`, `LLM_PRICES` appended to `backend/.env`.
+- Tests: about 200 new in 9 files (`test_impact_{facts,guardrail,prompt,engine,config,template,done_when}.py`, `test_llm_factory.py`, cases in `test_policy_loading.py`); full run 1,488 passed, 1 skipped (6 min 16 s). Mutation checks: removing each of 20 guards turned a test red (comma strip, NFKC, percent with a space, number words, SQL source, knowledge excluded, threshold source, `<` escape, knowledge masking, knowledge cap, timeout, tokens kept on parse and number-check failures, cost accumulation, price required, reserved options, sensitive important column, report masking, shape check, no call without changes). NFKC first needed two extra cases (full-width `％`, superscript digits).
+- Done-when, automated: on the real Replit preview, facts equal `incidents.yaml`; the fake model's "Deletes 48,213 users, including 12 paying customers (3 enterprise), and their orders through a cascade." passes and "13 paying" falls back to the template; real retrieval (scan, `schema_docs.md`, a poisoned upload) is masked and wrapped in the prompt; `save_impact` on a real `actions` row writes the report and adds tokens and cost on a second call. The template passes the guardrail for all 16 measured scenarios.
+- Manual run tried 2026-10-26 (`impact-report --now 2026-10-01T00:00:00+00:00`, local profile): the preview was right (48,213 users, 12 paying, 245,677 rows, 11 s), but Gemini 3.8 Flash never answered: `503 UNAVAILABLE` ("model is currently experiencing high demand") or `504 DEADLINE_EXCEEDED` at 20, 30 and 60 s, with and without `thinking_level`, even for "Reply ok". The engine did the right thing: template report, `fallback_reason: llm_error`, only `GoogleAPIError` logged, cost unknown. DW-B12's "manual read" of real wording is still open: re-run when Gemini recovers. Local `blastproof` has no knowledge chunks yet (0 retrieved): run `knowledge-scan` and `knowledge-ingest` first.
+- Requirements ticked: BE-64, BE-67, BE-68, BE-69, ARCH-06, ARCH-07. Left open: BE-65 and DW-B12 (the real model never answered; only the fake wrote a report), BE-66, ARCH-19, SEC-12 (judge half, step 13), SEC-14, OBS-05 (step 14 calls `save_impact`), BE-70 (step 14).
 
 ### Step 11, done 2026-10-26
 - New: `app/services/{embeddings,knowledge}.py`, `app/services/vectorstores/` (`base`, `memory`, `pgvector`), `app/db/knowledge.py`, migration `0002`. Changed: `models.py`, `config.py`, `main.py`, `cli.py` (`knowledge-scan`, `knowledge-ingest`, `reindex`), `describe_table` (`notes`). No new dependency. Empty `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `VECTOR_STORE` appended to `backend/.env`.
@@ -352,6 +360,13 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Step 12 (deferred): DW-B12's manual read of real Gemini wording. Re-run when Gemini 3.8 Flash answers again: `uv run --env-file .env python -m app.cli impact-report --sql "DELETE FROM users WHERE last_login_at < now() - interval '6 months'" --intent "Clean up inactive users" --now 2026-10-01T00:00:00+00:00` (after `knowledge-scan` and `knowledge-ingest --file ../demo_company/schema_docs.md`), run it twice, check the wording, `source: llm`, tokens and cost, then tick BE-65 and DW-B12.
+- Step 12: JSON values in `backend/.env` must be single-quoted (`SUMMARY_MODEL_OPTIONS='{"thinking_level": "low"}'`): `uv run --env-file` cannot parse bare JSON and warns "Failed to parse environment file". Model options stay in config, never in code (an empty value means `{}`, so 3.8 Flash would think at `medium`, which counts against `LLM_MAX_TOKENS`).
+- Step 12: on 2026-10-26 Gemini 3.8 Flash returned 503 (high demand) or 504 for every call. If that persists, a different `SUMMARY_MODEL` (with its `LLM_PRICES` entry) is a config change only.
+- Step 12: Gemini 3.8 Flash's price doubles on 2027-01-01 ($1.50 / $7.50 per million): update `LLM_PRICES` then; until then the cost cap reads the current price (D-152).
+- Step 12: an unknown call cost makes the action's total NULL (D-153), but a later call with a known cost restarts the total from 0 (`coalesce`). Step 14 must check the cap right after each summary; revisit if re-previews (step 16) make this matter.
+- Step 12: the template is not held to the model's shape limits (the Replit template has 9 key points, one per cascaded table). Step 19's view must not assume at most 8.
+- Step 12: the test diffs use `SEED_ROWS` (rows per table counted on the local seed, 2026-10-26) in `tests/impact_helpers.py`; a seed change must update them.
 - Step 11: the write lock is per process; with several backend processes a lost race can leave chunks without vectors (`reindex` repairs). `KnowledgeService.notes` was not built (`describe_table` queries the db directly). Knowledge text is untrusted: steps 12 and 13 must mask and wrap it (D-149). Step 19 must check upload size before reading the body and define `DELETE /v1/knowledge/{id}`. The CLI and `describe_table` were not run by hand against local `blastproof` (tests cover them). The Qdrant half of Done-when is deferred with `QdrantStore`. CI downloads the 67 MB model each run. `test_cli_auth::test_create_user_then_log_in` failed once under full-suite load (passes alone).
 - Step 10: a preview of a write that touches most of a table is slow: the Replit delete (246k rows) took 44 s on Neon (D-142, D-143). Most of it is downloading every changed
   row and computing both sides on a small compute. If typical writes turn out slow, stop downloading all rows (a change to what step 16 reads from `preview_rows`).
@@ -535,7 +550,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Spike: Neon branching
 - [x] 10. Neon client and shadow executor
 - [x] 11. Knowledge and RAG, swappable vector store
-- [ ] 12. Impact engine
+- [x] 12. Impact engine (manual read of real Gemini wording deferred, Known issues)
 - [ ] 13. Risk judge, pluggable
 - [ ] GATE AUDIT: exact diffs and correct retrieval
 
