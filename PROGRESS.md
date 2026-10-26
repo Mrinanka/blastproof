@@ -1,7 +1,7 @@
 # Progress
 
 ## Current focus
-Next: Stage 3, starting with the pull-forward of GET /v1/actions and GET /v1/actions/{id}. The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165, D-166; finding 6 waits for the owner, see Known issues). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+Next: Stage 3, starting with the pull-forward of GET /v1/actions and GET /v1/actions/{id}. The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -36,11 +36,11 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Plan edits: backend plan step 10, SPEC §10 and NFR-03 (target under 20 s). Requirements ticked: SPIKE-03.
 - Not tested: `expires_at` auto-delete timing, pooled endpoint under concurrent clients (pooling was off), 429 limits.
 
-### Gate audit (Stage 2), done 2026-10-26, D-165 and D-166
+### Gate audit (Stage 2), done 2026-10-26, D-165 to D-167
 - Audit (Prompt G, branch `fix/gate-audit-stage-2`): 1,814 passed before the fixes; ruff, format and `alembic check` clean. Gate check: the shadow done-when, all 16 measured scenarios and the row-hash test pass, and plain `SELECT count(*)` queries on local `company_main` as `blastproof_reader` (no shadow code) match `incidents.yaml` exactly (users 48,213 = free 48,201 + pro 9 + enterprise 3; orders 48,500; order_items 121,364; subscriptions 1,476; payments 4,382; support_tickets 11,647; customer_notes 5,713; invoices set to NULL 4,382). Every users delete retrieves the business rules. `evals.run` does not exist yet (Evals stage).
 - Fixed: bare model names refused, `SUMMARY_MODEL`, `JUDGE_MODEL` and `LLM_PRICES` keys must be `provider:model` (finding 1, ARCH-19); production refuses to start on the code's default model and price, dev keeps them (finding 2, D-165); a Neon create whose answer was lost deletes its branch by exact name (finding 3, D-166); BE-31, BE-34, BE-42, BE-57 reworded to match the code (finding 5); `ShadowRunner.timeout_seconds` has no default of its own (finding 7); new test pins the business-rules rank at 7 or better for users deletes that reach retrieval (measured 1 to 6).
 - Tests: 47 new (`test_model_settings.py`, cases in `test_neon_api_client.py`, `test_shadow_units.py`, `test_knowledge_done_when.py`); full run 1,861 passed, 1 skipped (6 min 41 s); ruff, format and `alembic check` clean. Mutation checks: removing each of 14 guards turned a test red (production check, empty-means-unset, model validator, price-key validator, the pattern, timeout default, the three name lookups, exact name, default branch, quiet lookup, rank margin, pass-1 filter). Two existing tests gained the model settings in their "complete production config" (`test_production_neon_settings.py`, `test_db_session.py`), as step 10 did for the Neon settings; nothing else changed in them.
-- Not fixed: finding 6 (crash path logs exception text) waits for the owner, because `test_request_id.py:149` asserts that text is logged; finding 4 (`expires_at` on the deployed project) is a deploy check (Known issues).
+- Finding 6, decided by Claude at the owner's request (D-167): the crash log line holds the exception class and up to 15 `file:line function` frames, never the message, traceback text or locals. `test_request_id.py:149` changed from asserting the message is logged to asserting it is not (the only edit to that test); 2 new tests; 3 more mutation checks red. Not fixed: finding 4 (`expires_at` on the deployed project) is a deploy check (Known issues).
 - Requirements ticked: GATE-02, ARCH-19.
 
 ### Step 13, done 2026-10-26 (manual read of real wording deferred)
@@ -373,7 +373,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
-- Gate audit 2, finding 6 (owner to decide): the crash path (`request_id.py`, `logger.exception("unhandled_exception")`) logs the full exception text and traceback through structlog, so a Postgres error with row values could reach the logs (SEC-14, ARCH-17). `StripMcpDetails` covers only `mcp.*` loggers. Proposed fix: log the exception class and the innermost file and line only; it needs `test_request_id.py:149` (which asserts `"RuntimeError: secret detail"` is in the log) changed, so it was not applied.
+- Gate audit 2, finding 6 (fixed, D-167): one path still logs exception text: when a response has already started, the middleware re-raises and uvicorn's `uvicorn.error` logger prints the traceback with the message. No route streams a response today (MCP tool errors are caught by the SDK and filtered by `StripMcpDetails`); revisit if a streaming route is added. Logs from other code that call `logger.exception` would also print text; none do in `app/` today.
 - Gate audit 2, finding 4 (Deploy): Neon documents `branch.expires_at` as Early Access only. It works on `blastproof-company-dev`; at deploy, run one `preview-sql --confirm-project blastproof-company` (owner-approved) and, if Neon refuses it, make `expires_at` a setting and rely on the sweep.
 - Gate audit 2: with `APP_ENV=production`, `SUMMARY_MODEL`, `JUDGE_MODEL` and `LLM_PRICES` must be set in Fly.io secrets or the backend does not start (D-165). The users-delete scenario `delete-users-without-where` ranks the business rules 8th of 10, but pass 1 blocks it before retrieval. A cancelled Neon create now spends up to 10 s looking up its branch by name (D-166), so a preview that hits `SHADOW_TIMEOUT_SECONDS` can take up to 70 s before it fails closed.
 - Step 13 (deferred): the manual `judge-report` run on 2026-10-26 got `503` from Gemini 3.8 Flash for both the summary and the judge; the failure path worked for real (review, `ai_unavailable`, cost unknown). Re-run when Gemini answers: `uv run --env-file .env python -m app.cli judge-report --sql "DELETE FROM users WHERE last_login_at < now() - interval '6 months'" --intent "Clean up inactive users" --now 2026-10-01T00:00:00+00:00`, twice; check the verdict, reason, tokens, cost and that no `parse_error` came from the thinking-token cap, then tick BE-75. If thinking truncates answers, raise `LLM_MAX_TOKENS` or add a separate `JUDGE_MAX_TOKENS`.
@@ -492,9 +492,6 @@ created at deploy time straight into Fly.io secrets (D-058).
 - 404 responses still use FastAPI's default `{"detail": ...}` body, not CLAUDE.md's
   `{"error": {...}}` envelope (fixed in step 19). The crash 500 (D-068), auth errors (D-088) and
   422 (D-094, brought forward in step 5) already use it.
-- The crash path logs the full exception text. Nothing handles sensitive data yet, but once
-  database code exists, a Postgres error can contain raw values (`invalid input syntax ...:
-  "<value>"`). The masking work must cover exception text in logs too.
 - `log_config.json` sets the reloader process's level to INFO, so that process ignores
   `LOG_LEVEL` (the app process respects it). Dev only.
 - Test helpers (`NetworkGuard`, database URLs) live in `tests/conftest.py` and are imported
