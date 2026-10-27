@@ -20,6 +20,15 @@ async def get_agent_and_owner_by_key_hash(
     return None if row is None else (row[0], row[1])
 
 
+async def get_agent_by_owner_and_name(
+    session: AsyncSession, owner_id: uuid.UUID, name: str
+) -> Agent | None:
+    result = await session.execute(
+        select(Agent).where(Agent.owner_id == owner_id, Agent.name == name)
+    )
+    return result.scalars().first()
+
+
 async def insert_agent(
     session: AsyncSession, *, owner_id: uuid.UUID, name: str, key_hash: str, key_prefix: str
 ) -> Agent:

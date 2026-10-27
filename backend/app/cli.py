@@ -8,6 +8,7 @@
     uv run python -m app.cli reindex
     uv run --env-file .env python -m app.cli impact-report --sql "DELETE ..." --intent "..."
     uv run --env-file .env python -m app.cli judge-report --sql "DELETE ..." --intent "..."
+    uv run python -m app.cli seed-demo-actions [--add-pending] [--password-stdin]
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -26,6 +27,12 @@ key (GOOGLE_API_KEY) into the environment, where LangChain reads it.
 judge-report (step 13) does the same preview, retrieval and summary, then calls JUDGE_MODEL for
 real and prints the verdict, the final decision and the cost. It does not call the judge when the
 rules already block.
+seed-demo-actions (step 20, pulled forward) creates two demo users with an agent each and runs real
+writes for both through the real graph: real shadow runs on the local company database, real
+retrieval, scripted models and the stub commit. It leaves actions in every status, two of them
+paused for review, so /docs can approve and reject them. --add-pending adds one more pending
+action for demo user 1. The password is asked only when a demo user has to be created. It prints
+one line per action (status, owner, id): never SQL, rows, URLs or keys. Local only.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -47,6 +54,7 @@ from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
 from app.services.classifier import Classification, Kind, classify
+from app.services.demo_seed import SeedError, seed_demo_actions
 from app.services.embeddings import build_embedder
 from app.services.impact import ImpactEngine, ImpactResult
 from app.services.judge import (
@@ -113,6 +121,14 @@ def _parser() -> argparse.ArgumentParser:
     judge.add_argument("--sql", required=True)
     judge.add_argument("--intent", required=True)
     judge.add_argument("--now", help="Pin now() to this ISO time, as for impact-report")
+
+    seed = commands.add_parser(
+        "seed-demo-actions", help="Create demo users and actions in every status (local only)"
+    )
+    seed.add_argument("--add-pending", action="store_true", help="Add one pending action only")
+    seed.add_argument(
+        "--password-stdin", action="store_true", help="Read the demo password from one stdin line"
+    )
     return parser
 
 
@@ -386,6 +402,29 @@ async def _judge_report(settings: Settings, args: argparse.Namespace) -> str:
     return chr(10).join(lines)
 
 
+async def _seed(settings: Settings, args: argparse.Namespace) -> tuple[str, bool]:
+    report = await seed_demo_actions(
+        settings,
+        password=lambda: _read_password(args.password_stdin),
+        add_pending=args.add_pending,
+    )
+    lines = [f"{a.status:<16}{a.owner_email}  {a.action_id}" for a in report.actions]
+    for a in report.actions:
+        if not a.ok:
+            lines.append(f"Unexpected: {a.key} ended {a.status}, expected {a.expected}.")
+    lines.append(
+        f"{report.knowledge_chunks} knowledge chunks"
+        + ("" if report.knowledge_chunks else ": run knowledge-scan / knowledge-ingest")
+    )
+    return chr(10).join(lines), report.ok
+
+
+def _run_seed(settings: Settings, args: argparse.Namespace) -> tuple[str, bool]:
+    # psycopg's async mode (the checkpointer) cannot use Windows' default Proactor loop.
+    loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
+    return asyncio.run(_seed(settings, args), loop_factory=loop_factory)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     settings = Settings()
@@ -404,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "judge-report":
             print(asyncio.run(_judge_report(settings, args)))
             return 0
+        if args.command == "seed-demo-actions":
+            text, ok = _run_seed(settings, args)
+            print(text)
+            return 0 if ok else 1
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
@@ -419,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         WrongAppRoleError,
         LlmConfigError,
         JudgeConfigError,
+        SeedError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

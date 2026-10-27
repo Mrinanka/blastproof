@@ -1491,3 +1491,21 @@ existing setting.
 **Decision:** `StatusView` gained `decided_at`; `DecisionResponse` (`id`, `status`, `decided_by`, `decided_at`, `reviewer_note`) is built from the view the claim returns, with no second query. The dashboard refreshes the action afterwards (frontend plan F7). Known limit: approving an action whose graph thread is gone returns 200 `approved` and the action then becomes `failed: resume_mismatch` (D-189); the claim is the decision.
 **Why:** the response then shows exactly the stored time and note, and the route stays thin.
 **Rejected:** returning the runner clock's `now` beside the view, and re-reading the action with `build_detail` (a second query for no gain).
+
+## D-195 · 2026-10-27 · The seed shows only statuses the real graph can reach before step 16
+**Decision:** `seed-demo-actions` creates actions in `awaiting_review`, `rejected`, `expired`, `blocked`, `committed` and `failed` for both users. `approved` is a one-moment state (the graph moves on at once) and `drifted` needs the real commit (step 16), so neither is seeded. BE-121 and the backend plan step 20 now list the six. Step 16's re-run adds a `failed: drifted` action.
+**Why:** the owner chose real graph only: every seeded action is a true product of the pipeline, never a row written by hand, so approving a seeded action behaves exactly as it will in production.
+**Rejected:** inserting `approved` and `drifted` rows directly (they would have no checkpoint and could not be resumed).
+
+## D-196 · 2026-10-27 · Scripted models in `app/`, worded with no numbers
+**Decision:** `app/services/scripted_models.py` holds `ScriptedModelFactory`, a `ModelFactory` for `ImpactEngine` and `LLMJudge`. The script is chosen by the `action_id` in the call's metadata; the wording has no digits or number words, so the number guardrail always passes on the measured facts. Fake token usage (1,200 in, 150 out) makes `llm_cost_usd` non-zero from `LLM_PRICES`.
+**Why:** the CLI cannot import `tests/`, and the real engines still run end to end (prompt, parse, guardrail, cost). The numbers a reviewer reads come from `actions.impact`.
+**Rejected:** a fake in `tests/` (not importable by the CLI) and wording with numbers (it would go stale against the live seed).
+
+## D-197 · 2026-10-27 · The seed's second auto-committed write is a small insert
+**Decision:** demo user 2's auto-committed action is `INSERT INTO support_tickets ...` (one row), not the labeled `UPDATE support_tickets SET status = 'closed' WHERE id = 4803`. No rule allows an update, so that one goes to review whatever the judge says.
+**Why:** the plan said to change the SQL, not the rules (CLAUDE.md: never weaken a rule to make a test pass). The labeled "allow" in `labeled.yaml` is an eval label, not a rule outcome.
+
+## D-198 · 2026-10-27 · The seed asks for a password through a callable, only when a user is created
+**Decision:** `seed_demo_actions(password=...)` takes a function that is called at most once, and only when a demo user is missing. The CLI passes one that prompts (or reads one stdin line). Demo users are `member`s; an existing demo email that is an admin or inactive is refused. Re-running reuses users, agents and the "Demo seed (local)" system and adds a new set of actions (audit events are append-only, so old ones cannot be removed).
+**Why:** a re-run must not prompt, and `--add-pending` must never create accounts.
