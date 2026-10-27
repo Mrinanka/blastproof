@@ -820,3 +820,64 @@ the test endpoint had pooling off; I chose direct on design grounds, not on a fa
 **What we did.** `getQueryClient` returns a fresh client on the server and a single cached one in the browser. `refetchOnWindowFocus: true` and `refetchIntervalInBackground: false` are set explicitly even though they are TanStack's defaults, and tests prove polling stops while the tab is hidden and resumes on focus.
 **How I'd say it in an interview.** "A server-side cache that outlives a request could hand one user's data to another, so on the server every render gets its own client. In the browser one shared client is what makes the cache work. The two refetch options are defaults today, but this is a review dashboard that must not poll a hidden tab, so I pin them in code and test them rather than trusting a library default to stay put."
 **Rejected.** A module-level client everywhere (cross-user leak risk on the server) and relying on the defaults without a test.
+
+---
+
+## Step F3: Proxy and login
+
+### 1. The browser never holds the token: a same-origin proxy keeps it in an httpOnly cookie
+
+**What I did.** The dashboard never calls the backend directly. The browser talks only to its own
+origin, at `/api/blastproof/*`. A small server-side route there reads the session cookie, adds
+`Authorization: Bearer <token>`, forwards the call to the backend, and hands back the backend's
+answer unchanged. Login works the same way: the login route calls the backend, puts the token in
+a cookie marked `HttpOnly`, `SameSite=Lax` and (in production) `Secure`, and returns only the
+person's name and role to the page. Page JavaScript cannot read the token at all.
+
+**Why.** If the token sat in `localStorage` or a normal cookie, one XSS bug in any page would let
+an attacker walk off with the whole session. With `HttpOnly`, the worst a script injection can do
+is make requests while the page is open, not steal the login. The proxy is also where I keep the
+backend address, so the browser never learns it, and where I enforce two cheap guards: only `/v1/*`
+can be reached (so `/docs`, `/mcp` and friends are not exposed), and every POST or DELETE must
+carry an `Origin` header equal to the dashboard's own, which stops another website from making
+your browser act on your behalf (CSRF).
+
+**What I rejected.** Calling the backend straight from the browser with a token in memory or
+`localStorage`. It is less code, but it makes every XSS bug a session theft and needs CORS
+configured on the backend. I also rejected forwarding the browser's own headers: the proxy uses an
+allowlist (content type, accept, and the Bearer it adds itself), so a cookie, a fake
+`Authorization` or an `X-Forwarded-For` from the browser can never reach the backend.
+
+**Trade-off and limits.** The dashboard server is now in the path of every call, so there is one
+more hop and one more thing that can be down (it answers 502 or 504 with a clear error). The
+cookie lasts a fixed 8 hours and the dashboard never checks the token itself: the backend does,
+and when it says 401 the proxy clears the cookie so a dead session cannot loop. Logging out only
+clears the cookie; the token stays valid on the backend until it expires (D-041). All logins look
+like one IP to the backend's rate limiter until the deploy step forwards the real one.
+
+### 2. Two gates, and each one fails closed: a cheap redirect up front, the real check in the backend
+
+**What I did.** A proxy file (`src/proxy.ts`) runs before every `/dashboard` request and only asks
+"is there a session cookie?". No cookie: redirect to `/login?next=...`. It does not validate the
+token. It also stamps each response with a fresh random nonce in a Content-Security-Policy, so only
+scripts Next itself marked with that nonce can run. The real authorization stays in the backend:
+every call is checked there, and a 401 anywhere sends the user back to login. If the session
+config is broken, the proxy treats it as "no session", never as "let them in".
+
+**Why.** The proxy gate is for experience (no flash of a dashboard you cannot use), not security.
+Putting token validation in two places would mean two places to get wrong and a second copy of the
+auth rules. The CLAUDE.md rule is that the dashboard holds no business logic and the backend
+enforces every permission, so the proxy is deliberately dumb. The nonce CSP is the second layer
+for the XSS case from choice 1: even if someone injects markup, an inline script without the
+nonce will not run.
+
+**What I rejected.** Verifying the JWT in the proxy (duplicate logic, needs the signing secret in
+the dashboard). And a strict style nonce: the docs example nonces styles too, but then
+`'unsafe-inline'` is ignored and libraries that inject `<style>` (toasts, devtools, Radix) break.
+I kept `'unsafe-inline'` for styles only, because script injection is the real risk.
+
+**Trade-off and limits.** A user with an expired cookie gets through the proxy once, and is bounced
+by the first API 401. That is a harmless extra step. Pages must be rendered per request to get a
+nonce, so they cannot be static: the public landing page stays static and gets its own, weaker CSP
+in F13. I verified this with the production build and `curl`, but not yet in a real browser's
+console.

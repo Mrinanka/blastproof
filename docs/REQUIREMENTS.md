@@ -79,7 +79,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | TEST-07 | App startup does not call Neon or download models when `APP_ENV=test`. | BE B1 | B1 | *test that startup succeeds offline* |
 | [x] | TEST-08 | Agent message templates are tested word for word. | BE §6 | B17 | *unit tests per template* |
 | [ ] | TEST-09 | A Playwright e2e test runs against the real local backend with `seed-demo-actions` data: log in as demo user 1, open the seeded pending action, see headline and numbers, reject with a reason, find it in History as rejected with your name, then as demo user 2 confirm it is absent and its URL shows "not found". | FE §12 | F7-F9 (after B20) | OPS-06 (nightly/manual workflow) |
-| [ ] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
+| [x] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
 | [ ] | TEST-11 | No snapshot tests and no mocking of the whole backend in the frontend. | FE §12 | F steps | *code review* |
 | [x] | TEST-12 | One contract test suite runs against every `VectorStore` implementation. | BE B11 | B11 | pytest |
 | [ ] | TEST-13 | A manual weekly end-to-end run of the demo in Claude Code against real Neon, reviewed in the dashboard. | BE §14; FE §12 | from B17 / F7 | Manual |
@@ -255,10 +255,10 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
 | [ ] | SEC-22 | Production backend has no CORS (`CORS_ORIGINS` empty); the dashboard reaches it server to server. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
-| [ ] | SEC-23 | The JWT lives only in an httpOnly cookie (`Secure` in production, `SameSite=Lax`, `Path=/`); never in localStorage or page JavaScript. | CL; FE §4, §11 | F3 | DW-F03; MVP-F01 |
-| [ ] | SEC-24 | The login route stores the JWT in the cookie and returns only the user's name and role to the browser. | FE §4, F3 | F3 | DW-F03 |
-| [ ] | SEC-25 | The BFF route adds `Authorization` from the cookie and drops incoming cookies before calling the backend. | FE F3, §12 | F3 | TEST-10 |
-| [ ] | SEC-26 | The proxy rejects any POST or DELETE whose `Origin` is not the dashboard's own address. | FE F3, §11, §12; D-050 | F3 | TEST-10 |
+| [x] | SEC-23 | The JWT lives only in an httpOnly cookie (`Secure` in production, `SameSite=Lax`, `Path=/`); never in localStorage or page JavaScript. | CL; FE §4, §11 | F3 | DW-F03; MVP-F01 |
+| [x] | SEC-24 | The login route stores the JWT in the cookie and returns only the user's name and role to the browser. | FE §4, F3 | F3 | DW-F03 |
+| [x] | SEC-25 | The BFF route adds `Authorization` from the cookie and drops incoming cookies before calling the backend. | FE F3, §12 | F3 | TEST-10 |
+| [x] | SEC-26 | The proxy rejects any POST or DELETE whose `Origin` is not the dashboard's own address. | FE F3, §11, §12; D-050 | F3 | TEST-10 |
 | [ ] | SEC-27 | Agent-provided and uploaded text (SQL, intents, documents, sample rows) is rendered as plain text; no `dangerouslySetInnerHTML`, no Markdown from uploads rendered as HTML. | CL; FE §11 | F5-F11 | *lint rule or grep; code review* |
 | [ ] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
 | [ ] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
@@ -275,11 +275,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-01 | Next.js App Router app in `frontend/` with TypeScript, Tailwind, ESLint, `src/`; shadcn/ui initialised with button, card, table, badge, dialog, input, textarea, field, sonner, dropdown-menu, sidebar, skeleton; Prettier and a `typecheck` script. | FE F1 | F1 | DW-F01 |
 | [x] | FE-02 | `npm run gen:api` reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts`; `src/lib/api/client.ts` is an openapi-fetch client with base URL `/api/blastproof`. | FE §5, F2 | F2 | DW-F02 |
 | [x] | FE-03 | A TanStack Query provider in the root layout with `refetchOnWindowFocus` on and polling paused while the tab is hidden; query devtools in development only. | FE §2, F2 | F2 | *unit test or manual check* |
-| [ ] | FE-04 | Route handlers `api/auth/login`, `api/auth/logout` and the BFF catch-all `api/blastproof/[...path]`. | FE §4, §6, F3 | F3 | DW-F03 |
-| [ ] | FE-05 | The auth proxy (`src/proxy.ts`) redirects any `/dashboard` request without a session cookie to `/login`; `/` and `/login` are public. | FE §4, F3 | F3 | DW-F03; MVP-F01 |
-| [ ] | FE-06 | The BFF route forwards method, path, query string, body and content type, and returns the backend's status and body unchanged. | FE §4, F3 | F3 | TEST-10 |
-| [ ] | FE-07 | A global TanStack Query error handler sends any 401 to `/login`. | FE §4, F3 | F3 | DW-F03 |
-| [ ] | FE-08 | A `useMe()` hook reads the user's name and role from `/v1/auth/me`. | FE F3 | F3 | *unit test* |
+| [x] | FE-04 | Route handlers `api/auth/login`, `api/auth/logout` and the BFF catch-all `api/blastproof/[...path]`. | FE §4, §6, F3 | F3 | DW-F03 |
+| [x] | FE-05 | The auth proxy (`src/proxy.ts`) redirects any `/dashboard` request without a session cookie to `/login`; `/` and `/login` are public. | FE §4, F3 | F3 | DW-F03; MVP-F01 |
+| [x] | FE-06 | The BFF route forwards method, path, query string, body and content type, and returns the backend's status and body unchanged. | FE §4, F3 | F3 | TEST-10 |
+| [x] | FE-07 | A global TanStack Query error handler sends any 401 to `/login`. | FE §4, F3 | F3 | DW-F03 |
+| [x] | FE-08 | A `useMe()` hook reads the user's name and role from `/v1/auth/me`. | FE F3 | F3 | *unit test* |
 | [ ] | FE-09 | `app/dashboard/layout.tsx` (a real URL segment) has a sidebar (Overview, Review with count badge, History, Knowledge, and Settings with Agents, Rules and, for admins, Users) and a user menu with logout. | FE §6, F4; D-046 | F4 | DW-F04 |
 | [ ] | FE-10 | The review badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. | FE F4 | F4 | DW-F04; MVP-F02 |
 | [ ] | FE-11 | Admin-only links (Knowledge, Users) are hidden from members. | FE F4, F10 | F4 | MVP-F06 |
@@ -404,7 +404,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [x] | DW-F01 | `npm run dev` shows the starter page at `http://localhost:3000`. | FE F1 | F1 | Manual |
 | [ ] | DW-F02 | Hovering `api.GET("/v1/actions/{action_id}")` in the editor shows the backend's real response type. | FE F2 | F2 | Manual |
-| [ ] | DW-F03 | You can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`. | FE F3 | F3 | Manual |
+| [x] | DW-F03 | You can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`. | FE F3 | F3 | Manual |
 | [ ] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
 | [ ] | DW-F05 | Vitest tests pass for the badges and formatting helpers. | FE F5 | F5 | `npm test` |
 | [ ] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
