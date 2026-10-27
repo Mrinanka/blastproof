@@ -248,6 +248,7 @@ async def test_a_tool_without_an_agent_fails_and_records_nothing(auth_db: AuthDb
         await engine.dispose()
     assert result.structured_content == {
         "action_id": None,
+        "decision": None,
         "status": "failed",
         "columns": [],
         "rows": [],

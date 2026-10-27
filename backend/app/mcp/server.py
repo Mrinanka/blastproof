@@ -17,6 +17,7 @@ from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.core.clock import Clock, SystemClock
 from app.mcp.auth import NoAgentError, require_agent
 from app.schemas.mcp import (
     ActionStatusResult,
@@ -26,16 +27,20 @@ from app.schemas.mcp import (
 )
 from app.services import agent_calls, agent_messages
 from app.services.agent_calls import INTERNAL_ERROR, CallContext
+from app.workflow.runner import WorkflowRunner
 
-# Generous limits checked by the SDK before our code runs; check_read applies the real 20 KB cap
-# (and records the refusal), these only stop huge values from being stored.
+# Generous limits checked by the SDK before our code runs; the classifier applies the real 20 KB cap
+# (and the workflow records the refusal), these only stop huge values from being stored.
 MAX_SQL_CHARS = 100_000
 MAX_INTENT_CHARS = 2_000
 MAX_NAME_CHARS = 200
+MAX_ID_CHARS = 100
 
 INSTRUCTIONS = (
     "Blastproof is the gateway to the company database. Use list_tables and describe_table to "
-    "learn the schema, and query_database to run SQL. Say what you are trying to do in `intent`."
+    "learn the schema, and query_database to run SQL. Say what you are trying to do in `intent`. "
+    "Reads return rows. A write is previewed and checked first: it may be held for a person to "
+    "approve, in which case call get_action_status with its action_id until it is decided."
 )
 
 _READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
@@ -55,9 +60,14 @@ def transport_security(settings: Settings) -> TransportSecuritySettings:
 
 
 def build_mcp_server(
-    settings: Settings, sessionmaker: async_sessionmaker[AsyncSession] | None
+    settings: Settings,
+    sessionmaker: async_sessionmaker[AsyncSession] | None,
+    *,
+    runner: Callable[[], WorkflowRunner | None] = lambda: None,
+    clock: Clock | None = None,
 ) -> MCPServer:
     mcp = MCPServer(name="blastproof", instructions=INSTRUCTIONS)
+    clock = clock or SystemClock()
 
     async def guarded[R](
         tool: str, call: Callable[[CallContext], Awaitable[R]], failed_result: Callable[[str], R]
@@ -70,7 +80,7 @@ def build_mcp_server(
         try:
             if sessionmaker is None:
                 raise RuntimeError("database not configured")
-            return await call(CallContext(settings, sessionmaker, agent))
+            return await call(CallContext(settings, sessionmaker, agent, clock, runner))
         except Exception as exc:
             # The class name only: the message can hold raw values or a connection string.
             logger.error("tool_failed", tool=tool, reason_code=type(exc).__name__)
@@ -89,15 +99,24 @@ def build_mcp_server(
                 max_length=MAX_INTENT_CHARS,
             ),
         ],
+        retry_of: Annotated[
+            str | None,
+            Field(
+                description="The action_id of a rejected or blocked query this one replaces.",
+                max_length=MAX_ID_CHARS,
+            ),
+        ] = None,
     ) -> QueryDatabaseResult:
         """Run one SQL statement on the company database through Blastproof.
 
-        For now only a single SELECT is supported (writes are refused and nothing is changed).
-        At most 500 rows come back; add a LIMIT or a narrower WHERE for large tables.
+        A SELECT returns at most 500 rows; add a LIMIT or a narrower WHERE for large tables.
+        A write is previewed and checked: it may commit, be blocked, or be held for a person to
+        approve. If the result says it is held or still being checked, call get_action_status with
+        its action_id until it is decided.
         """
         return await guarded(
             "query_database",
-            lambda ctx: agent_calls.query_database(ctx, sql, intent),
+            lambda ctx: agent_calls.query_database(ctx, sql, intent, retry_of),
             lambda message: QueryDatabaseResult(action_id=None, status="failed", message=message),
         )
 
@@ -129,7 +148,7 @@ def build_mcp_server(
     @mcp.tool(annotations=_READ_ONLY)
     async def get_action_status(
         action_id: Annotated[
-            str, Field(description="The action_id from an earlier call.", max_length=100)
+            str, Field(description="The action_id from an earlier call.", max_length=MAX_ID_CHARS)
         ],
         wait_seconds: Annotated[
             int,
@@ -143,11 +162,13 @@ def build_mcp_server(
             ),
         ] = 30,
     ) -> ActionStatusResult:
-        """Get the status and decision of one of your actions."""
-        # wait_seconds is validated but unused until the long poll (steps 15 and 17, D-106).
+        """Get the status and decision of one of your actions.
+
+        Waits until the action is decided or `wait_seconds` pass, so call it again while it is held.
+        """
         return await guarded(
             "get_action_status",
-            lambda ctx: agent_calls.action_status(ctx, action_id),
+            lambda ctx: agent_calls.action_status(ctx, action_id, wait_seconds),
             lambda message: ActionStatusResult(action_id=action_id, status=None, message=message),
         )
 
