@@ -102,6 +102,7 @@ SLOW_FILES = frozenset(
         "test_seed_counts.py",
         "test_company_main_lock.py",
         "test_cli_knowledge.py",
+        "test_seed_demo.py",
     }
 )
 

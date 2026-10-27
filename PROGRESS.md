@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); next: `seed-demo-actions`, then step 16 (commit). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); next: step 16 (commit). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -47,6 +47,15 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Not tested: a migration holding a snapshot before `setup()`, pgbouncer or Neon's pooled endpoint, `LANGGRAPH_AES_KEY`, `interrupt()` inside try/except.
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
+
+### seed-demo-actions (Stage 3 pull-forward), done 2026-10-27, D-195 to D-198
+- New: `app/services/demo_seed.py` (scenario table, accounts, the run), `app/services/scripted_models.py` (`ScriptedModelFactory`), `get_agent_by_owner_and_name` in `app/db/agents.py`, the `seed-demo-actions [--add-pending] [--password-stdin]` command in `app/cli.py` (Selector loop on Windows). No migration, setting or dependency.
+- What it makes: two demo users (members) with one agent each and, for each, actions in awaiting_review, rejected, expired, blocked, committed (human and auto) and failed, all through the real graph, runner and `ShadowRunner` on `FakeNeonClient`; real retrieval; scripted models; stub commit. `approved` and `drifted` are not seeded (D-195). A run takes about 70 s.
+- Tests: `test_scripted_models.py` (9) and `test_cli_seed_demo.py` (7) need no Docker; `test_seed_demo.py` (26, slow tier) seeds once per module and checks every status for both users, the state-machine history, the pause at `human_review` with a checkpoint, `source: llm`, impact equal to the preview rows, company_main unchanged, no `shadow_` database left, no password or key in logs, approve/reject through the API with a 404 for the other user, re-run, `--add-pending`, and each refusal.
+- Mutation checks: removing each of 5 guards turned a test red (production refusal, profile check, `mark_recovered`, the expected-status check, the password-only-on-create rule; the last first survived and its test now passes a password on the re-run).
+- By hand 2026-10-27: ran against local `blastproof` with the local values from `.env.example` in the process environment: 14 actions, every one in its expected status, 24 knowledge chunks retrieved. This left users `demo-user-1@example.com` and `demo-user-2@example.com` (password given on stdin) and 14 actions in the local dev database. Not done by hand: the `/docs` walk-through (DW-B19, first half: log in as demo user 1, approve one pending action, reject another, demo user 2 gets 404); the automated API test stands in until you run it.
+- Requirements ticked: BE-121. Left open: DW-B19 (first half by hand), DW-F04, DW-F06, DW-F10, TEST-09 (they use the data in the dashboard steps).
+- Step 16 hand-over: re-run the seed and add a `failed: drifted` action; the commit's profile guard ("refuses any action whose system's profile does not match") is step 16's, not the seed's.
 
 ### Approve and reject routes (Stage 3 pull-forward), done 2026-10-27, D-192 to D-194
 - New: `POST /v1/actions/{id}/approve` and `/reject` in `app/api/actions.py` (with `get_runner`), `app/services/decisions.py`, `RejectRequest` and `DecisionResponse` in `app/schemas/actions.py`. Changed: `StatusView` gained `decided_at` (`app/db/actions.py`). No migration, setting or dependency.
@@ -415,6 +424,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Seed: demo actions seeded on a running dev server expire after `REVIEW_TIMEOUT_HOURS` (24 h): re-run, or use `--add-pending`. Approving a seeded action runs `StubCommitter` (company data unchanged) until step 16. The seed needs `CHECKPOINTER_DATABASE_URL`, `LOCAL_COMPANY_WRITER_URL` and `FAKE_NEON_ADMIN_URL` filled in `backend/.env` (or the process environment).
 - Approve/reject: approving an action with no graph thread returns 200 `approved`, then it becomes `failed: resume_mismatch` (D-194). Approving on a dev server runs `StubCommitter` (`stub: true`, company data unchanged). When step 16 or 17 next touches graph calls, re-check the `ainvoke` `version=` argument against the current LangGraph interrupts page (it now shows `v3` for `stream_events`).
 - Step 15: the runner is not wired to anything yet: no route calls `resume` (the approve/reject pull-forward does) and nothing calls `start` (step 17). Step 17 must check `runner.accepting` before creating a `received` row, or the stuck rule fails it after 5 minutes. An `approved` action stuck while the process stays up is not swept (recovery and step 16 own it). Deploy: run uvicorn with `--timeout-graceful-shutdown 10`, because uvicorn waits for open connections before the lifespan shutdown, so a 50 s long poll plus our 45 s drain would pass `kill_timeout = 60`. A reviewer's decision is claimed on the action's `expires_at`, which `request_review` sets from the clock at that moment.
 - Step 15: log-capture tests: a module logger first used after `configure_logging` is cached with that configuration, so `capture_logs` can miss it depending on test order. New tests that check log lines should use `caplog` or forget the cached binding as `test_workflow_fail_closed.py` does.
@@ -627,7 +637,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 14. LangGraph workflow
 - [x] 15. Workflow runner
 - [x] Pull forward: POST /v1/actions/{id}/approve and /reject (D-053)
-- [ ] Pull forward: seed-demo-actions
+- [x] Pull forward: seed-demo-actions
 - [ ] 16. Commit
 - [ ] 17. Wire up query_database
 - [ ] F1. Scaffold
