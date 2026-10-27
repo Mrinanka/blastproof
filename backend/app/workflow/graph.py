@@ -431,7 +431,11 @@ class _Nodes:
             assert action is not None
             cost = action.llm_cost_usd
         cap = Decimal(str(self.deps.settings.max_llm_cost_per_action_usd))
-        if over_cost_cap(cost, cap):
+        if cost is None:
+            # Unknown spend counts as over the cap (D-153), but is named for what it is: usually a
+            # failed summary call, not a summary that spent too much.
+            result = JudgeResult.unavailable(provider, "cost_unknown")
+        elif over_cost_cap(cost, cap):
             result = JudgeResult.unavailable(provider, "skipped_cost_cap")
         elif state.get("knowledge_failed"):
             # A judge without the business rules is the unreliable case: skip it, go to review.

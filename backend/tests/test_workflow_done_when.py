@@ -297,7 +297,8 @@ async def test_an_unknown_summary_cost_counts_as_over_the_cap(wf_env: WorkflowEn
         row = action_row(wf_env, action_id)
         assert row["llm_cost_usd"] is None  # the cost is unknown, not zero (D-153)
         assert r.judge_llm.calls == []
-        assert row["judge"]["failure"] == "skipped_cost_cap"
+        # Named for what happened, not as an overspend (gate audit 3).
+        assert row["judge"]["failure"] == "cost_unknown"
         assert row["status"] == "awaiting_review"
         assert decided_data(wf_env, action_id)["ai_unavailable"] is True
         assert row["impact_report"]["headline"] == CALM_HEADLINE

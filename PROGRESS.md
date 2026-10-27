@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). F3 (proxy and login) is built on `feat/f3` (D-224 to D-227). F4 (layout and navigation) is built on `feat/f4` (D-228, D-229). F5 (shared components) is built on `feat/f4` (D-230 to D-232). Next unticked: F6 (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). F3 (proxy and login) is built on `feat/f3` (D-224 to D-227). F4 (layout and navigation) is built on `feat/f4` (D-228, D-229). F5 (shared components) is built on `feat/f4` (D-230 to D-232). The Stage 3 gate audit (Gate 1) is done on `fix/gate-audit-stage-3` (D-233, D-234). Next unticked: step 18 (Claude Code hook).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -49,6 +49,15 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Not tested: a migration holding a snapshot before `setup()`, pgbouncer or Neon's pooled endpoint, `LANGGRAPH_AES_KEY`, `interrupt()` inside try/except.
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
+
+### Gate audit (Stage 3, Gate 1), done 2026-10-27, D-233, D-234
+- Baseline: ruff, format and `alembic check` clean; `uv run pytest` 1,767 passed, 1 skipped; `--integration --skip-slow` 2,290 passed, 1 skipped; the slow `test_commit_replit.py` and `test_workflow_end_to_end.py` passed by name; CI's full suite on `develop` (run 40542179090, merge #34) 2,403 passed. Frontend lint, format, typecheck clean; Vitest 269 passed. `evals.run` does not exist yet (Evals stage).
+- Found: GATE-03 had only been shown in pieces, each with fakes (MCP with a fake preview, the approve route with a fake commit, the real commit approved by direct SQL); nobody had approved the Replit delete through the API with the real commit.
+- Live gate run (throwaway Blastproof database `blastproof_gate3`, local profile, real clock, no Neon; dropped afterwards, local `company_main` re-seeded): the Replit delete through `/mcp` was held (`awaiting_review`, rules Most of a table, Large change, Touches paying customers); another member got 404 on GET and approve; the owner's approve (the `/docs` route, by curl) gave 200, a second one 409 "Already approved by Gate3 Owner."; `committed` 10.5 s later with `{stub: false, rows: 48330}`, the agent got "Done: 48330 rows deleted in users.", and `company_main` changed by exactly the preview's numbers per table. The log held no URL, key, email or password.
+- Fixed: an unknown summary cost (a failed Gemini call) recorded the judge as `skipped_cost_cap`; now `cost_unknown` (D-233, behaviour unchanged). New test: `test_commit_replit.py::test_gate_1_the_replit_delete_is_held_then_approved_over_http_and_committed` (MCP, real preview, HTTP approve, real commit, exact `incidents.yaml` counts). Mutation checks: reverting the label and dropping the resume after a claim each turned a test red.
+- Requirements: GATE-03 ticked; TEST-10, CONV-13, SEC-16, MVP-B07, MVP-B08 unticked (D-234).
+- Not fixed (minor, D-234): a claim accepts `expires_at IS NULL`; the BFF checks only whole `..` segments (encoded forms reached only 404s).
+- Seen in the live run: with the real clock 26 days past the anchor, the Replit delete counts 48,330 users and 45 paying (not 48,213 and 12): run `rebase-dates` before a demo. The first `query_database` reply came after 22.6 s as `previewing` (in_progress), since the preview passed `REVIEW_WAIT_SECONDS`; on Neon (44 s previews) the agent will always poll once.
 
 ### seed-demo-actions (Stage 3 pull-forward), done 2026-10-27, D-195 to D-198
 - New: `app/services/demo_seed.py` (scenario table, accounts, the run), `app/services/scripted_models.py` (`ScriptedModelFactory`), `get_agent_by_owner_and_name` in `app/db/agents.py`, the `seed-demo-actions [--add-pending] [--password-stdin]` command in `app/cli.py` (Selector loop on Windows). No migration, setting or dependency.
@@ -474,6 +483,9 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Gate audit 3 (D-234, not fixed, minor): `claim_decision` accepts a review whose `expires_at` is NULL (the workflow always sets it; only hand-inserted rows are exposed). The BFF rejects only whole `..` path segments; an encoded `..%2F` reaches the backend as `/v1/../x`, which matched no route (404) in the live probe. CONV-08's DW-F07 half waits for F7; BE-85 says "before serving" but recovery runs in the background (D-187).
+- Gate audit 3: unticked until their checks exist: TEST-10 (reject-dialog tests, F7), CONV-13 (OPS-05 contract check, step 20), SEC-16 (a test that no route returns before-images), MVP-B07 and MVP-B08 (final audit on the deployed version).
+- Gate audit 3: run `rebase-dates` before a demo: with the real clock past the seed's anchor, the Replit delete counts drift (48,330 users and 45 paying on 2026-10-27, not 48,213 and 12). A whole-table preview passes `REVIEW_WAIT_SECONDS` (22.6 s locally, about 44 s on Neon), so the agent's first reply is `in_progress` and it polls once. The commit's 30 s statement timeout is unmeasured for the Replit delete on Neon (fails closed as `commit_timeout`).
 - F5: nothing uses the shared components yet (F6 to F11 do), so they have not been seen in a browser or in real hydration; tone colours have no contrast check until F12. `formatRelative` counts a month as 30 days and a year as 365.
 - F4: the nav pages (Review, History, Knowledge, Agents, Rules, Users) are placeholders until F6 to F11. The pending badge is up to 5 s stale and counts every user's pending actions for an admin. Vitest workers crash (exit 134) on low memory; run `npx vitest run --maxWorkers=2`. Sidebar collapse, pointer use of the user menu and the mobile sheet were only checked by hand in desktop width.
 - F3: the login route forwards no client IP, so every dashboard login shares one rate-limit bucket (stricter, safe; D-226). Deploy: forward the real IP and trust it only from the proxy (see the login rate limit item below).
@@ -708,7 +720,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] F3. Proxy and login
 - [x] F4. Layout and navigation
 - [x] F5. Shared components
-- [ ] GATE AUDIT: Gate 1, Replit case held for review and approvable
+- [x] GATE AUDIT: Gate 1, Replit case held for review and approvable
 
 ## Stage 4: finish backend + core dashboard
 - [ ] 18. Claude Code hook
