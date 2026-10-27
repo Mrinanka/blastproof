@@ -1595,3 +1595,7 @@ existing setting.
 ## D-219 · 2026-10-27 · SRI build finding (nothing committed)
 **Decision:** a throwaway `next build` with `experimental.sri: { algorithm: 'sha256' }` on the starter page kept the page static. Of 7 script tags with `src`, 5 got `integrity`; 3 inline scripts (the `self.__next_f.push` flight data) remained and have no integrity attribute. So `script-src 'self'` alone would block them. F3 and F13 must either add per-page hashes for those inline scripts or allow `'unsafe-inline'` for the public landing page (D-028), and keep nonces for the logged-in pages. `next.config.ts` was restored without `sri`.
 **Why:** FE section 11 asked F1 to record whether a hash-based CSP is practical for the landing page. It is only partly: external scripts yes, inline flight data no.
+
+## D-220 · 2026-10-27 · `typecheck` runs `next typegen` first
+**Decision:** the script is `next typegen && tsc --noEmit`. The CI `frontend` job failed on the PR with `Cannot find name 'LayoutProps'`: that type is generated into the git-ignored `.next/types`, which local runs had from earlier builds but a fresh checkout does not. Reproduced locally by deleting `.next`.
+**Why:** typecheck must not depend on a previous build. Rejected: moving `build` before `typecheck` in CI (hides the dependency and slows the fast checks).

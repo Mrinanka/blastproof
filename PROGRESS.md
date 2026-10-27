@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-219). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). Next unticked: F2. Typed API client (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). Next unticked: F2. Typed API client (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -64,7 +64,7 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Tests: 32 Vitest; 10 backend workflow guards; `uv run pytest` 1,767 passed; frontend lint, format, typecheck, build clean; ruff clean.
 - By hand: `npm run dev` gave 200 with the starter page and the three headers; `npm start` also; the HTML holds one inline `self.__next_f.push` script (D-028's premise holds).
 - Mutation checks: removing each of 11 guards turned a test red (strict, exact pin, X-Frame-Options, Referrer-Policy, env ignore exception, `.nvmrc` major, `engines`, a script, a component, `localStorage` in src, a public env name; plus 3 in the workflow test: a step, a SHA pin, a secret). SRI build (D-219): 5 of 7 external scripts get `integrity`, 3 inline scripts do not, so `script-src 'self'` alone would block them.
-- Not done: the `frontend` job going green on a PR; no commit yet.
+- Found by the first PR run (D-220): typecheck needed `.next/types` from an earlier build; fixed with `next typegen`. Not done: the `frontend` job going green on the PR.
 - Requirements ticked: FE-01, DW-F01, CONV-11, SEC-31. SEC-28 stays open until CI/header check on the PR; OPS-03 needs the green PR run.
 - Known issue: Dependabot has no npm entry yet (owner's choice); add it in the security pass.
 
