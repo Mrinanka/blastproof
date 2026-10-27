@@ -1611,3 +1611,19 @@ existing setting.
 ## D-223 · 2026-10-27 · Query client rules and F3 hand-off
 **Decision:** `makeQueryClient` sets `refetchOnWindowFocus: true` and `refetchIntervalInBackground: false` explicitly (they are TanStack's defaults); `staleTime` stays 0. `getQueryClient` makes a new client per call on the server and one shared client in the browser. Retry stays at TanStack's default of 3, so 4xx errors retry for about 7 s; F3 sets no-retry on 4xx with its status-carrying error. `noUncheckedIndexedAccess` is left off (it would touch shadcn's generated code); revisit in F12.
 **Why:** pins FE-03 against silent edits; one user's cache must never reach another's request. Polling tests need `window` before TanStack loads (it decides "server" at import), so they sit in their own file.
+
+## D-224 · 2026-10-27 · F3 dependencies
+**Decision:** pinned `react-hook-form` 7.91.0, `zod` 4.6.7, `@hookform/resolvers` 5.9.2 (not 6.x: 6.0.0 is a new major with a same-day fix), and dev `@testing-library/react` 16.3.3, `@testing-library/dom` 10.4.2, `jsdom` 30.1.3. No `server-only` package (Next handles the import; Vitest aliases it to an empty stub), no `user-event`, no Playwright yet.
+**Why:** the minimum for the login form and its tests; all over 72 hours old (D-217).
+
+## D-225 · 2026-10-27 · CSP keeps `'unsafe-inline'` for styles
+**Decision:** `style-src 'self' 'unsafe-inline'`; the nonce applies to scripts only (`'strict-dynamic'`, `'unsafe-eval'` in dev only). `upgrade-insecure-requests` outside dev.
+**Why:** a style nonce makes browsers ignore `'unsafe-inline'`, and sonner, the Query devtools and Radix inject styles without our nonce. Script injection is the real XSS risk.
+
+## D-226 · 2026-10-27 · BFF rules the plan left open
+**Decision:** the BFF forwards only `/v1/*` (so `/docs`, `/openapi.json`, `/mcp` are unreachable), uses a request-header allowlist (`content-type`, `accept`, Bearer from the cookie), relays only `content-type`, `retry-after`, `x-request-id`, and clears the session cookie on any backend 401 (status and body unchanged) so a stale cookie cannot loop. Timeout 30 s. The login route forwards no client IP, so all logins share one rate-limit bucket (stricter, safe; the real IP forwarding stays a Deploy item). "Own origin" is `request.nextUrl.origin`, not a fourth env variable. `next` after login is limited to `/dashboard` paths.
+**Why:** fail closed, and SEC-31 allows exactly three env variables.
+
+## D-227 · 2026-10-27 · Testing helper name in Next 16.4.3
+**Decision:** the proxy matcher test uses `unstable_doesMiddlewareMatch` from `next/experimental/testing/server`. The docs name `unstable_doesProxyMatch`, but the installed package does not export it. `getRedirectUrl` works as documented.
+**Why:** same function under its shipped name; revisit when Next ships the documented one.

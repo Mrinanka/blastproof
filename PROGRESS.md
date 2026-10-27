@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). Next unticked: F3 (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). F3 (proxy and login) is built on `feat/f3` (D-224 to D-227). Next unticked: F4 (layout and navigation) (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -58,6 +58,13 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - By hand 2026-10-27: ran against local `blastproof` with the local values from `.env.example` in the process environment: 14 actions, every one in its expected status, 24 knowledge chunks retrieved. This left users `demo-user-1@example.com` and `demo-user-2@example.com` (password given on stdin) and 14 actions in the local dev database. Not done by hand: the `/docs` walk-through (DW-B19, first half: log in as demo user 1, approve one pending action, reject another, demo user 2 gets 404); the automated API test stands in until you run it.
 - Requirements ticked: BE-121. Left open: DW-B19 (first half by hand), DW-F04, DW-F06, DW-F10, TEST-09 (they use the data in the dashboard steps).
 - Step 16 hand-over: re-run the seed and add a `failed: drifted` action; the commit's profile guard ("refuses any action whose system's profile does not match") is step 16's, not the seed's.
+
+### F3, built 2026-10-27, D-224 to D-227
+- New (`frontend/`): `src/proxy.ts` (session gate + nonce CSP), `src/app/api/blastproof/[...path]/route.ts` (BFF, `/v1/*` only), `api/auth/login` and `api/auth/logout` routes, `lib/server/{backend,session}.ts`, `lib/csp.ts`, `lib/next-path.ts`, `lib/api/errors.ts`, `hooks/use-me.ts`, login page and form, a placeholder `/dashboard` layout and page (F4 and F9 replace them). Changed: `query-client.ts` (401 handler, no retry on 4xx), `api/client.ts` (fetch looked up per call), `vitest.config.mts`. 6 pins (D-224).
+- Tests: 146 Vitest (106 new, 3 files under jsdom); lint, format, typecheck and `npm run build` clean (`/` static; `/login`, `/dashboard` and the API routes dynamic). Backend untouched, so backend tests were not re-run.
+- Mutation checks: removing each of 8 guards (Origin check, `v1` guard, 401 cookie clear, token leak in login, `httpOnly`, the redirect, 4xx no-retry, backend `set-cookie` relay) turned a test red.
+- DW-F03 passed: `curl` against the real backend and the production build, then by hand in the browser (login shows the name, cookie `HttpOnly`, no token in page JavaScript, no CSP console violations). Requirements ticked: TEST-10, SEC-23 to SEC-26, FE-04 to FE-08, DW-F03. Left open: SEC-30 (the logout route is built; the button is F4), SEC-29 (dashboard half done; the landing-page CSP is F13), CONV-14 (stays open with F2).
+- Known issues: login rate limit sees one IP because the login route forwards no client IP (D-226; Deploy). Origin check uses `nextUrl.origin`: re-check on the first Vercel deploy (every POST would be 403, fail closed).
 
 ### F2, built 2026-10-27, D-221 to D-223
 - New: `src/lib/api/schema.d.ts` (generated from the local backend), `src/lib/api/client.ts`, `src/lib/query-client.ts`, `src/app/providers.tsx` (Query provider and devtools in the root layout), `gen:api` script, schema ignored by ESLint; tests `api-client.test.ts` (type tests incl. `@ts-expect-error` cases, base path, no env/token, array params), `query-client.test.ts`, `query-polling.test.ts`. 4 pins (D-221).
@@ -455,6 +462,12 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- F3: the login route forwards no client IP, so every dashboard login shares one rate-limit bucket (stricter, safe; D-226). Deploy: forward the real IP and trust it only from the proxy (see the login rate limit item below).
+- F3: the Origin check compares against `request.nextUrl.origin`; if that is ever not the public origin on Vercel, every POST gets 403 (fails closed). Re-check on the first Vercel deploy.
+- F3: the BFF buffers whole request bodies in memory (`arrayBuffer`); revisit for F10 uploads. The 30 s backend timeout may be too short for a rescan or upload (F10).
+- F3: `style-src` keeps `'unsafe-inline'` (D-225); the landing-page CSP is F13. The matcher test uses `unstable_doesMiddlewareMatch` because Next 16.4.3 does not ship the documented `unstable_doesProxyMatch` (D-227).
+- F3: backend `/ready` reports `checkpointer, workflow` not ready when run on Windows with `uv run uvicorn` (psycopg cannot use the ProactorEventLoop). Seen locally, not investigated; it blocks agent writes locally, not login or reads.
+- F3: `npm run dev` needs `frontend/.env.local` (copy `.env.example`); without it the proxy answers 500 `config_error`.
 - F2: DW-F02 (hover `api.GET("/v1/actions/{action_id}")` in the editor) is a manual check the owner still has to do. `schema.d.ts` has no CI contract check until step 20's `export-openapi` (OPS-05): regenerate it by hand (`npm run gen:api`, backend running) whenever a route changes. TanStack's default of 3 retries also applies to 4xx until F3 sets no-retry on them. `noUncheckedIndexedAccess` is off (revisit in F12). Devtools are a devDependency (D-221).
 - F1: Dependabot has no npm entry yet (owner's choice); add one in the security pass. The `frontend` CI job and the `setup-node` commit hash (from the plan, not yet resolved from GitHub) are verified only by the PR run. ESLint 9.39.5 is marked unsupported by npm (D-217). The CSP for the landing page needs hashes or `'unsafe-inline'` for inline scripts (D-219).
 - Step 17: not yet tried on real Neon under load (the concurrency test uses `FakeNeonClient`, which terminates connections on `company_main` while it clones, so a read could be killed mid-clone locally or in CI). Untested paths: the wait raising after a write starts, `retry_of` on a read, and a SQL string over 20 KB through MCP. Two `assert isinstance` lines in `agent_calls.py` and the `UUID | None | bool` return of `_resolve_retry_of` could be tidied. Real Gemini wording for reviews is still unread (steps 12 and 13). The local dev database holds `dw-b17-admin@example.com` and two rejected test actions.
@@ -525,7 +538,7 @@ created at deploy time straight into Fly.io secrets (D-058).
   `step5-check` (owner to decide whether to delete them).
 - Login rate limit uses `request.client.host` (D-089). Locally uvicorn trusts `X-Forwarded-For`
   from loopback by default, so a local process can pick its IP. Behind the dashboard's login route
-  (Vercel) and Fly's proxy, every user shares one IP. F3/Deploy: have the login route forward the browser IP and
+  (Vercel) and Fly's proxy, every user shares one IP. Deploy (F3 forwards nothing, D-226): have the login route forward the browser IP and
   trust it only from the proxy (uvicorn `--forwarded-allow-ips` or a shared header secret).
 - Anyone can lock a known email out of login for up to an hour (per-email limit by design); there
   is no admin unlock in the MVP.
@@ -678,7 +691,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 17. Wire up query_database
 - [x] F1. Scaffold
 - [x] F2. Typed API client
-- [ ] F3. Proxy and login
+- [x] F3. Proxy and login
 - [ ] F4. Layout and navigation
 - [ ] F5. Shared components
 - [ ] GATE AUDIT: Gate 1, Replit case held for review and approvable
