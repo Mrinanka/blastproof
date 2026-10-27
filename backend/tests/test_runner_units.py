@@ -74,7 +74,7 @@ def make_runner(graph: Any, *, recovered: bool = True, **kwargs: Any) -> Workflo
 
 
 def view(status: str) -> StatusView:
-    return StatusView(ACTION, status, None, None, None, None, None, NOW, None)
+    return StatusView(ACTION, status, None, None, None, None, None, NOW, None, None)
 
 
 # -- start -----------------------------------------------------------------------------------

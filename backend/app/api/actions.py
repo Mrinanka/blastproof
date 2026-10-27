@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Depends, Query, Request
@@ -10,15 +10,42 @@ from app.core.clock import SystemClock
 from app.core.errors import ApiError, ErrorResponse
 from app.db import actions as actions_db
 from app.db.session import get_session
-from app.schemas.actions import ActionDetail, ActionFilters, ActionPage
+from app.schemas.actions import (
+    ActionDetail,
+    ActionFilters,
+    ActionPage,
+    DecisionResponse,
+    RejectRequest,
+)
 from app.services import actions as actions_service
+from app.services import decisions as decisions_service
 from app.services.policy import Policy
+from app.workflow.runner import WorkflowRunner
 
 router = APIRouter(prefix="/v1/actions", tags=["actions"])
 
 
 def get_policy(request: Request) -> Policy:
     return request.app.state.policy
+
+
+def get_runner(request: Request) -> WorkflowRunner | None:
+    return request.app.state.runner
+
+
+def decision_action_id(action_id: str) -> uuid.UUID:
+    """A malformed ID is a 404, answered before the body is checked (a dependency runs first)."""
+    try:
+        parsed = uuid.UUID(action_id)
+    except ValueError:
+        raise ApiError(404, "not_found", "No action was found.") from None
+    structlog.contextvars.bind_contextvars(action_id=str(parsed))
+    return parsed
+
+
+_DECISION_RESPONSES: dict[int | str, dict[str, Any]] = {
+    code: {"model": ErrorResponse} for code in (401, 404, 409, 422, 503)
+}
 
 
 @router.get(
@@ -76,3 +103,24 @@ async def get_action(
     if rows is None:
         raise ApiError(404, "not_found", "No action was found.")
     return await actions_service.build_detail(rows, policy, SystemClock().now())
+
+
+@router.post("/{action_id}/approve", response_model=DecisionResponse, responses=_DECISION_RESPONSES)
+async def approve_action(
+    action_id: Annotated[uuid.UUID, Depends(decision_action_id)],
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    runner: Annotated[WorkflowRunner | None, Depends(get_runner)],
+) -> DecisionResponse:
+    """Approve an action awaiting review. Of two decisions at once, one wins; the other gets 409."""
+    return await decisions_service.decide(runner, action_id, user, approved=True, note=None)
+
+
+@router.post("/{action_id}/reject", response_model=DecisionResponse, responses=_DECISION_RESPONSES)
+async def reject_action(
+    action_id: Annotated[uuid.UUID, Depends(decision_action_id)],
+    body: RejectRequest,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    runner: Annotated[WorkflowRunner | None, Depends(get_runner)],
+) -> DecisionResponse:
+    """Reject an action awaiting review; the reason (10 to 500 characters) goes to the agent."""
+    return await decisions_service.decide(runner, action_id, user, approved=False, note=body.reason)

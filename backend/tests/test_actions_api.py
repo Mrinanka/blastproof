@@ -424,6 +424,8 @@ def test_no_action_model_has_a_sql_or_credential_field(auth_settings: Settings) 
         "SampleRowView",
         "KnowledgeRefView",
         "AuditEventView",
+        "DecisionResponse",
+        "RejectRequest",
     }
     assert action_models <= set(schemas)
     for name in action_models:

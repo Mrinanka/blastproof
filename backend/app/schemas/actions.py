@@ -7,9 +7,16 @@ only, never an email.
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from app.db.enums import ActionStatus, Decision, RiskLevel
 
@@ -179,3 +186,23 @@ class ActionFilters(BaseModel):
         if self.from_ is not None and self.to is not None and self.from_ >= self.to:
             raise ValueError("from must be earlier than to")
         return self
+
+
+# The reviewer's message to the agent: stripped first, then 10 to 500 characters.
+ReviewerReason = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=10, max_length=500)
+]
+
+
+class RejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: ReviewerReason  # sent to the agent as `reviewer_note`; stored as written, never logged
+
+
+class DecisionResponse(BaseModel):
+    id: uuid.UUID
+    status: ActionStatus  # approved | rejected
+    decided_by: UserRef
+    decided_at: datetime
+    reviewer_note: str | None
