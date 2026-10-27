@@ -7,11 +7,17 @@
     decide -+-> approve ---------------------------------> commit
             +-> request_review -> human_review -(approved)-> commit
             +-> block
+    commit -+-> end
+            +-> shadow   (the data changed since the preview: once, then it fails)
 
 Rules (CLAUDE.md, architecture rules):
 
 * Fail closed. Every node but `human_review` runs inside `fail_closed`: any exception ends the
   action as `failed` with decision `block` and a `fail_closed` event, and the graph ends normally.
+* The commit applies the write only if the company data still matches the preview. On a difference
+  it rolls back and previews again; the new preview always goes to a person, never auto-approved
+  (BE-92); a second difference fails the write. A commit whose outcome is unknown stays `committing`
+  for the sweep to settle (`CommitOutcomeUnknownError` passes through the fail-closed wrapper).
 * Reads never come here (ARCH-10); a read handed to the graph fails with `not_a_write`.
 * Rules run before the judge, the judge can only make a decision stricter (`decide`), and a pass-2
   block never reaches retrieval, the LLM or the judge.
@@ -48,7 +54,12 @@ from app.db.knowledge import save_knowledge_used
 from app.db.models import Action, System
 from app.db.preview import save_preview
 from app.services.classifier import Kind, classify_in_worker
-from app.services.commit import Committer
+from app.services.commit import (
+    CommitDriftError,
+    CommitFailedError,
+    CommitOutcomeUnknownError,
+    Committer,
+)
 from app.services.impact import ImpactEngine, ImpactReport, build_facts
 from app.services.judge import (
     Judge,
@@ -86,6 +97,8 @@ from app.workflow.state import (
 logger = structlog.get_logger()
 
 REVIEW_NODE = "human_review"
+# The first drift previews again; the second fails the write.
+MAX_DRIFTS = 2
 # The judge's own timeout is the model timeout plus a margin, as the CLI uses.
 JUDGE_TIMEOUT_MARGIN_SECONDS = 5
 
@@ -158,6 +171,24 @@ def route_after_decide(state: WriteState) -> str:
     return {Decision.ALLOW: "approve", Decision.REVIEW: "request_review"}.get(
         Decision(state["decision"]), "block"
     )
+
+
+def route_after_commit(state: WriteState) -> str:
+    """A drift sends the run back to the preview; anything else ends it."""
+    if _ended(state):
+        return END
+    return "shadow" if state.get("repreview") else END
+
+
+def after_drift(decision: Decision, reason: str, drifts: int) -> tuple[Decision, str]:
+    """After a drift an `allow` becomes `review`: a person looks at the new preview (BE-92). A
+    `review` stays and a `block` stays, so only the decision's strictness can go up."""
+    if drifts > 0 and decision == Decision.ALLOW:
+        return Decision.REVIEW, (
+            "The company data changed after the first preview, so the new preview needs a "
+            f"person's approval. {reason}"
+        )
+    return decision, reason
 
 
 def route_after_human_review(state: WriteState) -> str:
@@ -334,7 +365,8 @@ class _Nodes:
                 AuditEventType.SHADOW_DONE,
                 {"preview_ms": result.preview_ms, "rows_changed": len(result.diff.changes)},
             )
-        return {"diff": diff_to_state(result.diff)}
+        # A re-preview after a drift starts the decision over (`decided`, `repreview` cleared).
+        return {"diff": diff_to_state(result.diff), "repreview": False, "decided": False}
 
     async def post_rules(self, state: WriteState) -> dict[str, Any]:
         diff = diff_from_state(state["diff"])
@@ -422,10 +454,11 @@ class _Nodes:
             injection_signals(context),
             min_confidence=self.deps.settings.judge_min_confidence,
         )
+        decision, reason = after_drift(final.decision, final.reason, state.get("drifts", 0))
         update_: dict[str, Any] = {
-            "decision": final.decision.value,
-            "reason": final.reason,
-            "deciding": final.deciding,
+            "decision": decision.value,
+            "reason": reason,
+            "deciding": "drift" if decision != final.decision else final.deciding,
             "ai_unavailable": final.ai_unavailable,
             "injection": [f"{hit.field}:{hit.pattern}" for hit in final.injection],
             "decided": True,
@@ -477,8 +510,12 @@ class _Nodes:
         async with self._tx() as session:
             action = await session.get(Action, action_id, with_for_update=True)
             assert action is not None
-            if action.status != ActionStatus.APPROVED.value:
-                # The approval no longer stands (expired, rejected, already committing): change
+            if action.status == ActionStatus.COMMITTING.value:
+                # A continuation after a crash or a lost connection: the committer settles it from
+                # the marker in the company database. No status change.
+                logger.warning("commit_reconcile")
+            elif action.status != ActionStatus.APPROVED.value:
+                # The approval no longer stands (expired, rejected, already committed): change
                 # nothing and never commit.
                 await add_event(
                     session,
@@ -488,17 +525,72 @@ class _Nodes:
                 )
                 logger.error("fail_closed", reason_code="resume_mismatch", node="commit")
                 return {"outcome": "mismatch"}
-            await set_status(session, action_id, ActionStatus.COMMITTING)
-        outcome = await self.deps.committer.commit(action_id)
+            else:
+                await set_status(session, action_id, ActionStatus.COMMITTING)
+        try:
+            outcome = await self.deps.committer.commit(action_id)
+        except CommitDriftError as drift:
+            return await self._drifted(state, drift, started)
+        except CommitFailedError as exc:
+            raise FailClosed(exc.reason_code) from None
+        data: dict[str, Any] = {"stub": outcome.stub, "rows": outcome.rows}
+        if not outcome.stub:
+            data["already_applied"] = outcome.already_applied
+        try:
+            async with self._tx() as session:
+                await set_status(
+                    session,
+                    action_id,
+                    ActionStatus.COMMITTED,
+                    total_ms=self._total_ms(state, started),
+                    data=data,
+                )
+        except Exception:
+            # The company database has the write. Failing here would say it did not: stay
+            # `committing`, and the rerun finds the marker and writes `committed`.
+            raise CommitOutcomeUnknownError from None
+        return {"repreview": False}
+
+    async def _drifted(
+        self, state: WriteState, drift: CommitDriftError, started: float
+    ) -> dict[str, Any]:
+        """The data changed since the preview and nothing was applied. The first time: back to the
+        preview, with the approver cleared (the new preview needs its own approval). The second:
+        failed."""
+        action_id = self._id(state)
+        attempt = state.get("drifts", 0) + 1
+        logger.warning("commit_drifted", attempt=attempt, reason=drift.reason)
         async with self._tx() as session:
             await set_status(
                 session,
                 action_id,
-                ActionStatus.COMMITTED,
-                total_ms=self._total_ms(state, started),
-                data={"stub": outcome.stub, "rows": outcome.rows},
+                ActionStatus.DRIFTED,
+                data={"attempt": attempt, "reason": drift.reason, "counts": drift.counts},
             )
-        return {}
+            await session.execute(
+                update(Action)
+                .where(Action.id == action_id)
+                .values(decided_by=None, decided_at=None)
+            )
+            if attempt >= MAX_DRIFTS:
+                await set_status(
+                    session,
+                    action_id,
+                    ActionStatus.FAILED,
+                    failure_reason="drifted",
+                    total_ms=self._total_ms(state, started),
+                    decision=Decision.BLOCK,
+                    data={"reason": "drifted"},
+                )
+                await add_event(
+                    session,
+                    action_id,
+                    AuditEventType.FAIL_CLOSED,
+                    {"reason": "drifted", "node": "commit"},
+                )
+        if attempt >= MAX_DRIFTS:
+            return {"outcome": "failed", "drifts": attempt}
+        return {"drifts": attempt, "repreview": True}
 
     async def human_review(self, state: WriteState) -> dict[str, Any]:
         # Nothing but the interrupt, and no try/except around it: on resume this whole node runs
@@ -516,8 +608,10 @@ class _Nodes:
             with structlog.contextvars.bound_contextvars(action_id=state["action_id"]):
                 try:
                     update_ = await node(state)
-                except (GraphBubbleUp, asyncio.CancelledError):
-                    raise  # not errors: the interrupt machinery and shutdown
+                except (GraphBubbleUp, asyncio.CancelledError, CommitOutcomeUnknownError):
+                    # Not errors: the interrupt machinery, shutdown, and a commit that may have
+                    # happened (the action stays `committing`, the checkpoint before `commit`).
+                    raise
                 except Exception as exc:
                     return await self._fail(state, name, exc, started)
             elapsed = round((time.perf_counter() - started) * 1000)
@@ -599,7 +693,7 @@ def build_graph(
     builder.add_conditional_edges("request_review", next_unless_ended(REVIEW_NODE))
     builder.add_conditional_edges(REVIEW_NODE, route_after_human_review)
     builder.add_edge("block", END)
-    builder.add_edge("commit", END)
+    builder.add_conditional_edges("commit", route_after_commit)
     return builder.compile(checkpointer=checkpointer)
 
 

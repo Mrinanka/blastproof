@@ -52,6 +52,8 @@ class WriteState(TypedDict, total=False):
     decided: bool  # the `decided` audit event is written
     review: dict[str, Any]  # the resume value
     work_ms: int  # Blastproof's own time: the sum of node durations, never the review wait
+    drifts: int  # commits that found the data changed since the preview (a second one fails)
+    repreview: bool  # a drift sent the run back to `shadow`; `shadow` clears it
     outcome: RunOutcome
 
 

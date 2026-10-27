@@ -3,9 +3,10 @@ expires reviews, and recovers after a restart.
 
 Rules (CLAUDE.md, architecture rules):
 
-* Fail closed. A run that crashes outside the graph ends as `failed`; a `committing` action is never
-  touched here (step 16 reconciles it, because a commit may or may not have reached the company
-  database).
+* Fail closed. A run that crashes outside the graph ends as `failed`. A `committing` action is never
+  failed here, because a commit may or may not have reached the company database: when its thread
+  is paused before `commit`, the graph is continued and the committer settles it from the marker
+  row; with no such thread it is left alone and logged.
 * A decision is claimed with one conditional UPDATE before the graph is resumed (D-177): of two
   callers at once, exactly one wins. The graph never decides who may approve.
 * Every background task is held in `WorkflowRunner._tasks` until it is done, so it cannot be garbage
@@ -109,6 +110,7 @@ class SweepReport:
     expired: int
     failed_stuck: int
     deleted: dict[str, int]
+    reconciled: int = 0
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,7 @@ class RecoveryReport:
     resumed: int
     continued: int
     untouched_committing: int
+    reconciled: int = 0
 
 
 class WorkflowRunner:
@@ -137,6 +140,8 @@ class WorkflowRunner:
         self._sleep = sleep
         self._monotonic = monotonic
         self._tasks: set[asyncio.Task[None]] = set()
+        # Actions whose graph work runs in this process; the sweep never touches those.
+        self._running: set[uuid.UUID] = set()
         self._state: Literal["recovering", "ready", "draining"] = "recovering"
 
     @property
@@ -187,6 +192,7 @@ class WorkflowRunner:
 
     async def _guard(self, action_id: uuid.UUID, work: Awaitable[Any]) -> None:
         """Run graph work; an exception that escaped the graph fails the action (never a commit)."""
+        self._running.add(action_id)
         try:
             await work
         except asyncio.CancelledError:
@@ -197,6 +203,8 @@ class WorkflowRunner:
                 "workflow_crashed", action_id=str(action_id), error_class=type(exc).__name__
             )
             await self._fail_if(action_id, CRASH_FAILS, "workflow_error")
+        finally:
+            self._running.discard(action_id)
 
     # -- starting a write --
 
@@ -326,7 +334,7 @@ class WorkflowRunner:
     async def recover(self) -> RecoveryReport | None:
         """Settle what a restart left behind, then start accepting. None when another process holds
         the lock (this one then stays not accepting and `maintain` tries again)."""
-        failed = resumed = continued = untouched = 0
+        failed = resumed = continued = untouched = reconciled = 0
         launches: list[tuple[uuid.UUID, uuid.UUID, str]] = []
         async with self._sessionmaker.begin() as session:
             if not await self._lock(session):
@@ -348,9 +356,14 @@ class WorkflowRunner:
                 status = ActionStatus(raw_status)
                 with structlog.contextvars.bound_contextvars(action_id=str(action_id)):
                     if status == _S.COMMITTING:
-                        # A commit may or may not have reached the company database: step 16.
-                        logger.warning("needs_reconcile")
-                        untouched += 1
+                        # A commit may or may not have reached the company database. Continue the
+                        # graph at `commit`: the committer reads the marker and settles it.
+                        if await self._paused_before_commit(action_id, agent_id):
+                            launches.append((action_id, agent_id, "continue"))
+                            reconciled += 1
+                        else:
+                            logger.warning("needs_reconcile")
+                            untouched += 1
                         continue
                     if status in IN_FLIGHT:
                         await self._fail_restart(session, action_id)
@@ -380,9 +393,15 @@ class WorkflowRunner:
         for action_id, agent_id, how in launches:
             self._spawn(self._relaunch(action_id, agent_id, how))
         self.mark_recovered()
-        report = RecoveryReport(failed, resumed, continued, untouched)
+        report = RecoveryReport(failed, resumed, continued, untouched, reconciled)
         logger.info("recovery_done", **report.__dict__)
         return report
+
+    async def _paused_before_commit(self, action_id: uuid.UUID, agent_id: uuid.UUID) -> bool:
+        snapshot = await self._graph.aget_state(
+            run_config(action_id, agent_id, self._settings.app_env)
+        )
+        return tuple(snapshot.next) == ("commit",)
 
     @staticmethod
     async def _fail_restart(session: AsyncSession, action_id: uuid.UUID) -> None:
@@ -411,6 +430,7 @@ class WorkflowRunner:
         process holds the lock."""
         now = self._clock.now()
         expired = failed_stuck = 0
+        launches: list[tuple[uuid.UUID, uuid.UUID]] = []
         async with self._sessionmaker.begin() as session:
             if not await self._lock(session):
                 return None
@@ -430,11 +450,32 @@ class WorkflowRunner:
                     failed_stuck += 1
                 except IllegalTransitionError:
                     continue
+            # A commit nobody is running any more is reconciled, never failed: it may have happened.
+            for action_id in await stuck_actions(
+                session, frozenset({_S.COMMITTING}), now - STUCK_AFTER
+            ):
+                if action_id in self._running:
+                    continue
+                action = await session.get(Action, action_id)
+                if action is not None and await self._paused_before_commit(
+                    action_id, action.agent_id
+                ):
+                    launches.append((action_id, action.agent_id))
+                else:
+                    logger.warning("needs_reconcile", action_id=str(action_id))
             deleted = await delete_older_than(
                 session, now - timedelta(days=self._settings.retention_days)
             )
-        report = SweepReport(expired, failed_stuck, deleted)
-        logger.info("sweep_done", expired=expired, failed_stuck=failed_stuck, deleted=deleted)
+        for action_id, agent_id in launches:
+            self._spawn(self._relaunch(action_id, agent_id, "continue"))
+        report = SweepReport(expired, failed_stuck, deleted, len(launches))
+        logger.info(
+            "sweep_done",
+            expired=expired,
+            failed_stuck=failed_stuck,
+            deleted=deleted,
+            reconciled=len(launches),
+        )
         return report
 
     async def maintain(self) -> None:

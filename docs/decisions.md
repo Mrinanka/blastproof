@@ -1509,3 +1509,33 @@ existing setting.
 ## D-198 · 2026-10-27 · The seed asks for a password through a callable, only when a user is created
 **Decision:** `seed_demo_actions(password=...)` takes a function that is called at most once, and only when a demo user is missing. The CLI passes one that prompts (or reads one stdin line). Demo users are `member`s; an existing demo email that is an admin or inactive is refused. Re-running reuses users, agents and the "Demo seed (local)" system and adds a new set of actions (audit events are append-only, so old ones cannot be removed).
 **Why:** a re-run must not prompt, and `--add-pending` must never create accounts.
+
+## D-199 · 2026-10-27 · The commit holds the clone lock shared, not exclusive
+**Decision:** while a commit runs on the local clone source (profile `local`, or `NEON_CLIENT=fake`), it holds the company-main advisory lock **shared**, on its own connection to the server's `postgres` database, for the whole company transaction. D-138 said exclusive.
+**Why:** the lock exists to keep a clone out (a clone ends every session on its source). A shared lock does that, and still lets reads and other commits run; exclusive would make every read wait behind a commit. Neon needs no lock (branches).
+**Rejected:** exclusive (serialises reads behind commits for no gain) and no lock (a clone started mid-commit would kill the commit's connection).
+
+## D-200 · 2026-10-27 · The commit's RETURNING reports old and new key and hash (PostgreSQL 18)
+**Decision:** the commit runs `pinned_sql` with its own `RETURNING WITH (OLD AS ..., NEW AS ...)` (random aliases) that returns the old and new primary key, the old and new `ROW_HASH_SQL` and both rows as jsonb. The agent's own RETURNING is cut by tokenizer span and the cut is re-parsed and compared with the original (D-122's self-check). `returned_diff` rebuilds the target's deleted, updated and inserted rows from that, ignoring an update whose two hashes are equal.
+**Why:** the plan said `RETURNING <pk>`; an UPDATE whose WHERE also matches rows that need no change returns those keys too, which would show as false drift. The hashes tell a real change from none, and the same rows give the before-images and the `row_after` of inserts. The company database is PostgreSQL 18 everywhere (a Known issue still asks to check the deployed `blastproof-company`).
+**Rejected:** `RETURNING <pk>` with the key-set rule of the plan (false drift) and a second SELECT for the after-hashes (a second read of the same rows inside the transaction).
+
+## D-201 · 2026-10-27 · A write the commit cannot check is refused at commit, not in pass 1
+**Decision:** anything but one top-level INSERT, UPDATE, DELETE or MERGE with a single target table and no data-modifying CTE or subquery ends as `failed: commit_unsupported` at commit time. No rule changes.
+**Why:** the owner chose this over a new pass-1 block rule. The shapes are rare, the failure is safe (nothing applied), and a rule needs its own scenario work. A pass-1 rule can come later (a Known issue).
+
+## D-202 · 2026-10-27 · `committing` is reconciled by recovery and the sweep, never failed
+**Decision:** startup recovery continues a `committing` action whose thread is paused before `commit`; the sweep does the same for one that has sat in `committing` over 5 minutes and is not running in this process (the runner tracks the action ids its graph tasks are working on). A `committing` action with no such thread stays untouched and logged (`needs_reconcile`). Neither ever marks it `failed`: the committer decides from the marker row in the company database.
+**Why:** BE-85 and the owner's choice. The runner already owns the tasks, so the in-flight set lives there; the committer needs none of its own (the plan listed `_in_flight` on the committer).
+
+## D-203 · 2026-10-27 · Drift: back to the preview once, approver cleared, never auto-approved
+**Decision:** a drift rolls back, moves `committing -> drifted` (event data: `attempt`, `reason`, and counts only), clears `decided_by` and `decided_at`, and routes the commit node to `shadow` (`drifted -> previewing`). `WriteState` gains `drifts` and `repreview` (the plan had `drifts` only: a run that committed after an earlier drift must not route back). `shadow` clears `decided` so a second pass records its own decision. After a drift `decide` turns `allow` into `review` with `deciding: "drift"`; a block stays a block. A second drift moves `drifted -> failed` with `failure_reason: "drifted"`.
+**Why:** BE-92. The old approver approved a different preview; the audit events keep who did.
+
+## D-204 · 2026-10-27 · An unknown commit outcome stays `committing`
+**Decision:** a COMMIT error that is a server error (not SQLSTATE class 08) means nothing was applied: the before-images are deleted and the action fails with `commit_error_<sqlstate>`. Anything else (connection errors, timeouts, interface errors) is unknown: the committer looks for the marker on a fresh connection three times (1, 2 and 4 s apart); found means committed, not found means the whole commit runs once more (the marker insert waits for a transaction still in flight), unreachable means `CommitOutcomeUnknownError`, which the fail-closed wrapper re-raises so the action stays `committing`. If writing `committed` fails after a good company commit, the node raises the same error, never `failed`. Statement errors before COMMIT end as `commit_statement_error_<sqlstate>` (`commit_lock_timeout` for 55P03, `commit_timeout` for 57014).
+**Why:** BE-94 and BE-95: a failed mark on a write that happened would make the dashboard lie.
+
+## D-205 · 2026-10-27 · Tests simulate a kill by cancelling the task
+**Decision:** the committer has a `fault` seam (stages `start`, `before_commit`, `after_commit`). The kill tests make the seam wait and cancel the task from outside.
+**Why:** LangGraph turns a `CancelledError` raised by node code into `NodeCancelledError`, which the fail-closed wrapper would treat as an ordinary error; only an outside cancel (what a shutdown does) reaches the node as a real cancel.
