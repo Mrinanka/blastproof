@@ -30,6 +30,7 @@ FAILURES: tuple[JudgeFailure, ...] = (
     "bad_shape",
     "judge_error",
     "skipped_cost_cap",
+    "cost_unknown",
 )
 
 

@@ -89,6 +89,7 @@ def test_judge_json_for_a_verdict_a_withheld_reason_and_each_failure() -> None:
         "bad_shape",
         "judge_error",
         "skipped_cost_cap",
+        "cost_unknown",
     ):
         stored = JudgeResult.unavailable("llm", failure).to_json()  # type: ignore[arg-type]
         shown = detail(make_action(judge=stored)).judge
