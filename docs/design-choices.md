@@ -881,3 +881,47 @@ by the first API 401. That is a harmless extra step. Pages must be rendered per 
 nonce, so they cannot be static: the public landing page stays static and gets its own, weaker CSP
 in F13. I verified this with the production build and `curl`, but not yet in a real browser's
 console.
+
+## F4. Layout and navigation
+
+### 1. The sidebar's role-based links are a convenience, and they fail toward "less", not "more"
+
+**What I did.** Knowledge and Users are marked `adminOnly` in one nav table, and `navFor(role)`
+filters on it. While the user's role is still loading, or the `/me` call failed, the role is
+`undefined`, and `undefined` gets the member view. So an admin link can never flash up before we
+know who the user is.
+
+**Why.** CLAUDE.md says the dashboard holds no business logic and the backend enforces every
+permission. Hiding a link is only to avoid showing a member a page that would say "forbidden". If
+the role check is wrong or missing, the worst case is a visible link that the backend still
+refuses. That is why the default for "unknown" is the smaller menu.
+
+**What I rejected.** Trusting the role for anything else (for example, skipping a backend call), and
+showing all links until the role arrives (a flash of admin links is a small leak of what exists).
+
+**Trade-off and limits.** An admin sees a shorter menu for a split second on first load. I accepted
+that over the reverse. The stub pages behind the links do no authorization yet; the real pages in
+later steps rely on the backend answering 403 or 404.
+
+### 2. The badge is a cheap query under the shared `["actions"]` key, and logout only navigates after the server says yes
+
+**What I did.** The pending count asks for one row (`limit=1`) with `status=awaiting_review` and
+reads the `total`, so the backend counts and the dashboard computes nothing. It polls every 5 s
+and is stored under `["actions", "pending-count"]`, so when F7 approves or rejects something and
+invalidates `["actions"]`, the badge refreshes at once instead of waiting for the next poll.
+Logout posts to the route and goes to `/login` only if the answer is a 2xx; otherwise it stays put
+and shows an error toast.
+
+**Why.** Polling is simple, works through the proxy, and needs no new infrastructure; the plan sets
+5 s. Reusing the key prefix means one invalidation updates every list and the badge. For logout,
+the dangerous failure is a UI that looks logged out while the cookie is still live, so the UI never
+claims a logout the server did not confirm.
+
+**What I rejected.** Server-sent events or WebSockets (more moving parts for an MVP), counting rows
+in the browser (it would break the rule that numbers come from the backend), and navigating to
+`/login` regardless of the result (looks tidy, can hide a failure).
+
+**Trade-off and limits.** The badge can be up to 5 s stale, and polling costs one small request per
+open tab (it pauses in a hidden tab). An admin's badge counts every user's pending actions because
+the backend widens admin visibility; I did not change that. Logout still only clears the cookie;
+the token stays valid on the backend until it expires (D-041).

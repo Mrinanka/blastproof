@@ -1627,3 +1627,13 @@ existing setting.
 ## D-227 · 2026-10-27 · Testing helper name in Next 16.4.3
 **Decision:** the proxy matcher test uses `unstable_doesMiddlewareMatch` from `next/experimental/testing/server`. The docs name `unstable_doesProxyMatch`, but the installed package does not export it. `getRedirectUrl` works as documented.
 **Why:** same function under its shipped name; revisit when Next ships the documented one.
+
+## D-228 · 2026-10-27 · F4 layout rules
+**Decision:** the pending badge is `GET /v1/actions?status=awaiting_review&limit=1` read as `total`, polled every 5 s under the query key `["actions", "pending-count"]` (so F7's `invalidate(["actions"])` refreshes it). Admin-only links (Knowledge, Users) are hidden while the role is unknown, so the member view is the fail-closed default. Logout navigates to `/login` only when the route answered 2xx; otherwise an error toast. The dashboard layout wraps everything in `TooltipProvider`, because shadcn 4.22.1's `SidebarProvider` no longer does (found by the first sidebar test). `/dashboard/{review,history,knowledge,settings/*}` are placeholder pages so no nav link 404s; later steps replace them. `sidebar_state` is read server-side for `defaultOpen`.
+**Why:** hidden links are convenience only (the backend enforces roles); never claim a logout that did not happen; no new dependency.
+**Rejected:** showing all links until the role loads (flashes admin links); navigating to `/login` whatever the logout answer was (can hide a live cookie); server-sent events for the badge (more moving parts than the plan's 5 s poll); a style or script change to `use-mobile`/Radix instead of stubbing `matchMedia` and `ResizeObserver` in the tests.
+
+
+## D-229 · 2026-10-27 · Fix the self-referencing font variable
+**Decision:** `globals.css` `--font-sans` now points at `--font-geist-sans` (it referred to itself, so the browser fell back to a serif font). Found in the F4 screenshot; a F1 scaffold bug fixed here because it is one line.
+**Why:** a self-reference is an invalid custom property. **Rejected:** leaving it for F12 polish (every page looked wrong meanwhile).

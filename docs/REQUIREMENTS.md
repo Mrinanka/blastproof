@@ -262,7 +262,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-27 | Agent-provided and uploaded text (SQL, intents, documents, sample rows) is rendered as plain text; no `dangerouslySetInnerHTML`, no Markdown from uploads rendered as HTML. | CL; FE §11 | F5-F11 | *lint rule or grep; code review* |
 | [ ] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
 | [ ] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
-| [ ] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
+| [x] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
 | [x] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
 | [ ] | SEC-32 | Hiding controls by role in the UI is convenience only; every role check is enforced by the backend. | FE §11; CL | F4, B19 | TEST-03; MVP-F06 |
 | [ ] | SEC-33 | A deactivated agent's key is rejected with 401 on `/mcp` and on the hook endpoint. | BE B5; D-030 | B5 | DW-B05 |
@@ -280,9 +280,9 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-06 | The BFF route forwards method, path, query string, body and content type, and returns the backend's status and body unchanged. | FE §4, F3 | F3 | TEST-10 |
 | [x] | FE-07 | A global TanStack Query error handler sends any 401 to `/login`. | FE §4, F3 | F3 | DW-F03 |
 | [x] | FE-08 | A `useMe()` hook reads the user's name and role from `/v1/auth/me`. | FE F3 | F3 | *unit test* |
-| [ ] | FE-09 | `app/dashboard/layout.tsx` (a real URL segment) has a sidebar (Overview, Review with count badge, History, Knowledge, and Settings with Agents, Rules and, for admins, Users) and a user menu with logout. | FE §6, F4; D-046 | F4 | DW-F04 |
-| [ ] | FE-10 | The review badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. | FE F4 | F4 | DW-F04; MVP-F02 |
-| [ ] | FE-11 | Admin-only links (Knowledge, Users) are hidden from members. | FE F4, F10 | F4 | MVP-F06 |
+| [x] | FE-09 | `app/dashboard/layout.tsx` (a real URL segment) has a sidebar (Overview, Review with count badge, History, Knowledge, and Settings with Agents, Rules and, for admins, Users) and a user menu with logout. | FE §6, F4; D-046 | F4 | DW-F04 |
+| [x] | FE-10 | The review badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. | FE F4 | F4 | DW-F04; MVP-F02 |
+| [x] | FE-11 | Admin-only links (Knowledge, Users) are hidden from members. | FE F4, F10 | F4 | MVP-F06 |
 | [ ] | FE-12 | Shared components `StatusBadge`, `RiskBadge`, `TimeAgo`, `SQLBlock`, `NumberBreakdown`, `AuditTimeline`, `DataTable` with pagination, plus skeleton loading, empty and error states. | FE F5 | F5 | DW-F05 |
 | [ ] | FE-13 | The dashboard has the ten pages and routes in FE §7: `/`, `/login`, `/dashboard`, `/dashboard/review`, `/dashboard/actions/[id]`, `/dashboard/history`, `/dashboard/settings/agents`, `/dashboard/settings/rules`, `/dashboard/knowledge` (admin), `/dashboard/settings/users` (admin). | FE §7 | F3-F13 | MVP-F checks |
 | [ ] | FE-14 | Review queue lists the user's `awaiting_review` actions oldest first (agent, intent, headline, risk badge, waiting time), polling every 5 seconds, each row linking to its change request page. | FE §7, F6 | F6 | DW-F06; MVP-F02 |
@@ -405,7 +405,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F01 | `npm run dev` shows the starter page at `http://localhost:3000`. | FE F1 | F1 | Manual |
 | [ ] | DW-F02 | Hovering `api.GET("/v1/actions/{action_id}")` in the editor shows the backend's real response type. | FE F2 | F2 | Manual |
 | [x] | DW-F03 | You can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`. | FE F3 | F3 | Manual |
-| [ ] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
+| [x] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
 | [ ] | DW-F05 | Vitest tests pass for the badges and formatting helpers. | FE F5 | F5 | `npm test` |
 | [ ] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
 | [ ] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |

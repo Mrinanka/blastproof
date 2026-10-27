@@ -32,4 +32,10 @@ describe("source rules", () => {
   it("never uses dangerouslySetInnerHTML", () => {
     expect(files.filter((f) => f.text.includes("dangerouslySetInnerHTML"))).toEqual([]);
   });
+
+  // F4: shadcn's SidebarProvider no longer wraps a TooltipProvider; without one the sidebar crashes.
+  it("wraps the dashboard layout in a TooltipProvider", () => {
+    const layout = files.find((f) => f.name === "app/dashboard/layout.tsx");
+    expect(layout?.text).toMatch(/<TooltipProvider>[\s\S]*<SidebarProvider/);
+  });
 });
