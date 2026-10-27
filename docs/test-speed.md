@@ -46,3 +46,7 @@ so CI cannot quietly drop the integration tests. `addopts` would apply to CI too
 - Measure each shadow scenario once per session and share the result across test files.
 - `pytest-xdist` for the integration job (new dependency, ask first; tests that assert global
   state such as leftover shadow databases need a serial marker).
+
+## Update 2026-10-27: a `slow` tier (D-190)
+Integration alone was still about 9 minutes. `uv run pytest --integration --skip-slow` runs everything except 12 seed-heavy files (94 tests): 2,078 tests in 3 min 40 s. Use it while developing. The full suite (`--integration` without `--skip-slow`, all 2,173) runs only in CI and is never run on a development machine (D-191). If a change touches a slow file's area, run that one file by name. Add a file to `SLOW_FILES` in `tests/conftest.py` when its tests take over 10 s each on the seed. `--skip-slow` is never allowed in `ci.yml` (guarded by `tests/test_slow_tier.py`).
+

@@ -78,13 +78,48 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         help="also run the integration tests (need Docker Compose Postgres; CI always passes this)",
     )
+    parser.addoption(
+        "--skip-slow",
+        action="store_true",
+        help="leave out the seed-heavy test files (local speed only; CI never uses it, D-190)",
+    )
+
+
+# Test files that clone and diff the 273k-row seed (10 to 18 s per test) or reseed it: about half
+# of the integration time (D-190). `--integration` still runs them; `--skip-slow` leaves them out
+# for local work, and CI never passes it (tests/test_ci_workflow.py guards that).
+SLOW_FILES = frozenset(
+    {
+        "test_shadow_scenarios.py",
+        "test_shadow_done_when.py",
+        "test_shadow_failures.py",
+        "test_workflow_end_to_end.py",
+        "test_impact_done_when.py",
+        "test_judge_done_when.py",
+        "test_knowledge_done_when.py",
+        "test_demo_scripts.py",
+        "test_row_hash.py",
+        "test_seed_counts.py",
+        "test_company_main_lock.py",
+        "test_cli_knowledge.py",
+    }
+)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Plain `pytest` runs only the fast tests (D-179). CI passes --integration to run them all.
 
     An explicit `-m` expression is respected as given, so `-m integration` still works.
+    `--integration --skip-slow` runs the integration tests except the seed-heavy files (D-190).
     """
+    for item in items:
+        if item.path.name in SLOW_FILES:
+            item.add_marker(pytest.mark.slow)
+    if config.getoption("--skip-slow"):
+        slow = [item for item in items if item.get_closest_marker("slow")]
+        if slow:
+            config.hook.pytest_deselected(items=slow)
+            items[:] = [item for item in items if item not in slow]
     if config.getoption("--integration") or config.option.markexpr:
         return
     skipped = [item for item in items if item.get_closest_marker("integration")]

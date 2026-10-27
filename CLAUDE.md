@@ -30,7 +30,7 @@ Backend (run from `backend/`):
 - `docker compose up -d` (repo root) - start Blastproof's local Postgres
 - `uv sync` - install dependencies
 - `uv run uvicorn app.main:app --reload --env-file .env --log-config log_config.json` - run the API on :8000 (`--env-file` puts the model key where LangChain reads it; `--log-config` makes uvicorn's own startup lines JSON too)
-- `uv run pytest` - fast unit tests only, no Docker (the local default, D-179); `uv run pytest --integration` - all tests (needs Docker up; CI always runs this)
+- `uv run pytest` - fast unit tests only, no Docker (the local default, D-179); `uv run pytest --integration --skip-slow` - the local integration run, 3 minutes, without the seed-heavy files (needs Docker up; D-190); the full suite (`--integration` alone) runs only in CI and is never run locally (D-191)
 - `uv run ruff check . ../demo_company ../claude_hook && uv run ruff format --check . ../demo_company ../claude_hook` - lint (as CI does)
 - `uv run alembic revision --autogenerate -m "..."` then `uv run alembic upgrade head`
 - `uv run python -m evals.run` - eval suite

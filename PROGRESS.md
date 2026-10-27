@@ -1,5 +1,7 @@
 # Progress
 
+> **Test speed (D-190, 2026-10-27):** `uv run pytest --integration --skip-slow` runs 2,078 tests in 3 min 40 s (leaves out 94 seed-heavy ones); `--integration` alone runs all 2,173 (about 9 min) and only CI runs it (D-191: never the full suite locally).
+>
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
