@@ -1711,3 +1711,11 @@ existing setting.
 ## D-247 · 2026-10-28 · Step 19 test notes
 **Decision:** The one existing assertion that expected FastAPI's `{"detail": "Not Found"}` (`test_mcp_server.py`) now expects the envelope. The authorization matrix grew by 12 rows with additive fixture changes (`Actors` gained `agent`, `system`, `source`; `matrix_client` has a model-free knowledge service and the local reader; `BODIES` accepts a function). Deactivating an agent leaves its pending actions reviewable. Agent names may repeat.
 **Why:** a necessary consequence of D-239; keeps every existing row unchanged.
+
+## D-248 · 2026-10-28 · `bootstrap` is idempotent; a profile mismatch is refused, not fixed
+
+Each part of `bootstrap` (admin, agent, `company` system, schema scan, `schema_docs.md`) is get-or-create, so a run that stopped at the scan is finished by running it again. An existing admin is reused and the password callable is never called; an existing member or inactive user is refused. An existing agent is reported with its key prefix, never its key. A main system stored with another profile gives a clear error naming both profiles and the row is not rewritten (closes the step 6 known issue). The schema docs file is read as bytes from `--schema-docs` (default `demo_company/schema_docs.md`), so the backend still never imports `demo_company/`.
+
+## D-249 · 2026-10-28 · `backend/openapi.json` is committed; CI checks each half in its own job
+
+`export-openapi` builds the app with `Settings(_env_file=None, app_env="test")`, so it needs no server, database or `.env`. A fast backend test compares the committed file with the export; the frontend job runs `npm run gen:api` (now reading `../backend/openapi.json`) and `git diff --exit-code` on `schema.d.ts`. Together they cover OPS-05 without Python in the Node job. `openapi-typescript` gave byte-identical output from the file and from a running server.

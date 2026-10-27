@@ -35,6 +35,12 @@ jobs:
 
       - run: npm ci
 
+      # OPS-05: the generated types must match backend/openapi.json (the backend's own test
+      # checks that file against the routes), so a route change without a regenerate fails here.
+      - run: npm run gen:api
+
+      - run: git diff --exit-code src/lib/api/schema.d.ts
+
       - run: npm run lint
 
       - run: npm run format:check

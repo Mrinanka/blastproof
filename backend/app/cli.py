@@ -9,6 +9,8 @@
     uv run --env-file .env python -m app.cli impact-report --sql "DELETE ..." --intent "..."
     uv run --env-file .env python -m app.cli judge-report --sql "DELETE ..." --intent "..."
     uv run python -m app.cli seed-demo-actions [--add-pending] [--password-stdin]
+    uv run python -m app.cli bootstrap --admin-email you@example.com --admin-name "You"
+    uv run python -m app.cli export-openapi [--out PATH]
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -33,6 +35,12 @@ retrieval, scripted models and the stub commit. It leaves actions in every statu
 paused for review, so /docs can approve and reject them. --add-pending adds one more pending
 action for demo user 1. The password is asked only when a demo user has to be created. It prints
 one line per action (status, owner, id): never SQL, rows, URLs or keys. Local only.
+bootstrap (step 20) is the first-run setup: the first admin (asked for a password, or one stdin line
+with --password-stdin), an agent (default name claude-code; its key and the three setup lines are
+printed once), the main system and the knowledge base (schema scan plus demo_company/schema_docs.md,
+or --schema-docs PATH). Safe to re-run: each part is reused, and a re-run never shows a key again.
+export-openapi writes the API's OpenAPI schema (default backend/openapi.json) for the frontend's
+generated types; it needs no server, database or .env.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -42,7 +50,7 @@ import getpass
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Coroutine, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,6 +61,7 @@ from app.db.enums import Decision, UserRole
 from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
+from app.services.bootstrap import BootstrapError, BootstrapReport, bootstrap
 from app.services.classifier import Classification, Kind, classify
 from app.services.demo_seed import SeedError, seed_demo_actions
 from app.services.embeddings import build_embedder
@@ -68,6 +77,7 @@ from app.services.judge import (
 from app.services.knowledge import DocumentError, KnowledgeService, Retrieval, RetrievalError
 from app.services.llm import LlmConfigError
 from app.services.neon import NeonApiClient, neon_client_for
+from app.services.openapi_export import openapi_document
 from app.services.policy import Policy, evaluate_pass_two, load_policy
 from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowResult, ShadowRunner
 from app.services.vectorstores import build_vector_store
@@ -75,6 +85,11 @@ from app.services.vectorstores import build_vector_store
 
 class CliError(Exception):
     pass
+
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_OPENAPI_PATH = BACKEND_DIR / "openapi.json"
+DEFAULT_SCHEMA_DOCS = BACKEND_DIR.parent / "demo_company" / "schema_docs.md"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -129,6 +144,27 @@ def _parser() -> argparse.ArgumentParser:
     seed.add_argument(
         "--password-stdin", action="store_true", help="Read the demo password from one stdin line"
     )
+
+    boot = commands.add_parser(
+        "bootstrap", help="First-run setup: admin, agent, main system and knowledge base"
+    )
+    boot.add_argument("--admin-email", required=True)
+    boot.add_argument("--admin-name", required=True)
+    boot.add_argument("--agent-name", default="claude-code")
+    boot.add_argument(
+        "--schema-docs",
+        type=Path,
+        default=DEFAULT_SCHEMA_DOCS,
+        help="The company's schema documentation (default: demo_company/schema_docs.md)",
+    )
+    boot.add_argument(
+        "--password-stdin", action="store_true", help="Read the admin password from one stdin line"
+    )
+
+    export = commands.add_parser(
+        "export-openapi", help="Write the API's OpenAPI schema (needs no server or database)"
+    )
+    export.add_argument("--out", type=Path, default=DEFAULT_OPENAPI_PATH)
     return parser
 
 
@@ -419,14 +455,59 @@ async def _seed(settings: Settings, args: argparse.Namespace) -> tuple[str, bool
     return chr(10).join(lines), report.ok
 
 
-def _run_seed(settings: Settings, args: argparse.Namespace) -> tuple[str, bool]:
-    # psycopg's async mode (the checkpointer) cannot use Windows' default Proactor loop.
+def _run_on_selector_loop[T](coro: Coroutine[object, object, T]) -> T:
+    # psycopg's async mode (the checkpointer, the schema scan) cannot use Windows' Proactor loop.
     loop_factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
-    return asyncio.run(_seed(settings, args), loop_factory=loop_factory)
+    return asyncio.run(coro, loop_factory=loop_factory)
+
+
+def _run_seed(settings: Settings, args: argparse.Namespace) -> tuple[str, bool]:
+    return _run_on_selector_loop(_seed(settings, args))
+
+
+def _bootstrap_text(report: BootstrapReport) -> str:
+    lines = [
+        f"Admin {report.admin}: {report.admin_email}",
+        f"System: {report.system_name} (profile {report.system_profile})",
+        f"Knowledge: {report.scan_chunks} schema chunks, {report.docs_chunks} schema docs chunks",
+    ]
+    if report.agent_key is None or report.setup is None:
+        lines.append(
+            f"Agent exists: {report.agent_name} (key prefix {report.agent_key_prefix}). Its key "
+            "cannot be shown again; create another with create-agent."
+        )
+        return chr(10).join(lines)
+    url, add_line, env_line = report.setup
+    lines += [
+        f"Agent created: {report.agent_name}",
+        "API key (shown once; store it now, it cannot be shown again):",
+        report.agent_key,
+        f"MCP address: {url}",
+        "Connect Claude Code:",
+        add_line,
+        "Hook environment line:",
+        env_line,
+    ]
+    return chr(10).join(lines)
+
+
+def _export_openapi(out: Path) -> str:
+    try:
+        out.write_text(openapi_document(), encoding="utf-8", newline="")
+    except OSError:
+        raise CliError("The OpenAPI file could not be written.") from None
+    return f"Wrote {out.name}."
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "export-openapi":
+        try:
+            print(_export_openapi(args.out))
+        except CliError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        return 0
     settings = Settings()
     # Logs go to stderr, so stdout holds only the result (and the key, for create-agent).
     configure_logging(settings.log_level, stream=sys.stderr)
@@ -447,6 +528,19 @@ def main(argv: list[str] | None = None) -> int:
             text, ok = _run_seed(settings, args)
             print(text)
             return 0 if ok else 1
+        if args.command == "bootstrap":
+            report = _run_on_selector_loop(
+                bootstrap(
+                    settings,
+                    admin_email=args.admin_email,
+                    admin_name=args.admin_name,
+                    password=lambda: _read_password(args.password_stdin),
+                    agent_name=args.agent_name,
+                    schema_docs=args.schema_docs,
+                )
+            )
+            print(_bootstrap_text(report))
+            return 0
         if settings.blastproof_database_url is None:
             raise CliError(
                 "BLASTPROOF_DATABASE_URL is not set. See backend/.env.example for the local value."
@@ -463,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         LlmConfigError,
         JudgeConfigError,
         SeedError,
+        BootstrapError,
     ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

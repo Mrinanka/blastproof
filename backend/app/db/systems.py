@@ -47,3 +47,9 @@ async def list_systems(
 
 async def get_system(session: AsyncSession, system_id: uuid.UUID) -> System | None:
     return await session.get(System, system_id)
+
+
+async def get_profile_by_name(session: AsyncSession, name: str) -> str | None:
+    return (
+        await session.execute(select(System.connection_profile).where(System.name == name))
+    ).scalar_one_or_none()

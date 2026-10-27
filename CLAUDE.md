@@ -32,13 +32,14 @@ Backend (run from `backend/`):
 - `uv run uvicorn app.main:app --reload --env-file .env --log-config log_config.json` - run the API on :8000 (`--env-file` puts the model key where LangChain reads it; `--log-config` makes uvicorn's own startup lines JSON too)
 - `uv run pytest` - fast unit tests only, no Docker (the local default, D-179); `uv run pytest --integration --skip-slow` - the local integration run, 3 minutes, without the seed-heavy files (needs Docker up; D-190); the full suite (`--integration` alone) runs only in CI and is never run locally (D-191)
 - `uv run ruff check . ../demo_company ../claude_hook && uv run ruff format --check . ../demo_company ../claude_hook` - lint (as CI does)
+- `uv run python -m app.cli bootstrap --admin-email ... --admin-name ...` - first admin, agent, main system and knowledge base (safe to re-run)
 - `uv run alembic revision --autogenerate -m "..."` then `uv run alembic upgrade head`
 - `uv run python -m evals.run` - eval suite
 
 Frontend (run from `frontend/`):
 - `npm run dev` - dashboard on :3000
 - `npm run lint && npm run format:check && npm run typecheck && npm test` - checks
-- `npm run gen:api` - regenerate API types from the backend's OpenAPI schema
+- `npm run gen:api` - regenerate API types from `backend/openapi.json` (no server needed); after a route change run `uv run python -m app.cli export-openapi` first
 
 ## How we work
 

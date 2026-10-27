@@ -1,0 +1,3378 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Blastproof",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "description": "Liveness only: the process is up. Database and Neon checks belong to /ready (step 6).",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Ready",
+        "description": "Readiness: Blastproof's database, the company database and the Neon API are reachable.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "description": "Email and password in, an 8-hour token out. Rate limited per email+IP and per email.",
+        "operationId": "login_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Me",
+        "description": "The signed-in user's ID, name, email and role.",
+        "operationId": "me_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserToken": []
+          }
+        ]
+      }
+    },
+    "/v1/actions": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "List Actions",
+        "description": "Your actions, newest first (admins see everyone's). Filters combine with AND.",
+        "operationId": "list_actions_v1_actions_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ActionStatus"
+              },
+              "title": "Status"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "table",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 63
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Table"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "newest",
+                "oldest"
+              ],
+              "type": "string",
+              "default": "newest",
+              "title": "Order"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/v1/actions/{action_id}": {
+      "get": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Get Action",
+        "description": "One action in full. Unknown, malformed and other people's IDs all answer 404.",
+        "operationId": "get_action_v1_actions__action_id__get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/actions/{action_id}/approve": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Approve Action",
+        "description": "Approve an action awaiting review. Of two decisions at once, one wins; the other gets 409.",
+        "operationId": "approve_action_v1_actions__action_id__approve_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/actions/{action_id}/reject": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Reject Action",
+        "description": "Reject an action awaiting review; the reason (10 to 500 characters) goes to the agent.",
+        "operationId": "reject_action_v1_actions__action_id__reject_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/hook/pre-tool-use": {
+      "post": {
+        "tags": [
+          "hook"
+        ],
+        "summary": "Pre Tool Use",
+        "description": "Claude Code's PreToolUse hook asks here before every shell, edit and read tool call.",
+        "operationId": "pre_tool_use_v1_hook_pre_tool_use_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HookRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AgentKey": []
+          }
+        ]
+      }
+    },
+    "/v1/stats": {
+      "get": {
+        "tags": [
+          "stats"
+        ],
+        "summary": "Get Stats",
+        "description": "Counts for the dashboard: all time, and today (UTC). Yours, or everyone's for an admin.",
+        "operationId": "get_stats_v1_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserToken": []
+          }
+        ]
+      }
+    },
+    "/v1/policies": {
+      "get": {
+        "tags": [
+          "policies"
+        ],
+        "summary": "List Policies",
+        "description": "The rules every write is checked against, in the order they are written in rules.yaml.",
+        "operationId": "list_policies_v1_policies_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/v1/knowledge": {
+      "get": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "List Knowledge",
+        "description": "The sources the AI reads when it explains a change, by name. Shared by everyone.",
+        "operationId": "list_knowledge_v1_knowledge_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Upload Knowledge",
+        "description": "Add a .md or .txt document (admins only). The same name again replaces it.",
+        "operationId": "upload_knowledge_v1_knowledge_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeChanged"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "411": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Length Required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "tables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/{source}": {
+      "delete": {
+        "tags": [
+          "knowledge"
+        ],
+        "summary": "Delete Knowledge",
+        "description": "Remove a source and its chunks (admins only).",
+        "operationId": "delete_knowledge_v1_knowledge__source__delete",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeChanged"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/systems": {
+      "get": {
+        "tags": [
+          "systems"
+        ],
+        "summary": "List Systems",
+        "description": "The company databases Blastproof protects, by name.",
+        "operationId": "list_systems_v1_systems_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/v1/systems/{system_id}/scan": {
+      "post": {
+        "tags": [
+          "systems"
+        ],
+        "summary": "Scan System",
+        "description": "Re-read the tables of one system and rebuild the schema knowledge (admins only).",
+        "operationId": "scan_system_v1_systems__system_id__scan_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "system_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "System Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "List Agents",
+        "description": "Your agents, newest first (admins see everyone's). Keys are never shown here.",
+        "operationId": "list_agents_v1_agents_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Create Agent",
+        "description": "Make an agent that you own. The response holds its key: this is the only time it is shown.",
+        "operationId": "create_agent_v1_agents_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCreated"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/v1/agents/{agent_id}/deactivate": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Deactivate Agent",
+        "description": "Turn an agent's key off (its owner or an admin). Doing it twice is fine.",
+        "operationId": "deactivate_agent_v1_agents__agent_id__deactivate_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentView"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List Users",
+        "description": "Every user, newest first (admins only). The only list that shows email addresses.",
+        "operationId": "list_users_v1_users_get",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create User",
+        "description": "Add a user (admins only). The email must not be taken, ignoring case.",
+        "operationId": "create_user_v1_users_post",
+        "security": [
+          {
+            "UserToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountView"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AccountPage"
+      },
+      "AccountView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role",
+          "is_active",
+          "created_at"
+        ],
+        "title": "AccountView",
+        "description": "A user as an admin sees them. Emails appear only here and on /v1/auth/me (BE-118)."
+      },
+      "ActionDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentRef"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "sql_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Display"
+          },
+          "pinned_values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Pinned Values"
+          },
+          "original_sql_display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Sql Display"
+          },
+          "statement_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statement Type"
+          },
+          "tables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tables"
+          },
+          "impact_report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImpactReportView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "table_changes": {
+            "items": {
+              "$ref": "#/components/schemas/TableChange"
+            },
+            "type": "array",
+            "title": "Table Changes"
+          },
+          "breakdowns": {
+            "items": {
+              "$ref": "#/components/schemas/Breakdown"
+            },
+            "type": "array",
+            "title": "Breakdowns"
+          },
+          "derived_groups": {
+            "items": {
+              "$ref": "#/components/schemas/DerivedGroupView"
+            },
+            "type": "array",
+            "title": "Derived Groups"
+          },
+          "samples": {
+            "items": {
+              "$ref": "#/components/schemas/SampleRowView"
+            },
+            "type": "array",
+            "title": "Samples"
+          },
+          "judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JudgeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "matched_rules": {
+            "items": {
+              "$ref": "#/components/schemas/MatchedRule"
+            },
+            "type": "array",
+            "title": "Matched Rules"
+          },
+          "knowledge_used": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeRefView"
+            },
+            "type": "array",
+            "title": "Knowledge Used"
+          },
+          "policy_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Reason"
+          },
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          },
+          "retry_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Of"
+          },
+          "retried_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retried By"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEventView"
+            },
+            "type": "array",
+            "title": "Timeline"
+          },
+          "timings": {
+            "$ref": "#/components/schemas/Timings"
+          },
+          "llm_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Cost Usd"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "can_decide": {
+            "type": "boolean",
+            "title": "Can Decide"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "decision",
+          "risk_level",
+          "agent",
+          "owner",
+          "intent",
+          "sql_display",
+          "pinned_values",
+          "original_sql_display",
+          "statement_type",
+          "tables",
+          "impact_report",
+          "table_changes",
+          "breakdowns",
+          "derived_groups",
+          "samples",
+          "judge",
+          "matched_rules",
+          "knowledge_used",
+          "policy_reason",
+          "reviewer_note",
+          "retry_of",
+          "retried_by",
+          "timeline",
+          "timings",
+          "llm_cost_usd",
+          "decided_by",
+          "created_at",
+          "decided_at",
+          "expires_at",
+          "can_decide"
+        ],
+        "title": "ActionDetail"
+      },
+      "ActionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActionSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ActionPage"
+      },
+      "ActionStatus": {
+        "type": "string",
+        "enum": [
+          "received",
+          "classified",
+          "previewing",
+          "awaiting_review",
+          "approved",
+          "rejected",
+          "expired",
+          "blocked",
+          "committing",
+          "committed",
+          "drifted",
+          "executed",
+          "failed"
+        ],
+        "title": "ActionStatus",
+        "description": "The canonical state machine (backend plan §5). \"pending\" is never stored (BE-16)."
+      },
+      "ActionSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentRef"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "headline": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline"
+          },
+          "tables": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tables"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "decision",
+          "risk_level",
+          "agent",
+          "intent",
+          "headline",
+          "tables",
+          "created_at",
+          "decided_by"
+        ],
+        "title": "ActionSummary"
+      },
+      "AgentCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "mcp_url": {
+            "type": "string",
+            "title": "Mcp Url"
+          },
+          "claude_mcp_add": {
+            "type": "string",
+            "title": "Claude Mcp Add"
+          },
+          "agent_key_env": {
+            "type": "string",
+            "title": "Agent Key Env"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "is_active",
+          "created_at",
+          "owner",
+          "key",
+          "mcp_url",
+          "claude_mcp_add",
+          "agent_key_env"
+        ],
+        "title": "AgentCreated",
+        "description": "Returned once, at creation: the only time the full key is shown."
+      },
+      "AgentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AgentPage"
+      },
+      "AgentRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentRef"
+      },
+      "AgentView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/UserRef"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "is_active",
+          "created_at",
+          "owner"
+        ],
+        "title": "AgentView"
+      },
+      "AuditEventView": {
+        "properties": {
+          "event_type": {
+            "type": "string",
+            "title": "Event Type"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "data": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_type",
+          "created_at",
+          "data"
+        ],
+        "title": "AuditEventView"
+      },
+      "Breakdown": {
+        "properties": {
+          "table": {
+            "type": "string",
+            "title": "Table"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table",
+          "column",
+          "counts"
+        ],
+        "title": "Breakdown"
+      },
+      "ConnectionProfile": {
+        "type": "string",
+        "enum": [
+          "neon",
+          "local"
+        ],
+        "title": "ConnectionProfile",
+        "description": "Which credentials and NeonClient a system uses (D-027)."
+      },
+      "CreateAgentRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateAgentRequest"
+      },
+      "CreateUserRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole",
+            "default": "member"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "display_name",
+          "password"
+        ],
+        "title": "CreateUserRequest"
+      },
+      "Decision": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "review",
+          "block"
+        ],
+        "title": "Decision"
+      },
+      "DecisionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ActionStatus"
+          },
+          "decided_by": {
+            "$ref": "#/components/schemas/UserRef"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Decided At"
+          },
+          "reviewer_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "decided_by",
+          "decided_at",
+          "reviewer_note"
+        ],
+        "title": "DecisionResponse"
+      },
+      "DerivedGroupView": {
+        "properties": {
+          "table": {
+            "type": "string",
+            "title": "Table"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table",
+          "name",
+          "count",
+          "definition"
+        ],
+        "title": "DerivedGroupView"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "description": "The error body, for routes to declare in their OpenAPI `responses`."
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse"
+      },
+      "HookDecisionResponse": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "deny"
+            ],
+            "title": "Decision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "reason",
+          "rule"
+        ],
+        "title": "HookDecisionResponse"
+      },
+      "HookRequest": {
+        "properties": {
+          "tool_name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Tool Name"
+          },
+          "tool_input": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Tool Input"
+          },
+          "cwd": {
+            "type": "string",
+            "maxLength": 4096,
+            "title": "Cwd",
+            "default": ""
+          },
+          "project_dir": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Dir"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool_name",
+          "tool_input"
+        ],
+        "title": "HookRequest",
+        "description": "What the hook script sends: the tool call, minus file bodies (the script drops them)."
+      },
+      "ImpactReportView": {
+        "properties": {
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "key_points": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Key Points"
+          },
+          "concerns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Concerns"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "llm",
+              "template"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "headline",
+          "key_points",
+          "concerns",
+          "source"
+        ],
+        "title": "ImpactReportView"
+      },
+      "JsonValue": {},
+      "JudgeView": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Decision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "risk_level": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "recommendation",
+          "risk_level",
+          "confidence",
+          "reason",
+          "failure"
+        ],
+        "title": "JudgeView"
+      },
+      "KnowledgeChanged": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "chunks"
+        ],
+        "title": "KnowledgeChanged",
+        "description": "What an upload or a delete did: the source and how many chunks it now has or had."
+      },
+      "KnowledgePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSource"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "KnowledgePage"
+      },
+      "KnowledgeRefView": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "table_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Table Names"
+          },
+          "first_line": {
+            "type": "string",
+            "title": "First Line"
+          },
+          "match": {
+            "type": "string",
+            "enum": [
+              "table",
+              "similar"
+            ],
+            "title": "Match"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "source",
+          "table_names",
+          "first_line",
+          "match",
+          "score"
+        ],
+        "title": "KnowledgeRefView"
+      },
+      "KnowledgeSource": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schema_scan",
+              "schema_docs",
+              "upload"
+            ],
+            "title": "Kind"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "table_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Table Names"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "kind",
+          "chunks",
+          "table_names",
+          "updated_at"
+        ],
+        "title": "KnowledgeSource"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "LoginResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserView"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_at",
+          "user"
+        ],
+        "title": "LoginResponse"
+      },
+      "MatchedRule": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "pass": {
+            "type": "string",
+            "enum": [
+              "pre",
+              "post"
+            ],
+            "title": "Pass"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "outcome",
+          "reason",
+          "pass"
+        ],
+        "title": "MatchedRule"
+      },
+      "ReadyResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ready",
+            "title": "Status"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "string",
+              "const": "ok"
+            },
+            "type": "object",
+            "title": "Checks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadyResponse"
+      },
+      "RejectRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 10,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "RejectRequest"
+      },
+      "RiskLevel": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "title": "RiskLevel"
+      },
+      "RulePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RuleView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "RulePage"
+      },
+      "RuleView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/Decision"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "pass": {
+            "type": "string",
+            "enum": [
+              "pre",
+              "post"
+            ],
+            "title": "Pass"
+          },
+          "conditions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "outcome",
+          "reason",
+          "pass",
+          "conditions"
+        ],
+        "title": "RuleView"
+      },
+      "SampleRowView": {
+        "properties": {
+          "table": {
+            "type": "string",
+            "title": "Table"
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "deleted",
+              "updated",
+              "inserted"
+            ],
+            "title": "Change"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Side"
+          },
+          "values": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Values"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table",
+          "change",
+          "side",
+          "values"
+        ],
+        "title": "SampleRowView"
+      },
+      "ScanResult": {
+        "properties": {
+          "system_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "System Id"
+          },
+          "source": {
+            "type": "string",
+            "const": "schema_scan",
+            "title": "Source"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "system_id",
+          "source",
+          "chunks"
+        ],
+        "title": "ScanResult"
+      },
+      "StatsResponse": {
+        "properties": {
+          "pending_reviews": {
+            "type": "integer",
+            "title": "Pending Reviews"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ActionStatus"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "by_decision": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": "object",
+            "title": "By Decision"
+          },
+          "today": {
+            "$ref": "#/components/schemas/TodayStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending_reviews",
+          "by_status",
+          "by_decision",
+          "today"
+        ],
+        "title": "StatsResponse"
+      },
+      "SystemKind": {
+        "type": "string",
+        "enum": [
+          "postgres"
+        ],
+        "title": "SystemKind"
+      },
+      "SystemPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SystemView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "SystemPage"
+      },
+      "SystemView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SystemKind"
+          },
+          "connection_profile": {
+            "$ref": "#/components/schemas/ConnectionProfile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "connection_profile"
+        ],
+        "title": "SystemView"
+      },
+      "TableChange": {
+        "properties": {
+          "table": {
+            "type": "string",
+            "title": "Table"
+          },
+          "deleted": {
+            "type": "integer",
+            "title": "Deleted"
+          },
+          "updated": {
+            "type": "integer",
+            "title": "Updated"
+          },
+          "inserted": {
+            "type": "integer",
+            "title": "Inserted"
+          },
+          "is_cascade": {
+            "type": "boolean",
+            "title": "Is Cascade"
+          }
+        },
+        "type": "object",
+        "required": [
+          "table",
+          "deleted",
+          "updated",
+          "inserted",
+          "is_cascade"
+        ],
+        "title": "TableChange"
+      },
+      "Timings": {
+        "properties": {
+          "preview_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview Ms"
+          },
+          "total_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "preview_ms",
+          "total_ms"
+        ],
+        "title": "Timings"
+      },
+      "TodayStats": {
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "actions": {
+            "type": "integer",
+            "title": "Actions"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ActionStatus"
+            },
+            "type": "object",
+            "title": "By Status"
+          },
+          "by_decision": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/Decision"
+            },
+            "type": "object",
+            "title": "By Decision"
+          },
+          "reviewed": {
+            "type": "integer",
+            "title": "Reviewed"
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked"
+          },
+          "avg_preview_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Preview Ms"
+          },
+          "llm_cost_usd": {
+            "type": "number",
+            "title": "Llm Cost Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "actions",
+          "by_status",
+          "by_decision",
+          "reviewed",
+          "blocked",
+          "avg_preview_ms",
+          "llm_cost_usd"
+        ],
+        "title": "TodayStats",
+        "description": "The UTC day so far. `reviewed`: decisions made today; `blocked`: actions created today."
+      },
+      "UserRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "UserRef"
+      },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "member"
+        ],
+        "title": "UserRole"
+      },
+      "UserView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "display_name",
+          "role"
+        ],
+        "title": "UserView",
+        "description": "The signed-in user's own details (other users only ever see display_name)."
+      }
+    },
+    "securitySchemes": {
+      "UserToken": {
+        "type": "http",
+        "description": "The token from POST /v1/auth/login.",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "AgentKey": {
+        "type": "http",
+        "description": "An agent's API key (bp_...).",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
