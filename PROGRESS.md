@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). F3 (proxy and login) is built on `feat/f3` (D-224 to D-227). Next unticked: F4 (layout and navigation) (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). F3 (proxy and login) is built on `feat/f3` (D-224 to D-227). F4 (layout and navigation) is built on `feat/f4` (D-228, D-229). Next unticked: F5 (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -58,6 +58,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - By hand 2026-10-27: ran against local `blastproof` with the local values from `.env.example` in the process environment: 14 actions, every one in its expected status, 24 knowledge chunks retrieved. This left users `demo-user-1@example.com` and `demo-user-2@example.com` (password given on stdin) and 14 actions in the local dev database. Not done by hand: the `/docs` walk-through (DW-B19, first half: log in as demo user 1, approve one pending action, reject another, demo user 2 gets 404); the automated API test stands in until you run it.
 - Requirements ticked: BE-121. Left open: DW-B19 (first half by hand), DW-F04, DW-F06, DW-F10, TEST-09 (they use the data in the dashboard steps).
 - Step 16 hand-over: re-run the seed and add a `failed: drifted` action; the commit's profile guard ("refuses any action whose system's profile does not match") is step 16's, not the seed's.
+
+### F4, built 2026-10-27, D-228
+- New (`frontend/`): `lib/nav.ts`, `lib/logout.ts`, `hooks/use-pending-count.ts`, `components/layout/{app-sidebar,user-menu}.tsx`, six placeholder pages under `/dashboard`, `tests/dom-stubs.ts`. Changed: `dashboard/layout.tsx` (sidebar, top bar, `Toaster`, `TooltipProvider`, `sidebar_state` cookie), `dashboard/page.tsx` (`<main>` to `<div>`). No new dependency.
+- Tests: 178 Vitest (32 new in 5 files: nav, pending count, sidebar, logout, user menu); lint, format, typecheck and `npm run build` clean. Backend untouched.
+- Mutation checks: 8 guards removed, each turned a test red (adminOnly filter, `isActive` prefix, poll 5 s to 50 s, `limit`, `status`, key outside `"actions"`, logout result, navigate on failure). The first sidebar test found a real bug: no `TooltipProvider` (D-228).
+- By hand 2026-10-27 (owner): DW-F04 passed (badge rose within 5 s after the seed; admin sees Knowledge and Users, member does not; logout lands on `/login` with the cookie gone). Also fixed: `globals.css` `--font-sans` referred to itself (serif text); a source-rule test guards the layout's `TooltipProvider`. Vitest crashes with exit 134 on a low-memory machine (about 19 workers); use `npx vitest run --maxWorkers=2`. Requirements ticked: FE-09, FE-10, FE-11, SEC-30, DW-F04. FE-13 (route stubs), SEC-32 (UI half) and MVP-F01/F02/F06 stay open for later steps.
 
 ### F3, built 2026-10-27, D-224 to D-227
 - New (`frontend/`): `src/proxy.ts` (session gate + nonce CSP), `src/app/api/blastproof/[...path]/route.ts` (BFF, `/v1/*` only), `api/auth/login` and `api/auth/logout` routes, `lib/server/{backend,session}.ts`, `lib/csp.ts`, `lib/next-path.ts`, `lib/api/errors.ts`, `hooks/use-me.ts`, login page and form, a placeholder `/dashboard` layout and page (F4 and F9 replace them). Changed: `query-client.ts` (401 handler, no retry on 4xx), `api/client.ts` (fetch looked up per call), `vitest.config.mts`. 6 pins (D-224).
@@ -462,6 +468,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- F4: the nav pages (Review, History, Knowledge, Agents, Rules, Users) are placeholders until F6 to F11. The pending badge is up to 5 s stale and counts every user's pending actions for an admin. Vitest workers crash (exit 134) on low memory; run `npx vitest run --maxWorkers=2`. Sidebar collapse, pointer use of the user menu and the mobile sheet were only checked by hand in desktop width.
 - F3: the login route forwards no client IP, so every dashboard login shares one rate-limit bucket (stricter, safe; D-226). Deploy: forward the real IP and trust it only from the proxy (see the login rate limit item below).
 - F3: the Origin check compares against `request.nextUrl.origin`; if that is ever not the public origin on Vercel, every POST gets 403 (fails closed). Re-check on the first Vercel deploy.
 - F3: the BFF buffers whole request bodies in memory (`arrayBuffer`); revisit for F10 uploads. The 30 s backend timeout may be too short for a rescan or upload (F10).
@@ -692,7 +699,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] F1. Scaffold
 - [x] F2. Typed API client
 - [x] F3. Proxy and login
-- [ ] F4. Layout and navigation
+- [x] F4. Layout and navigation
 - [ ] F5. Shared components
 - [ ] GATE AUDIT: Gate 1, Replit case held for review and approvable
 
