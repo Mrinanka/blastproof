@@ -33,6 +33,17 @@ describe("source rules", () => {
     expect(files.filter((f) => f.text.includes("dangerouslySetInnerHTML"))).toEqual([]);
   });
 
+  // F5 (CONV-17): number, money and date formatting lives in lib/format.ts.
+  it("formats with Intl and toLocale* only in lib/format.ts", () => {
+    const found = files.filter(
+      (f) =>
+        f.name !== "lib/format.ts" &&
+        !f.name.startsWith("components/ui/") &&
+        /toLocale(String|DateString|TimeString)|new Intl\./.test(f.text),
+    );
+    expect(found.map((f) => f.name)).toEqual([]);
+  });
+
   // F4: shadcn's SidebarProvider no longer wraps a TooltipProvider; without one the sidebar crashes.
   it("wraps the dashboard layout in a TooltipProvider", () => {
     const layout = files.find((f) => f.name === "app/dashboard/layout.tsx");

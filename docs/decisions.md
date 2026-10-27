@@ -1637,3 +1637,15 @@ existing setting.
 ## D-229 · 2026-10-27 · Fix the self-referencing font variable
 **Decision:** `globals.css` `--font-sans` now points at `--font-geist-sans` (it referred to itself, so the browser fell back to a serif font). Found in the F4 screenshot; a F1 scaffold bug fixed here because it is one line.
 **Why:** a self-reference is an invalid custom property. **Rejected:** leaving it for F12 polish (every page looked wrong meanwhile).
+
+## D-230 · 2026-10-27 · No date-fns
+**Decision:** F5 formats dates with `Intl.DateTimeFormat` and `Intl.RelativeTimeFormat` in `lib/format.ts` (locale `en-US`, time zone the browser's). `date-fns`, listed in the plan's stack table, is not installed.
+**Why:** the two `Intl` APIs cover local time and "3 minutes ago"; no new dependency. **Rejected:** `date-fns` (a dependency for no gain).
+
+## D-231 · 2026-10-27 · Plain server-paginated DataTable
+**Decision:** `DataTable` is a generic component on shadcn `Table`, paginated by the server (`offset`/`limit`/`total`). `@tanstack/react-table` is not added.
+**Why:** our lists page on the server; the shadcn Data Table guide pages in the browser and needs a new dependency. Errors keep rows on screen when a poll fails; callers pass TanStack's `isPending` so polls never flash skeletons.
+
+## D-232 · 2026-10-27 · Hydration-safe local time, naive timestamps invalid
+**Decision:** `useNow()` uses `useSyncExternalStore` with a server snapshot of `null`: the server render and hydration show UTC absolute text, then the client switches to local time and relative text. One shared 30 s interval. A timestamp with no `Z` or offset is invalid ("—").
+**Why:** Next's documented fix is an inline script, which our nonce CSP and the `dangerouslySetInnerHTML` source rule forbid; a naive string would silently be read as local time. **Rejected:** the inline-script fix; `suppressHydrationWarning` alone.
