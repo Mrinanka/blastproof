@@ -118,6 +118,7 @@ def test_generated_files_shape() -> None:
             "blockReadsOutsideWorkingDirectories": True,
         },
         "disableClaudeAiConnectors": True,
+        "hooks": {"PreToolUse": [ws_mod.hook_entry(REPO, BASE_URL, sys.executable)]},
     }
     local = json.loads(files[".claude/settings.local.json"])
     assert local == {"env": {"BLASTPROOF_AGENT_KEY": KEY}, "enabledMcpjsonServers": ["blastproof"]}
@@ -140,6 +141,68 @@ def test_no_generated_file_matches_a_scan_pattern() -> None:
     for name, text in ws_mod.build_files(REPO, BASE_URL, KEY).items():
         assert not ws_mod.matches(text), name
         assert not ws_mod.matches(name), name
+
+
+# --- the hook entry (step 18) ------------------------------------------------------------------
+
+MATCHER = "Bash|PowerShell|Monitor|Edit|Write|NotebookEdit|Read|Grep|Glob"
+
+
+def hook_of(settings: dict) -> dict:
+    [group] = settings["hooks"]["PreToolUse"]
+    assert group["matcher"] == MATCHER
+    [hook] = group["hooks"]
+    return hook
+
+
+def test_the_hook_entry_blocks_on_failure_and_outlasts_two_attempts() -> None:
+    files = ws_mod.build_files(REPO_ROOT, BASE_URL, KEY, python="/py/python")
+    hook = hook_of(json.loads(files[".claude/settings.json"]))
+    assert hook["type"] == "command"
+    assert hook["command"] == "/py/python"
+    assert hook["onFailure"] == "block"
+    # Two attempts, one second between them, and Python's start-up.
+    assert hook["timeout"] >= 2 * ws_mod.HOOK_HTTP_TIMEOUT + 1 + 2
+    script, flag, url = hook["args"]
+    assert Path(script).is_absolute() and Path(script).is_file()
+    assert Path(script) == REPO_ROOT / "claude_hook" / "pre_tool_use.py"
+    assert (flag, url) == ("--url", BASE_URL)
+
+
+def test_the_hook_entry_defaults_to_the_current_python_and_holds_no_key() -> None:
+    files = ws_mod.build_files(REPO_ROOT, BASE_URL, KEY)
+    hook = hook_of(json.loads(files[".claude/settings.json"]))
+    assert hook["command"] == sys.executable
+    for name, text in files.items():
+        if name != ".claude/settings.local.json":
+            assert KEY not in text, name
+    assert "bp_" not in json.dumps(hook)
+
+
+def test_the_example_settings_have_the_same_shape() -> None:
+    example = json.loads((REPO_ROOT / "claude_hook" / "settings.example.json").read_text("utf-8"))
+    real = ws_mod.hook_entry(REPO_ROOT, BASE_URL, "/py/python")
+    [group] = example["hooks"]["PreToolUse"]
+    [hook] = group["hooks"]
+    assert group["matcher"] == real["matcher"]
+    assert set(hook) == set(real["hooks"][0])
+    assert hook["onFailure"] == "block"
+    assert hook["timeout"] == ws_mod.HOOK_TIMEOUT
+    assert hook["args"][1:] == ["--url", BASE_URL]
+
+
+def test_create_writes_the_hook_and_accepts_python(workspace: Path) -> None:
+    args = ("create", str(workspace), "--key-stdin", "--python", "/py/python")
+    result = run_cli(*args, stdin=KEY + chr(10))
+    assert result.returncode == 0, result.stderr
+    settings = json.loads((workspace / ".claude" / "settings.json").read_text("utf-8"))
+    assert hook_of(settings)["command"] == "/py/python"
+    assert KEY not in (workspace / ".claude" / "settings.json").read_text("utf-8")
+
+
+def test_the_hook_still_leaves_the_workspace_clean_of_credentials(workspace: Path) -> None:
+    created(workspace)
+    assert ws_mod.scan(workspace, {}) == []
 
 
 # --- create ------------------------------------------------------------------------------------

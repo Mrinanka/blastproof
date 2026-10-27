@@ -3,12 +3,13 @@
 Standard library only. Run from anywhere:
 
     uv run --project backend python claude_hook/workspace.py create <workspace> [--force] \
-        [--key-stdin]
+        [--key-stdin] [--python <path>]
     uv run --project backend python claude_hook/workspace.py check <workspace>
     uv run --project backend python claude_hook/workspace.py verify <workspace>
 
-`create` writes four files. `check` scans the folder and the current environment for anything that
-looks like a database credential and prints only file paths and variable names, never values.
+`create` writes four files, including the PreToolUse hook entry. `check` scans the folder and the
+current environment for anything that looks like a database credential and prints only file paths
+and variable names, never values.
 `verify` drives `claude -p` to confirm the guardrails; it needs a Claude login and a trusted folder.
 """
 
@@ -29,6 +30,10 @@ DEFAULT_WORKSPACE = REPO.parent / "blastproof-demo"
 DEFAULT_BASE_URL = "http://localhost:8000"
 KEY_VAR = "BLASTPROOF_AGENT_KEY"
 KEY_PATTERN = re.compile(r"bp_[A-Za-z0-9_-]{43}")
+# Two attempts of HOOK_HTTP_TIMEOUT seconds, one second between them, plus Python's start-up.
+HOOK_HTTP_TIMEOUT = 3
+HOOK_TIMEOUT = 10
+HOOK_MATCHER = "Bash|PowerShell|Monitor|Edit|Write|NotebookEdit|Read|Grep|Glob"
 
 # What must not appear in the workspace or its environment (DW-B07).
 SCAN_PATTERNS = (
@@ -90,7 +95,27 @@ def deny_rules(repo: Path) -> list[str]:
     ]
 
 
-def build_files(repo: Path, base_url: str, key: str) -> dict[str, str]:
+def hook_entry(repo: Path, base_url: str, python: str) -> dict:
+    """The PreToolUse entry (D-116). Exec form has no shell: no quoting."""
+    return {
+        "matcher": HOOK_MATCHER,
+        "hooks": [
+            {
+                "type": "command",
+                "command": python,
+                "args": [
+                    str(repo / "claude_hook" / "pre_tool_use.py"),
+                    "--url",
+                    base_url.rstrip("/"),
+                ],
+                "timeout": HOOK_TIMEOUT,
+                "onFailure": "block",  # a crash or timeout must not let the call through
+            }
+        ],
+    }
+
+
+def build_files(repo: Path, base_url: str, key: str, python: str | None = None) -> dict[str, str]:
     settings = {
         "permissions": {
             "deny": deny_rules(repo),
@@ -98,6 +123,7 @@ def build_files(repo: Path, base_url: str, key: str) -> dict[str, str]:
         },
         # No claude.ai connector (for example a Neon or Postgres one) reaches the agent (D-121).
         "disableClaudeAiConnectors": True,
+        "hooks": {"PreToolUse": [hook_entry(repo, base_url, python or sys.executable)]},
     }
     local = {"env": {KEY_VAR: key}, "enabledMcpjsonServers": ["blastproof"]}
     mcp = {
@@ -121,7 +147,9 @@ class CreateError(Exception):
     pass
 
 
-def create(ws: Path, repo: Path, base_url: str, key: str, force: bool) -> None:
+def create(
+    ws: Path, repo: Path, base_url: str, key: str, force: bool, python: str | None = None
+) -> None:
     ws, repo = ws.resolve(), repo.resolve()
     if ws == repo or repo in ws.parents:
         raise CreateError("the workspace must be outside the repo")
@@ -129,7 +157,7 @@ def create(ws: Path, repo: Path, base_url: str, key: str, force: bool) -> None:
         raise CreateError("the workspace would contain the repo; pick a sibling folder")
     if ws.exists() and any(ws.iterdir()) and not force:
         raise CreateError("the workspace folder is not empty; use --force to rewrite our files")
-    for name, text in build_files(repo, base_url, key).items():
+    for name, text in build_files(repo, base_url, key, python).items():
         target = ws / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8", newline="\n")
@@ -269,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     p_create.add_argument("workspace", type=Path, nargs="?", default=DEFAULT_WORKSPACE)
     p_create.add_argument("--force", action="store_true")
     p_create.add_argument("--key-stdin", action="store_true")
+    p_create.add_argument("--python", help="the Python the hook runs with (default: this one)")
     p_create.add_argument("--base-url", default=os.environ.get("PUBLIC_BASE_URL", DEFAULT_BASE_URL))
     for name in ("check", "verify"):
         p = sub.add_parser(name)
@@ -278,7 +307,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "create":
         try:
             key = _read_key() if args.key_stdin else ""
-            create(args.workspace, REPO, args.base_url, key, args.force)
+            create(args.workspace, REPO, args.base_url, key, args.force, args.python)
         except CreateError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

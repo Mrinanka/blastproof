@@ -13,7 +13,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
-from app.api import actions, auth, health, ready
+from app.api import actions, auth, health, hook, ready
 from app.config import SET_EXPLICITLY_IN_PRODUCTION, Settings, get_settings
 from app.core.clock import SystemClock
 from app.core.errors import (
@@ -237,6 +237,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(ready.router)
     app.include_router(auth.router)
     app.include_router(actions.router)
+    app.include_router(hook.router)
     return app
 
 

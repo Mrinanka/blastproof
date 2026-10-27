@@ -1659,3 +1659,19 @@ existing setting.
 **Decision:** Unticked TEST-10 (reject-dialog validation is F7 and not built), CONV-13 (its check, OPS-05, does not exist until step 20), SEC-16 (no test shows that no route returns before-images), MVP-B07 and MVP-B08 (MVP rows are checked in the final audit on the deployed version). Ticked GATE-03 after a live local run (MCP, real preview, the approve route `/docs` calls, real commit) and a new automated end-to-end test, `test_commit_replit.py::test_gate_1_...`. Not fixed, judged minor: `claim_decision` accepts `expires_at IS NULL` (the workflow always sets it); the BFF's dot-segment check (encoded `..%2F` reached only 404s); CONV-08's DW-F07 half and BE-85's "before serving" wording (as built, D-187).
 **Why:** A tick means its stated verification passed (REQUIREMENTS.md header); the gate had only been shown in pieces, each with fakes.
 **Rejected:** keeping the ticks with a note (a tick would then not mean its check passed); writing the SEC-16 test and fixing the NULL-deadline claim now (minor, judged by the owner as not needed for the gate).
+
+## D-235 · 2026-10-27 · Step 18 hook rules go a little beyond the plan's list
+**Decision:** `hook_rules.py` also denies `pg_dumpall` and `pg_restore`; any `claude` run with `--bare`, `--settings` or `--setting-sources` and any command naming `disableAllHooks` (`hook_bypass`: the docs say `--bare` skips hooks); Read of `.claude/settings*.json`; `-f`, `--force-with-lease`, `--force-if-includes` and `+refspec` as force pushes. `rm -rf` is denied unless every target is strictly inside the workspace (the workspace folder itself is denied). Credential and settings names are matched on the whole command text, not per token, so quoting and `<` redirects do not hide them.
+**Why:** each is a cheap, obvious way round the listed rules. **Rejected:** a token-only credential match (misses `cat<.env`); allowing `rm -rf .` in the workspace root.
+
+## D-236 · 2026-10-27 · Offline read deny-list covers the whole repo; fail-closed edges
+**Decision:** With Blastproof unreachable, Read, Grep and Glob are denied for credential and settings names and for any path inside this repository (BE-103 says "the backend directory"; D-117 already widened the workspace deny to the repo because `docker-compose.yml` holds local passwords). Any answer other than 200 allow/deny or 401 (other 4xx, 5xx, bad body, unknown decision) is "unreachable"; 401 or a missing key denies every tool; unparseable or over-100,000-character commands are denied; an unknown tool fails closed offline. The script drops `content`, `old_string`, `new_string` and `new_source` before posting. HTTP timeout 3 s, two attempts, hook `timeout` 10 s.
+**Why:** a failed check must never let a write or edit through; file bodies are big and no rule reads them. **Rejected:** `backend/` only.
+
+## D-237 · 2026-10-27 · Hook route returns a plain 5xx when the database is down
+**Decision:** No special 503 for `POST /v1/hook/pre-tool-use`; like `/v1/auth/me` and `/v1/actions` it answers an unhandled 5xx. The plan said 503.
+**Why:** the script treats every 5xx as unreachable and fails closed, so the code adds nothing; a hook-only handler would differ from every other route. **Rejected:** a global database-error handler (outside this step).
+
+## D-238 · 2026-10-27 · Step 18 test notes
+**Decision:** `test_generated_files_shape` now expects the `hooks` key (the only change to it). `pre_tool_use.py` has a `--retry-pause` argument (default 1 s) so tests need not wait. The end-to-end test starts uvicorn with `log_config=None` and no `log_level`, because a level of `warning` changed the shared `uvicorn.error` logger and broke `test_logging.py` later in the same run. Stale bytecode from a same-length mutation (`block` to `allow`) failed a test once; clear `claude_hook/__pycache__` after mutation checks.
+**Why:** keep the fast tier fast and the suite order-independent.

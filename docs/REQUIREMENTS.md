@@ -83,7 +83,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | TEST-11 | No snapshot tests and no mocking of the whole backend in the frontend. | FE §12 | F steps | *code review* |
 | [x] | TEST-12 | One contract test suite runs against every `VectorStore` implementation. | BE B11 | B11 | pytest |
 | [ ] | TEST-13 | A manual weekly end-to-end run of the demo in Claude Code against real Neon, reviewed in the dashboard. | BE §14; FE §12 | from B17 / F7 | Manual |
-| [ ] | TEST-14 | The Claude Code hook has integration tests (hook format changes across versions). | SPEC §19 | B18 | DW-B18 |
+| [x] | TEST-14 | The Claude Code hook has integration tests (hook format changes across versions). | SPEC §19 | B18 | DW-B18 |
 
 ## BE: backend functional requirements
 
@@ -201,14 +201,14 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-98 | `query_database` runs reads directly; for writes it creates an action (with `retry_of` if given), starts the workflow, waits up to `REVIEW_WAIT_SECONDS` (20), and replies with the matching template. | BE §6, B17; D-012 | B17 | DW-B17 |
 | [x] | BE-99 | `get_action_status` long-polls up to `wait_seconds` (max `STATUS_MAX_WAIT_SECONDS`, 50); after `AGENT_POLL_BUDGET_MINUTES` (10) of waiting it returns `still_waiting`. | BE §6; D-012, D-020 | B17 | DW-B17; *test for budget* |
 | [x] | BE-100 | `agent_messages.py` has one template per outcome: committed, blocked, pending, in_progress (D-208), still_waiting, rejected, drifted, expired, busy, ai_unavailable, failed, not_found, plus the `truncated` notice for reads, with the wording in BE §6. | BE §6; D-039, D-055 | B6 (truncated), B17 | TEST-08 |
-| [ ] | BE-101 | `claude_hook/pre_tool_use.py` reads the tool call JSON from stdin and posts it to `/v1/hook/pre-tool-use` with `BLASTPROOF_AGENT_KEY`, using an HTTP timeout shorter than the hook timeout. | BE B18 | B18 | DW-B18 |
-| [ ] | BE-102 | On deny the script prints the reason to stderr and exits 2; on allow it prints nothing and exits 0, never emitting a JSON allow. | BE B18 | B18 | DW-B18 |
-| [ ] | BE-103 | If Blastproof is unreachable, times out, returns 5xx or unparseable output, the script retries once after 1 s; then Bash/PowerShell/Monitor/Edit/Write/NotebookEdit exit 2, and Read/Grep/Glob use a local deny-list (`.env*`, credential and key files, the backend directory, `.claude/settings*.json`) and are otherwise allowed. | BE B18; D-026 | B18 | DW-B18 (backend stopped) |
-| [ ] | BE-104 | The hook is registered under `PreToolUse` in `.claude/settings.json` with a matcher covering at least Bash, PowerShell, Monitor, Edit, Write, NotebookEdit, Read, Grep, Glob, and `onFailure: block` with a short timeout; `claude_hook/` ships an example settings file. | BE §4, B18 | B18 | DW-B18 |
-| [ ] | BE-105 | `hook_rules.py` denies `psql` and `pg_dump`, reading `.env` or credential files (by Read, Grep, Glob or Bash), `terraform apply`/`destroy`, `git push --force`, `rm -rf` outside the workspace, and edits to `.env` and `.claude/settings*.json`; everything else is allowed. | BE B18, §12 | B18 | DW-B18 |
-| [ ] | BE-106 | Hook rules split commands with `shlex` and normalise paths (`..`, `~`, drive letters, case on Windows) before matching. | BE B18 | B18 | *unit tests* |
-| [ ] | BE-107 | Every hook call writes a `hook_events` row with a masked summary; hook calls never create `actions`. | BE §5, B18; D-014 | B18 | *integration test* |
-| [ ] | BE-127 | The hook endpoint checks `BLASTPROOF_AGENT_KEY` with `get_current_agent` (wrong or deactivated key → 401, which the script treats as a deny for every tool) and stores the calling agent and its owner on each `hook_events` row. | BE B18, §14; D-031 | B18 | TEST-03 (hook key cases); *integration test* |
+| [x] | BE-101 | `claude_hook/pre_tool_use.py` reads the tool call JSON from stdin and posts it to `/v1/hook/pre-tool-use` with `BLASTPROOF_AGENT_KEY`, using an HTTP timeout shorter than the hook timeout. | BE B18 | B18 | DW-B18 |
+| [x] | BE-102 | On deny the script prints the reason to stderr and exits 2; on allow it prints nothing and exits 0, never emitting a JSON allow. | BE B18 | B18 | DW-B18 |
+| [x] | BE-103 | If Blastproof is unreachable, times out, returns 5xx or unparseable output, the script retries once after 1 s; then Bash/PowerShell/Monitor/Edit/Write/NotebookEdit exit 2, and Read/Grep/Glob use a local deny-list (`.env*`, credential and key files, the backend directory, `.claude/settings*.json`) and are otherwise allowed. | BE B18; D-026 | B18 | DW-B18 (backend stopped) |
+| [x] | BE-104 | The hook is registered under `PreToolUse` in `.claude/settings.json` with a matcher covering at least Bash, PowerShell, Monitor, Edit, Write, NotebookEdit, Read, Grep, Glob, and `onFailure: block` with a short timeout; `claude_hook/` ships an example settings file. | BE §4, B18 | B18 | DW-B18 |
+| [x] | BE-105 | `hook_rules.py` denies `psql` and `pg_dump`, reading `.env` or credential files (by Read, Grep, Glob or Bash), `terraform apply`/`destroy`, `git push --force`, `rm -rf` outside the workspace, and edits to `.env` and `.claude/settings*.json`; everything else is allowed. | BE B18, §12 | B18 | DW-B18 |
+| [x] | BE-106 | Hook rules split commands with `shlex` and normalise paths (`..`, `~`, drive letters, case on Windows) before matching. | BE B18 | B18 | *unit tests* |
+| [x] | BE-107 | Every hook call writes a `hook_events` row with a masked summary; hook calls never create `actions`. | BE §5, B18; D-014 | B18 | *integration test* |
+| [x] | BE-127 | The hook endpoint checks `BLASTPROOF_AGENT_KEY` with `get_current_agent` (wrong or deactivated key → 401, which the script treats as a deny for every tool) and stores the calling agent and its owner on each `hook_events` row. | BE B18, §14; D-031 | B18 | TEST-03 (hook key cases); *integration test* |
 | [ ] | BE-108 | Auth routes: `POST /v1/auth/login` (anyone) and `GET /v1/auth/me` (ID, name, email, role). | BE §6, B5, B19 | B5, B19 (pulled forward) | TEST-03 |
 | [x] | BE-109 | `GET /v1/actions` returns the caller's actions (admin: all) as `ActionSummary` items with filters status, agent_id, table, from, to and limit/offset paging. | BE §6, B19 | B19 (pulled forward) | TEST-03 |
 | [x] | BE-110 | `GET /v1/actions/{id}` returns the `ActionDetail` shape in BE §6, including `can_decide`; raw `sql` is never returned. | BE §6, B19 | B19 (pulled forward) | TEST-03; OPS-05 |
@@ -250,7 +250,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-15 | LangSmith client-side masking (input/output hiding or anonymizer hooks) is a second layer behind prompt masking. | BE §12 | Security | *trace inspection* |
 | [ ] | SEC-16 | `before_images` are unmasked but never leave the backend and are deleted after `RETENTION_DAYS`. | BE §12 | B15, B16 | DW-B15; *authz test that no route returns them* |
 | [x] | SEC-17 | `FAKE_NEON_ADMIN_URL` is refused at startup when `APP_ENV=production`. | BE §11 | B10 | *unit test* |
-| [ ] | SEC-18 | The demo workspace gets only `BLASTPROOF_AGENT_KEY`. | BE §11, B7 | B7, B18 | DW-B07 |
+| [x] | SEC-18 | The demo workspace gets only `BLASTPROOF_AGENT_KEY`. | BE §11, B7 | B7, B18 | DW-B07 |
 | [ ] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
 | [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
@@ -265,7 +265,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
 | [x] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
 | [ ] | SEC-32 | Hiding controls by role in the UI is convenience only; every role check is enforced by the backend. | FE §11; CL | F4, B19 | TEST-03; MVP-F06 |
-| [ ] | SEC-33 | A deactivated agent's key is rejected with 401 on `/mcp` and on the hook endpoint. | BE B5; D-030 | B5 | DW-B05 |
+| [x] | SEC-33 | A deactivated agent's key is rejected with 401 on `/mcp` and on the hook endpoint. | BE B5; D-030 | B5 | DW-B05 |
 | [x] | SEC-34 | `get_action_status` and `retry_of` look up action IDs through `visible_actions` for the agent's owner with admin widening off (filter is the owner's `user_id` even when the owner is an admin); an unknown or foreign ID gets the `not_found` message. | CL; BE B17; D-055 | B17 | *integration test with another owner's action ID* |
 
 ## FE: dashboard functional requirements
@@ -394,7 +394,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B15 | Tests prove two simultaneous approvals give one commit and one 409, an expired review cannot be approved, an approved-but-never-resumed action is resumed at startup, and an action left in `previewing` is failed at startup. | BE B15 | B15 | Integration tests |
 | [x] | DW-B16 | Approved write commits with matching counts; drift path triggered by a changed row, by a new matching row and by a nulled child FK; committing twice applies once; a kill after company commit is marked committed with before-images on restart; a kill before it is re-run and committed once; a dropped COMMIT connection is resolved by the reconciler; a restart while awaiting review then approval still commits. | BE B16 | B16 | Integration tests |
 | [x] | DW-B17 | In Claude Code, "clean up inactive users" returns pending; after rejecting it in `/docs`, the agent's next `get_action_status` returns the reason within seconds, and its rewritten query carries `retry_of`; tests cover the rate limit and the concurrency test passes. | BE B17 | B17 | Manual in Claude Code + integration tests |
-| [ ] | DW-B18 | Claude trying `psql`, reading the backend's `.env` or editing its settings file is blocked with a clear reason; with the backend stopped, Bash and edits are denied, reading a normal source file works, and reading `.env` is still denied. | BE B18 | B18 | Manual in Claude Code + tests |
+| [x] | DW-B18 | Claude trying `psql`, reading the backend's `.env` or editing its settings file is blocked with a clear reason; with the backend stopped, Bash and edits are denied, reading a normal source file works, and reading `.env` is still denied. | BE B18 | B18 | Manual in Claude Code + tests |
 | [ ] | DW-B19 | An action can be reviewed and approved using only `/docs`, and the authorization matrix test passes. | BE B19 | B19 | Manual + TEST-03 |
 | [ ] | DW-B20 | A fresh clone plus the README steps gives a working demo. | BE B20 | B20 | Manual |
 
