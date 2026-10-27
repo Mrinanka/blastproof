@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189); next: step 16 (commit). The approve/reject routes (a pull-forward, D-053) are the first consumer of `WorkflowRunner.resume`. Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
+The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); next: `seed-demo-actions`, then step 16 (commit). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
 Step 10 (Neon client and shadow executor) is done on `feat/step-9`, including the manual Neon run (D-142, D-143). Next: step 11 (Knowledge and RAG). The Neon branching spike is done (D-133, D-134). Step 9 (policy rules) is done on `feat/step-9`
 (decisions D-128 to D-132). Step 8 (classifier) is committed on `feat/step-8`. Step 7 (remove direct access) is merged
@@ -47,6 +47,13 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Not tested: a migration holding a snapshot before `setup()`, pgbouncer or Neon's pooled endpoint, `LANGGRAPH_AES_KEY`, `interrupt()` inside try/except.
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
+
+### Approve and reject routes (Stage 3 pull-forward), done 2026-10-27, D-192 to D-194
+- New: `POST /v1/actions/{id}/approve` and `/reject` in `app/api/actions.py` (with `get_runner`), `app/services/decisions.py`, `RejectRequest` and `DecisionResponse` in `app/schemas/actions.py`. Changed: `StatusView` gained `decided_at` (`app/db/actions.py`). No migration, setting or dependency.
+- Tests: `test_decisions_units.py` (25, no Docker), `test_decisions_api.py` (20, on the real graph: done-when for approve and reject, two approves at once, approve against reject, other user, admin, 401s, expired, not in review, 503s, bad bodies, no reason in logs, OpenAPI), 8 new matrix rows in `test_authorization_matrix.py` (the matrix now uses its own client with a recovered runner; the existing rows are unchanged), two models added to the no-sql/email check in `test_actions_api.py`.
+- Mutation checks: removing each of 8 guards turned a test red (runner `None` check, the 503 mapping, the strip, the minimum length, the 404 body, the 409 naming the decider, `is_admin` passed to `Decider`, the reason kept out of logs).
+- Not done by hand: no paused write can be created locally until `seed-demo-actions`, so the `/docs` walk-through (DW-B19, first half) runs right after it. The automated done-when stands in.
+- Requirements ticked: BE-111, CONV-08. Left open: CONV-07 (503 and 409 done; 403 and 429 elsewhere), TEST-03 (matrix grows with step 19), BE-16, DW-B17, GATE-03, DW-B19.
 
 ### Step 15, done 2026-10-27, D-187 to D-189
 - New: `app/workflow/runner.py` (`WorkflowRunner`: `start`, `wait_for_decision`, `resume`, `recover`, `sweep`, `maintain`, `drain`; `WorkflowUnavailableError`, `ActionNotFoundError`, `AlreadyDecidedError`, `Decider`, `StatusView`), `app/db/retention.py`. Changed: `app/db/actions.py` (`status_view`, `claim_decision`, `expire_if_overdue`, `overdue_reviews`, `stuck_actions`), `main.py` (`app.state.runner`, maintenance task outside `APP_ENV=test`, drain before the pool closes), `api/ready.py` (`checkpointer` and `workflow` probes when a checkpointer pool exists), `tests/workflow_helpers.py`, `tests/conftest.py` (`fresh_wf_env`). No migration, no new dependency, no new `.env` name.
@@ -408,6 +415,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- Approve/reject: approving an action with no graph thread returns 200 `approved`, then it becomes `failed: resume_mismatch` (D-194). Approving on a dev server runs `StubCommitter` (`stub: true`, company data unchanged). When step 16 or 17 next touches graph calls, re-check the `ainvoke` `version=` argument against the current LangGraph interrupts page (it now shows `v3` for `stream_events`).
 - Step 15: the runner is not wired to anything yet: no route calls `resume` (the approve/reject pull-forward does) and nothing calls `start` (step 17). Step 17 must check `runner.accepting` before creating a `received` row, or the stuck rule fails it after 5 minutes. An `approved` action stuck while the process stays up is not swept (recovery and step 16 own it). Deploy: run uvicorn with `--timeout-graceful-shutdown 10`, because uvicorn waits for open connections before the lifespan shutdown, so a 50 s long poll plus our 45 s drain would pass `kill_timeout = 60`. A reviewer's decision is claimed on the action's `expires_at`, which `request_review` sets from the clock at that moment.
 - Step 15: log-capture tests: a module logger first used after `configure_logging` is cached with that configuration, so `capture_logs` can miss it depending on test order. New tests that check log lines should use `caplog` or forget the cached binding as `test_workflow_fail_closed.py` does.
 - Step 14: the commit is a stub (`StubCommitter` applies nothing; its `committed` event has `stub: true`). Step 17 must not ship before step 16 replaces it.
@@ -618,7 +626,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Spike: LangGraph interrupt and resume
 - [x] 14. LangGraph workflow
 - [x] 15. Workflow runner
-- [ ] Pull forward: POST /v1/actions/{id}/approve and /reject (D-053)
+- [x] Pull forward: POST /v1/actions/{id}/approve and /reject (D-053)
 - [ ] Pull forward: seed-demo-actions
 - [ ] 16. Commit
 - [ ] 17. Wire up query_database

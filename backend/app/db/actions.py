@@ -149,6 +149,7 @@ class StatusView:
     decided_by_name: str | None
     created_at: datetime
     expires_at: datetime | None
+    decided_at: datetime | None
 
 
 async def status_view(
@@ -168,6 +169,7 @@ async def status_view(
             decider.display_name.label("decided_by_name"),
             Action.created_at,
             Action.expires_at,
+            Action.decided_at,
         )
         .outerjoin(decider, Action.decided_by == decider.id)
         .where(Action.id == action_id)

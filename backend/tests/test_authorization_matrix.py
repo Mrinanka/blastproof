@@ -4,15 +4,18 @@ Step 19 adds a row for each route it builds. The guard at the bottom fails when 
 """
 
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.core.clock import SystemClock
 from app.main import create_app
+from app.workflow.runner import WorkflowRunner
 from tests.action_helpers import insert_action, make_system, token_for
-from tests.conftest import AuthDb, TestUser
+from tests.conftest import AuthDb, TestUser, build_auth_test_app, with_client_ip
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("blastproof_db_reachable")]
 
@@ -29,6 +32,25 @@ MATRIX: dict[tuple[str, str], dict[str, int]] = {
         "other": 404,
         "admin": 200,
     },
+    # The matrix's action is an `executed` read, so the claim always loses and no graph is touched
+    # (200 is covered on the real graph in test_decisions_api.py).
+    ("POST", "/v1/actions/{action_id}/approve"): {
+        "anonymous": 401,
+        "owner": 409,
+        "other": 404,
+        "admin": 409,
+    },
+    ("POST", "/v1/actions/{action_id}/reject"): {
+        "anonymous": 401,
+        "owner": 409,
+        "other": 404,
+        "admin": 409,
+    },
+}
+
+# A request body for the rows that need a valid one to reach their authorization check.
+BODIES: dict[tuple[str, str], dict[str, str]] = {
+    ("POST", "/v1/actions/{action_id}/reject"): {"reason": "Not this table, ask first."},
 }
 
 
@@ -51,13 +73,32 @@ def actors(auth_db: AuthDb) -> Actors:
     return Actors(owner, other, admin, action)
 
 
+@pytest.fixture
+def matrix_client(auth_settings: Settings) -> Iterator[TestClient]:
+    """The test app with a recovered runner, which the decision routes need. Its graph is never
+    used: every matrix action is already settled, so no decision is claimed."""
+    app = build_auth_test_app(auth_settings)
+    with TestClient(with_client_ip(app)) as client:
+        runner = WorkflowRunner(
+            None,  # type: ignore[arg-type]
+            app.state.sessionmaker,
+            SystemClock(),
+            auth_settings,
+        )
+        runner.mark_recovered()
+        app.state.runner = runner
+        yield client
+
+
 @pytest.mark.parametrize(("method", "template"), list(MATRIX))
 @pytest.mark.parametrize("role", ROLES)
 def test_every_route_for_every_role(
-    auth_client: TestClient, actors: Actors, method: str, template: str, role: str
+    matrix_client: TestClient, actors: Actors, method: str, template: str, role: str
 ) -> None:
     path = template.replace("{action_id}", str(actors.action))
-    response = auth_client.request(method, path, headers=actors.headers(role))
+    response = matrix_client.request(
+        method, path, headers=actors.headers(role), json=BODIES.get((method, template))
+    )
     assert response.status_code == MATRIX[(method, template)][role], (method, path, role)
 
 

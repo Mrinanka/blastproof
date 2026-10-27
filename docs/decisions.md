@@ -1477,3 +1477,17 @@ existing setting.
 **Decision:** Locally, run `uv run pytest` (unit), `uv run pytest --integration --skip-slow` (3 min 40 s) and, when a change touches a seed-heavy area, that one slow file by name. `uv run pytest --integration` without `--skip-slow` (all 2,173 tests, about 9 minutes) is run only by CI. A step is done when the fast tiers pass locally and CI is green on the PR.
 **Why:** the owner's instruction: the full run cost hours of waiting across step 15 (four full runs) and CI already runs every test before merge. Rejected: keeping "one full local run before calling a step done" (the rule I had added in D-190's notes).
 
+## D-192 · 2026-10-27 · Approve takes no body; reject's reason is stripped, 10 to 500 characters, stored as written
+**Decision:** `POST /v1/actions/{id}/approve` has no body. `POST .../reject` takes `{"reason"}` (extra fields refused): whitespace is stripped first, then it must be 10 to 500 characters. The reason is stored as `reviewer_note` and returned as written (not masked), and is never logged.
+**Why:** the plan gives only the minimum; 500 keeps the message the agent reads short. Masking would change what the agent reads, and it is the reviewer's own text.
+**Rejected:** masking the reason (it would change what the agent reads) and a note on approve (the plan shows none).
+
+## D-193 · 2026-10-27 · One 409 code with three messages; 503 is checked before visibility
+**Decision:** every lost decision is 409 `already_decided`. The message is "Already {approved|rejected} by {display_name}." when someone decided (a later status such as `committed` still reads "approved"), "Nobody decided within the review window; the action expired." for `expired`, and "This action is not waiting for review." for anything else. A missing, recovering or draining runner is 503 `unavailable` (`Retry-After: 10` when recovering or draining) for every caller and every ID. A malformed ID is a 404 before the body is checked.
+**Why:** CONV-07 names one 409. Answering 503 before visibility means a restart leaks nothing about which IDs exist.
+**Rejected:** a separate 409 code per case (CONV-07 names one) and checking visibility before runner availability (it would leak which IDs exist during a restart).
+
+## D-194 · 2026-10-27 · The decision response is built from the claim
+**Decision:** `StatusView` gained `decided_at`; `DecisionResponse` (`id`, `status`, `decided_by`, `decided_at`, `reviewer_note`) is built from the view the claim returns, with no second query. The dashboard refreshes the action afterwards (frontend plan F7). Known limit: approving an action whose graph thread is gone returns 200 `approved` and the action then becomes `failed: resume_mismatch` (D-189); the claim is the decision.
+**Why:** the response then shows exactly the stored time and note, and the route stays thin.
+**Rejected:** returning the runner clock's `now` beside the view, and re-reading the action with `build_detail` (a second query for no gain).
