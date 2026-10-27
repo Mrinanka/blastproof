@@ -10,10 +10,12 @@ import asyncio
 import ipaddress
 import math
 import re
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import NewAgentKey, generate_agent_key, hash_password, verify_password
@@ -53,6 +55,10 @@ class TooManyAttemptsError(Exception):
 
 class AccountError(ValueError):
     """A create-user or create-agent input problem; the message is safe to show."""
+
+
+class DuplicateEmailError(AccountError):
+    """The email is taken (also under a race, when the unique index refuses the insert)."""
 
 
 def normalise_email(email: str) -> str:
@@ -135,17 +141,21 @@ async def create_user(
         raise AccountError(
             f"The password must be {MIN_PASSWORD_LENGTH} to {MAX_PASSWORD_LENGTH} characters."
         )
-    async with session.begin():
-        if await users_db.get_user_by_email(session, email) is not None:
-            raise AccountError("A user with that email already exists.")
-        password_hash = await asyncio.to_thread(hash_password, password)
-        user = await users_db.insert_user(
-            session,
-            email=email,
-            display_name=display_name,
-            password_hash=password_hash,
-            role=role.value,
-        )
+    try:
+        async with session.begin():
+            if await users_db.get_user_by_email(session, email) is not None:
+                raise DuplicateEmailError("A user with that email already exists.")
+            password_hash = await asyncio.to_thread(hash_password, password)
+            user = await users_db.insert_user(
+                session,
+                email=email,
+                display_name=display_name,
+                password_hash=password_hash,
+                role=role.value,
+            )
+    except IntegrityError:
+        # Two creates at once: both passed the check above and the unique index refused one.
+        raise DuplicateEmailError("A user with that email already exists.") from None
     logger.info("user_created", user_id=str(user.id), role=role.value)
     return user
 
@@ -156,19 +166,35 @@ class CreatedAgent:
     key: NewAgentKey  # the full key is in here; show it once and drop it
 
 
+async def _insert_agent(session: AsyncSession, owner: User, name: str) -> CreatedAgent:
+    key = generate_agent_key()
+    agent = await agents_db.insert_agent(
+        session,
+        owner_id=owner.id,
+        name=name,
+        key_hash=key.key_hash,
+        key_prefix=key.key_prefix,
+    )
+    logger.info("agent_created", agent_id=str(agent.id), user_id=str(owner.id))
+    return CreatedAgent(agent=agent, key=key)
+
+
 async def create_agent(session: AsyncSession, *, owner_email: str, name: str) -> CreatedAgent:
     name = _check_name(name, "The agent name")
     async with session.begin():
         owner = await users_db.get_user_by_email(session, normalise_email(owner_email))
         if owner is None or not owner.is_active:
             raise AccountError("No active user has that email.")
-        key = generate_agent_key()
-        agent = await agents_db.insert_agent(
-            session,
-            owner_id=owner.id,
-            name=name,
-            key_hash=key.key_hash,
-            key_prefix=key.key_prefix,
-        )
-    logger.info("agent_created", agent_id=str(agent.id), user_id=str(owner.id))
-    return CreatedAgent(agent=agent, key=key)
+        return await _insert_agent(session, owner, name)
+
+
+async def create_agent_for_owner(
+    session: AsyncSession, *, owner_id: uuid.UUID, name: str
+) -> CreatedAgent:
+    """The dashboard's path: the owner is the signed-in user, found by ID."""
+    name = _check_name(name, "The agent name")
+    async with session.begin():
+        owner = await users_db.get_user(session, owner_id)
+        if owner is None or not owner.is_active:
+            raise AccountError("No active user was found.")
+        return await _insert_agent(session, owner, name)

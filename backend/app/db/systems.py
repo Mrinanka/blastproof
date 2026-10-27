@@ -1,6 +1,8 @@
 """Queries on `systems`: the company databases Blastproof protects."""
 
-from sqlalchemy import select
+import uuid
+
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,3 +33,17 @@ async def get_or_create_system(
         .on_conflict_do_nothing(index_elements=[System.name])
     )
     return (await session.execute(select(System).where(System.name == name))).scalar_one()
+
+
+async def list_systems(
+    session: AsyncSession, *, limit: int, offset: int
+) -> tuple[list[System], int]:
+    total = (await session.execute(select(func.count()).select_from(System))).scalar_one()
+    rows = (
+        await session.execute(select(System).order_by(System.name).limit(limit).offset(offset))
+    ).scalars()
+    return list(rows), total
+
+
+async def get_system(session: AsyncSession, system_id: uuid.UUID) -> System | None:
+    return await session.get(System, system_id)

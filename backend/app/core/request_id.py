@@ -55,6 +55,13 @@ def parse_request_id(raw: bytes | None) -> str | None:
         return None
 
 
+def _logged_path(scope: Scope) -> str:
+    """The route's pattern (`/v1/knowledge/{source}`), not the URL: a path parameter can be a file
+    name. A request that matched no route is logged as sent."""
+    pattern = getattr(scope.get("route"), "path", None)
+    return pattern if isinstance(pattern, str) else scope["path"]
+
+
 class RequestIdMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -97,7 +104,7 @@ class RequestIdMiddleware:
             logger.info(
                 "request_finished",
                 method=scope["method"],
-                path=scope["path"],
+                path=_logged_path(scope),
                 status=status,
                 duration_ms=round((time.perf_counter() - start) * 1000, 1),
             )

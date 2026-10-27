@@ -2,7 +2,8 @@
 
 Routes and dependencies raise ApiError; the handler turns it into the response. Invalid input
 (422) uses the same shape and never repeats what was sent, which may be a password (brought
-forward from step 19, D-094). FastAPI's own 404 still uses {"detail": ...} until step 19.
+forward from step 19, D-094). Starlette's own errors (an unknown path is 404, a wrong method is
+405) use it too.
 """
 
 from collections.abc import Callable, Mapping
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Enough to fix a form; a request with hundreds of errors must not produce a huge message.
 _MAX_VALIDATION_ERRORS = 5
@@ -48,6 +50,26 @@ async def api_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
     return JSONResponse(
         {"error": {"code": exc.code, "message": exc.message}},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
+
+
+_HTTP_ERRORS = {
+    404: ("not_found", "No such route."),
+    405: ("method_not_allowed", "That method is not allowed on this route."),
+}
+
+
+async def http_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """Starlette's own errors (no such route, wrong method) in the envelope.
+
+    The `detail` text is not repeated. Headers such as `Allow` on a 405 are kept.
+    """
+    assert isinstance(exc, StarletteHTTPException)
+    code, message = _HTTP_ERRORS.get(exc.status_code, ("http_error", "The request failed."))
+    return JSONResponse(
+        {"error": {"code": code, "message": message}},
         status_code=exc.status_code,
         headers=exc.headers,
     )

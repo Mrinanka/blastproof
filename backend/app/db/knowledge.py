@@ -7,9 +7,10 @@ here whichever vector store is used (ARCH-20).
 import uuid
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Action, KnowledgeChunk
@@ -101,3 +102,47 @@ async def save_knowledge_used(
         .where(Action.id == action_id)
         .values(knowledge_used=[asdict(ref) for ref in refs])
     )
+
+
+@dataclass(frozen=True)
+class SourceRow:
+    source: str
+    chunks: int
+    table_names: tuple[str, ...]
+    updated_at: datetime
+
+
+async def list_sources(
+    session: AsyncSession, *, limit: int, offset: int
+) -> tuple[list[SourceRow], int]:
+    """One row per source, by name: its chunk count, the tables its chunks are about and the
+    newest chunk's time. Also the number of sources before paging."""
+    total = (
+        await session.execute(select(func.count(func.distinct(KnowledgeChunk.source))))
+    ).scalar_one()
+    page = (
+        await session.execute(
+            select(
+                KnowledgeChunk.source,
+                func.count(),
+                func.max(KnowledgeChunk.created_at),
+            )
+            .group_by(KnowledgeChunk.source)
+            .order_by(KnowledgeChunk.source)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    tables: dict[str, set[str]] = {row[0]: set() for row in page}
+    if tables:
+        tagged = await session.execute(
+            select(KnowledgeChunk.source, KnowledgeChunk.table_names).where(
+                KnowledgeChunk.source.in_(list(tables))
+            )
+        )
+        for source, names in tagged:
+            tables[source].update(names)
+    return [
+        SourceRow(source, count, tuple(sorted(tables[source])), updated)
+        for source, count, updated in page
+    ], total

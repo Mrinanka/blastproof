@@ -62,3 +62,14 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
         raise ApiError(503, "unavailable", "Blastproof's database is not configured.")
     async with sessionmaker() as session:
         yield session
+
+
+async def get_write_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """A second session for routes that write after `get_current_user` has read.
+
+    The sign-in check already began a transaction on the request's own session (`get_session`), and
+    a service that opens its own with `session.begin()` would fail on that one. FastAPI caches a
+    dependency per function, so this one yields a session of its own.
+    """
+    async for session in get_session(request):
+        yield session

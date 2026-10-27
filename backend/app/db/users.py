@@ -25,3 +25,17 @@ async def insert_user(
     await session.flush()
     await session.refresh(user)
     return user
+
+
+async def list_users(session: AsyncSession, *, limit: int, offset: int) -> tuple[list[User], int]:
+    """Newest first, and the total before paging."""
+    total = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+    rows = (
+        await session.execute(
+            select(User)
+            .order_by(User.created_at.desc(), User.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars()
+    return list(rows), total

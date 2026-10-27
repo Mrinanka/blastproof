@@ -12,13 +12,27 @@ from functools import lru_cache
 import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import actions, auth, health, hook, ready
+from app.api import (
+    actions,
+    agents,
+    auth,
+    health,
+    hook,
+    knowledge,
+    policies,
+    ready,
+    stats,
+    systems,
+    users,
+)
 from app.config import SET_EXPLICITLY_IN_PRODUCTION, Settings, get_settings
 from app.core.clock import SystemClock
 from app.core.errors import (
     ApiError,
     api_error_handler,
+    http_exception_handler,
     use_error_envelope_in_openapi,
     validation_error_handler,
 )
@@ -232,12 +246,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     use_error_envelope_in_openapi(app)
     app.include_router(health.router)
     app.include_router(ready.router)
     app.include_router(auth.router)
     app.include_router(actions.router)
     app.include_router(hook.router)
+    app.include_router(stats.router)
+    app.include_router(policies.router)
+    app.include_router(knowledge.router)
+    app.include_router(systems.router)
+    app.include_router(agents.router)
+    app.include_router(users.router)
+    # No CORS middleware, on purpose (SEC-22): the dashboard's browser code only calls its own
+    # server, which forwards to this API. A browser on another origin gets no permission headers.
     return app
 
 

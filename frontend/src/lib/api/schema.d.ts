@@ -164,10 +164,256 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hook/pre-tool-use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pre Tool Use
+         * @description Claude Code's PreToolUse hook asks here before every shell, edit and read tool call.
+         */
+        post: operations["pre_tool_use_v1_hook_pre_tool_use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Stats
+         * @description Counts for the dashboard: all time, and today (UTC). Yours, or everyone's for an admin.
+         */
+        get: operations["get_stats_v1_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Policies
+         * @description The rules every write is checked against, in the order they are written in rules.yaml.
+         */
+        get: operations["list_policies_v1_policies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Knowledge
+         * @description The sources the AI reads when it explains a change, by name. Shared by everyone.
+         */
+        get: operations["list_knowledge_v1_knowledge_get"];
+        put?: never;
+        /**
+         * Upload Knowledge
+         * @description Add a .md or .txt document (admins only). The same name again replaces it.
+         */
+        post: operations["upload_knowledge_v1_knowledge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge/{source}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Knowledge
+         * @description Remove a source and its chunks (admins only).
+         */
+        delete: operations["delete_knowledge_v1_knowledge__source__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/systems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Systems
+         * @description The company databases Blastproof protects, by name.
+         */
+        get: operations["list_systems_v1_systems_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/systems/{system_id}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan System
+         * @description Re-read the tables of one system and rebuild the schema knowledge (admins only).
+         */
+        post: operations["scan_system_v1_systems__system_id__scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agents
+         * @description Your agents, newest first (admins see everyone's). Keys are never shown here.
+         */
+        get: operations["list_agents_v1_agents_get"];
+        put?: never;
+        /**
+         * Create Agent
+         * @description Make an agent that you own. The response holds its key: this is the only time it is shown.
+         */
+        post: operations["create_agent_v1_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agents/{agent_id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivate Agent
+         * @description Turn an agent's key off (its owner or an admin). Doing it twice is fine.
+         */
+        post: operations["deactivate_agent_v1_agents__agent_id__deactivate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Users
+         * @description Every user, newest first (admins only). The only list that shows email addresses.
+         */
+        get: operations["list_users_v1_users_get"];
+        put?: never;
+        /**
+         * Create User
+         * @description Add a user (admins only). The email must not be taken, ignoring case.
+         */
+        post: operations["create_user_v1_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountPage */
+        AccountPage: {
+            /** Items */
+            items: components["schemas"]["AccountView"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /**
+         * AccountView
+         * @description A user as an admin sees them. Emails appear only here and on /v1/auth/me (BE-118).
+         */
+        AccountView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Display Name */
+            display_name: string;
+            role: components["schemas"]["UserRole"];
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ActionDetail */
         ActionDetail: {
             /**
@@ -275,6 +521,48 @@ export interface components {
             created_at: string;
             decided_by: components["schemas"]["UserRef"] | null;
         };
+        /**
+         * AgentCreated
+         * @description Returned once, at creation: the only time the full key is shown.
+         */
+        AgentCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key Prefix */
+            key_prefix: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            owner: components["schemas"]["UserRef"];
+            /** Key */
+            key: string;
+            /** Mcp Url */
+            mcp_url: string;
+            /** Claude Mcp Add */
+            claude_mcp_add: string;
+            /** Agent Key Env */
+            agent_key_env: string;
+        };
+        /** AgentPage */
+        AgentPage: {
+            /** Items */
+            items: components["schemas"]["AgentView"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
         /** AgentRef */
         AgentRef: {
             /**
@@ -284,6 +572,26 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** AgentView */
+        AgentView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key Prefix */
+            key_prefix: string;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            owner: components["schemas"]["UserRef"];
         };
         /** AuditEventView */
         AuditEventView: {
@@ -309,6 +617,28 @@ export interface components {
             counts: {
                 [key: string]: number;
             };
+        };
+        /**
+         * ConnectionProfile
+         * @description Which credentials and NeonClient a system uses (D-027).
+         * @enum {string}
+         */
+        ConnectionProfile: "neon" | "local";
+        /** CreateAgentRequest */
+        CreateAgentRequest: {
+            /** Name */
+            name: string;
+        };
+        /** CreateUserRequest */
+        CreateUserRequest: {
+            /** Email */
+            email: string;
+            /** Display Name */
+            display_name: string;
+            /** Password */
+            password: string;
+            /** @default member */
+            role: components["schemas"]["UserRole"];
         };
         /**
          * Decision
@@ -365,6 +695,37 @@ export interface components {
              */
             status: "ok";
         };
+        /** HookDecisionResponse */
+        HookDecisionResponse: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "allow" | "deny";
+            /** Reason */
+            reason: string | null;
+            /** Rule */
+            rule: string | null;
+        };
+        /**
+         * HookRequest
+         * @description What the hook script sends: the tool call, minus file bodies (the script drops them).
+         */
+        HookRequest: {
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Input */
+            tool_input: {
+                [key: string]: unknown;
+            };
+            /**
+             * Cwd
+             * @default
+             */
+            cwd: string;
+            /** Project Dir */
+            project_dir?: string | null;
+        };
         /** ImpactReportView */
         ImpactReportView: {
             /** Headline */
@@ -379,6 +740,7 @@ export interface components {
              */
             source: "llm" | "template";
         };
+        JsonValue: unknown;
         /** JudgeView */
         JudgeView: {
             /** Provider */
@@ -393,6 +755,27 @@ export interface components {
             reason: string | null;
             /** Failure */
             failure: string | null;
+        };
+        /**
+         * KnowledgeChanged
+         * @description What an upload or a delete did: the source and how many chunks it now has or had.
+         */
+        KnowledgeChanged: {
+            /** Source */
+            source: string;
+            /** Chunks */
+            chunks: number;
+        };
+        /** KnowledgePage */
+        KnowledgePage: {
+            /** Items */
+            items: components["schemas"]["KnowledgeSource"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** KnowledgeRefView */
         KnowledgeRefView: {
@@ -411,6 +794,25 @@ export interface components {
             match: "table" | "similar";
             /** Score */
             score: number | null;
+        };
+        /** KnowledgeSource */
+        KnowledgeSource: {
+            /** Source */
+            source: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "schema_scan" | "schema_docs" | "upload";
+            /** Chunks */
+            chunks: number;
+            /** Table Names */
+            table_names: string[];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -471,6 +873,34 @@ export interface components {
          * @enum {string}
          */
         RiskLevel: "low" | "medium" | "high" | "critical";
+        /** RulePage */
+        RulePage: {
+            /** Items */
+            items: components["schemas"]["RuleView"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** RuleView */
+        RuleView: {
+            /** Name */
+            name: string;
+            outcome: components["schemas"]["Decision"];
+            /** Reason */
+            reason: string;
+            /**
+             * Pass
+             * @enum {string}
+             */
+            pass: "pre" | "post";
+            /** Conditions */
+            conditions: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
         /** SampleRowView */
         SampleRowView: {
             /** Table */
@@ -489,6 +919,63 @@ export interface components {
             values: {
                 [key: string]: unknown;
             };
+        };
+        /** ScanResult */
+        ScanResult: {
+            /**
+             * System Id
+             * Format: uuid
+             */
+            system_id: string;
+            /**
+             * Source
+             * @constant
+             */
+            source: "schema_scan";
+            /** Chunks */
+            chunks: number;
+        };
+        /** StatsResponse */
+        StatsResponse: {
+            /** Pending Reviews */
+            pending_reviews: number;
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+            /** By Decision */
+            by_decision: {
+                [key: string]: number;
+            };
+            today: components["schemas"]["TodayStats"];
+        };
+        /**
+         * SystemKind
+         * @enum {string}
+         */
+        SystemKind: "postgres";
+        /** SystemPage */
+        SystemPage: {
+            /** Items */
+            items: components["schemas"]["SystemView"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** SystemView */
+        SystemView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["SystemKind"];
+            connection_profile: components["schemas"]["ConnectionProfile"];
         };
         /** TableChange */
         TableChange: {
@@ -509,6 +996,35 @@ export interface components {
             preview_ms: number | null;
             /** Total Ms */
             total_ms: number | null;
+        };
+        /**
+         * TodayStats
+         * @description The UTC day so far. `reviewed`: decisions made today; `blocked`: actions created today.
+         */
+        TodayStats: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Actions */
+            actions: number;
+            /** By Status */
+            by_status: {
+                [key: string]: number;
+            };
+            /** By Decision */
+            by_decision: {
+                [key: string]: number;
+            };
+            /** Reviewed */
+            reviewed: number;
+            /** Blocked */
+            blocked: number;
+            /** Avg Preview Ms */
+            avg_preview_ms: number | null;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
         };
         /** UserRef */
         UserRef: {
@@ -904,6 +1420,658 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pre_tool_use_v1_hook_pre_tool_use_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HookRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HookDecisionResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_stats_v1_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_policies_v1_policies_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_knowledge_v1_knowledge_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgePage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_knowledge_v1_knowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    tables?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeChanged"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Length Required */
+            411: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_knowledge_v1_knowledge__source__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeChanged"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_systems_v1_systems_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    scan_system_v1_systems__system_id__scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                system_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanResult"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_agents_v1_agents_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_agent_v1_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCreated"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deactivate_agent_v1_agents__agent_id__deactivate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_users_v1_users_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPage"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_user_v1_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid request */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
