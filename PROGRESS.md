@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214); DW-B17 was also run by hand. Next unticked item after that: 18. Claude Code hook.
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-219). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). Next unticked: F2. Typed API client (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -58,6 +58,15 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - By hand 2026-10-27: ran against local `blastproof` with the local values from `.env.example` in the process environment: 14 actions, every one in its expected status, 24 knowledge chunks retrieved. This left users `demo-user-1@example.com` and `demo-user-2@example.com` (password given on stdin) and 14 actions in the local dev database. Not done by hand: the `/docs` walk-through (DW-B19, first half: log in as demo user 1, approve one pending action, reject another, demo user 2 gets 404); the automated API test stands in until you run it.
 - Requirements ticked: BE-121. Left open: DW-B19 (first half by hand), DW-F04, DW-F06, DW-F10, TEST-09 (they use the data in the dashboard steps).
 - Step 16 hand-over: re-run the seed and add a `failed: drifted` action; the commit's profile guard ("refuses any action whose system's profile does not match") is step 16's, not the seed's.
+
+### F1, built 2026-10-27, D-215 to D-218
+- New: `frontend/` (Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, shadcn 4.22.1 on Radix with 12 components plus `label`, `separator`, `sheet`, `tooltip`), `next.config.ts` headers, Vitest tests in `frontend/tests/`, `.github/workflows/frontend.yml`, `backend/tests/test_frontend_workflow.py`. Edited shadcn's `use-mobile.ts` (lint rule).
+- Tests: 32 Vitest; 10 backend workflow guards; `uv run pytest` 1,767 passed; frontend lint, format, typecheck, build clean; ruff clean.
+- By hand: `npm run dev` gave 200 with the starter page and the three headers; `npm start` also; the HTML holds one inline `self.__next_f.push` script (D-028's premise holds).
+- Mutation checks: removing each of 11 guards turned a test red (strict, exact pin, X-Frame-Options, Referrer-Policy, env ignore exception, `.nvmrc` major, `engines`, a script, a component, `localStorage` in src, a public env name; plus 3 in the workflow test: a step, a SHA pin, a secret). SRI build (D-219): 5 of 7 external scripts get `integrity`, 3 inline scripts do not, so `script-src 'self'` alone would block them.
+- Not done: the `frontend` job going green on a PR; no commit yet.
+- Requirements ticked: FE-01, DW-F01, CONV-11, SEC-31. SEC-28 stays open until CI/header check on the PR; OPS-03 needs the green PR run.
+- Known issue: Dependabot has no npm entry yet (owner's choice); add it in the security pass.
 
 ### Step 17, built 2026-10-27, D-206 to D-214
 - New: `app/services/agent_outcomes.py` (`AgentView`, `outcome_for`, `over_budget`). Changed: `agent_messages.py` (all write templates, `in_progress`, `KEEP_POLLING`; `not_supported` gone), `agent_calls.py` (`query_database` classifies then reads or writes; `action_status` is the long poll), `db/actions.py` (`create_action` takes `retry_of` and the received-event data; `agent_view`, `recent_writes`, `lock_agent_writes`), `mcp/server.py` (`retry_of`, runner and clock getters), `schemas/mcp.py`, `main.py`, `reads.py` (`check_read` removed). No migration, setting or dependency.
@@ -440,6 +449,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- F1: Dependabot has no npm entry yet (owner's choice); add one in the security pass. The `frontend` CI job and the `setup-node` commit hash (from the plan, not yet resolved from GitHub) are verified only by the PR run. ESLint 9.39.5 is marked unsupported by npm (D-217). The CSP for the landing page needs hashes or `'unsafe-inline'` for inline scripts (D-219).
 - Step 17: not yet tried on real Neon under load (the concurrency test uses `FakeNeonClient`, which terminates connections on `company_main` while it clones, so a read could be killed mid-clone locally or in CI). Untested paths: the wait raising after a write starts, `retry_of` on a read, and a SQL string over 20 KB through MCP. Two `assert isinstance` lines in `agent_calls.py` and the `UUID | None | bool` return of `_resolve_retry_of` could be tidied. Real Gemini wording for reviews is still unread (steps 12 and 13). The local dev database holds `dw-b17-admin@example.com` and two rejected test actions.
 - Step 16: children of the deleted rows are counted but not locked (locking 245k rows would double the cost), so a child re-pointed between the cascade check and the delete can slip through; new children are blocked by the parent row locks. A write the commit cannot check (two targets, a write inside a CTE) is only refused at commit as `commit_unsupported` (D-201); a pass-1 rule could catch it earlier. Before-images hold the target table only (BE-96); ON UPDATE cascade paths are not checked.
 - Step 16: `--add-pending` seed actions approved on a dev server now really change local `company_main`; re-seed with `demo_company/seed.py --target local` to reset. The fast lane's commit on Neon pays about 1.5 s to connect, so MVP-B02's 300 ms is not met there. The deployed `blastproof-company` must be PostgreSQL 18 (`RETURNING OLD/NEW`): check at deploy. The commit takes the whole row-key list as one parameter (about 700 KB for the Replit delete): fine locally, unmeasured on Neon.
@@ -659,7 +669,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Pull forward: seed-demo-actions
 - [x] 16. Commit
 - [x] 17. Wire up query_database
-- [ ] F1. Scaffold
+- [x] F1. Scaffold
 - [ ] F2. Typed API client
 - [ ] F3. Proxy and login
 - [ ] F4. Layout and navigation

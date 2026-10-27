@@ -1575,3 +1575,23 @@ existing setting.
 ## D-214 · 2026-10-27 · Existing tests that changed
 **Decision:** `test_mcp_tools.py` (a write without a runner is refused with no action; the recording test uses a failing read; the status test drops the `not_supported` lines), `test_mcp_server.py` (the result has a `decision` key) and `test_agent_messages.py` (`not_supported` is gone). `test_read_check.py` is deleted with `check_read`.
 **Why:** each replaced step 6 behaviour that step 17 supersedes (D-103); none was weakened to get green.
+
+## D-215 · 2026-10-27 · shadcn on Radix, `field` instead of `form`, `sonner` for toasts
+**Decision:** `shadcn init -b radix -p nova`; `field` replaces `form`; `sonner` is the toast. The frontend plan F1 and section 3 are edited.
+**Why:** shadcn now defaults to Base UI, `form` is legacy, `toast` is Base UI-only. react-hook-form still arrives in F3.
+
+## D-216 · 2026-10-27 · Separate frontend workflow and cache components off
+**Decision:** the frontend CI job is `.github/workflows/frontend.yml` with its own guard test, because `test_jobs_are_unit_and_integration` allows only two jobs in `ci.yml`. The app is created with `--no-cache-components`.
+**Why:** no existing test changes; PPR does not work with the nonce CSP planned for F3.
+
+## D-217 · 2026-10-27 · Scaffold differs from the plan's package list
+**Decision:** kept what the tools generated: `@tailwindcss/turbopack` 4.3.3 (with a turbopack CSS rule in `next.config.ts`, no `postcss.config`) instead of `@tailwindcss/postcss`, and the `cn` 0.5.0 package (maintained by shadcn) instead of `clsx` and `tailwind-merge`. ESLint stays on 9.39.5 (the template's major; it is now marked unsupported, so revisit with the Next 16 config's ESLint 10 support). shadcn 4.22.2 and lucide-react 1.62.0 were pinned back to 4.22.1 and 1.61.0 (under 72 hours old). `X-Content-Type-Options: nosniff` is set as a third header.
+**Why:** the generated code imports `cn` and the turbopack loader; swapping them would mean editing every component. Owner: veto `cn` if you do not want that dependency.
+
+## D-218 · 2026-10-27 · `use-mobile.ts` edited; build memory
+**Decision:** shadcn's `useIsMobile` uses `useSyncExternalStore` instead of setState in an effect, because `react-hooks/set-state-in-effect` fails lint. One local `next build` died once with `VirtualAlloc failed` (machine memory) and passed on retry.
+**Why:** lint must be clean; the build failure was not reproducible.
+
+## D-219 · 2026-10-27 · SRI build finding (nothing committed)
+**Decision:** a throwaway `next build` with `experimental.sri: { algorithm: 'sha256' }` on the starter page kept the page static. Of 7 script tags with `src`, 5 got `integrity`; 3 inline scripts (the `self.__next_f.push` flight data) remained and have no integrity attribute. So `script-src 'self'` alone would block them. F3 and F13 must either add per-page hashes for those inline scripts or allow `'unsafe-inline'` for the public landing page (D-028), and keep nonces for the logged-in pages. `next.config.ts` was restored without `sri`.
+**Why:** FE section 11 asked F1 to record whether a hash-based CSP is practical for the landing page. It is only partly: external scripts yes, inline flight data no.

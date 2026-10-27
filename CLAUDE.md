@@ -37,7 +37,7 @@ Backend (run from `backend/`):
 
 Frontend (run from `frontend/`):
 - `npm run dev` - dashboard on :3000
-- `npm run lint && npm run typecheck && npm test` - checks
+- `npm run lint && npm run format:check && npm run typecheck && npm test` - checks
 - `npm run gen:api` - regenerate API types from the backend's OpenAPI schema
 
 ## How we work
