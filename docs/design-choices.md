@@ -1022,3 +1022,49 @@ leaks existence through 403), and showing every user's email to every signed-in 
 The matrix proves each route's answer for four roles, not that every query inside is correct, so
 each list route also has its own test. Hiding buttons in the UI is a convenience; this is the
 enforcement.
+
+## Step 20 · Bootstrap, OpenAPI export and README (D-248, D-249)
+
+### 1. `bootstrap` is a chain of get-or-create steps, so it is safe to run again
+
+**What I did.** One command creates the first admin, an agent, the `company` system, the schema
+scan and the schema docs, in that order. Every step first looks for what it would create. An
+existing active admin is reused (and the password is never asked for), an existing agent is reported
+by its key prefix only, and the scan and docs replace their own chunks instead of adding more. If the
+company database is down at the scan, everything before it is already saved, and running the command
+again finishes the job. Two cases stop with a clear message instead of "fixing" things: an existing
+user that is not an active admin, and a main system stored with a different connection profile.
+
+**Why.** First-run setup fails half way in real life (a database not up yet, a mistyped URL). If the
+command could only run once on an empty database, a failure would leave a person hand-deleting rows.
+Making each step safe to repeat turns "it broke" into "run it again". The key is the other reason:
+only a hash is stored, so it can be shown once, at creation. A re-run must therefore never pretend to
+create it again.
+
+**What I rejected.** A "reset and start over" flag (it deletes data, which this project asks
+permission for), and quietly rewriting a system row with the wrong profile (actions recorded against
+one company database would then look as if they belonged to another).
+
+**Trade-off and limits.** A lost key cannot be recovered by bootstrap; you create another agent. Two
+bootstraps at the very same moment could race on the admin email; the unique index makes one of them
+fail with a clear error, not create a duplicate.
+
+### 2. The API contract is a committed file, and each CI job checks its own side of it
+
+**What I did.** `export-openapi` builds the app with fixed settings (no `.env`, no database) and
+writes `backend/openapi.json` in a stable format. A fast backend test fails if that file differs from
+what the routes produce. The frontend job regenerates `schema.d.ts` from the same file and fails on
+any diff. So a route change without a re-export fails the backend job, and a re-export without
+regenerated types fails the frontend job.
+
+**Why.** The frontend's types are generated from the backend, and nothing else notices when they
+drift apart until the dashboard breaks at runtime. Generating from a file, not a running server,
+means neither CI job needs the other's tools (no Python in the Node job, no server in either). The
+fixed settings make the output the same on every machine, so a diff always means a real change.
+
+**What I rejected.** Starting the backend in the frontend job (slow, needs a database), and checking
+only the types (it would not say which side forgot to update).
+
+**Trade-off and limits.** The file is one more thing to commit after a route change; the failing
+test names the exact command to run. Line endings matter: the fresh-clone check found that Windows
+turned the file into CRLF, so `.gitattributes` now pins it to LF.

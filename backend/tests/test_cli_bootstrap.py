@@ -110,3 +110,10 @@ def test_an_unexpected_crash_names_only_its_class(monkeypatch, capsys) -> None: 
     assert run(monkeypatch) == 1
     err = capsys.readouterr().err
     assert "RuntimeError" in err and "hunter2" not in err and "Traceback" not in err
+
+
+def test_no_database_url_reaches_stdout_or_stderr(monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(cli, "bootstrap", fake_bootstrap(report(), []))
+    assert run(monkeypatch) == 0
+    captured = capsys.readouterr()
+    assert "postgresql" not in captured.out + captured.err

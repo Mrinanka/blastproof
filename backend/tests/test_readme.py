@@ -9,8 +9,6 @@ from tests.conftest import REPO_ROOT
 
 DOCS = [REPO_ROOT / "README.md", REPO_ROOT / "docs" / "setup.md"]
 IDS = [d.name for d in DOCS]
-# Env names the docs may mention that are not backend/frontend settings.
-NOT_SETTINGS = {"JWT_SECRET_EXAMPLE"}
 
 
 def text_of(path: object) -> str:
@@ -42,7 +40,7 @@ def test_every_env_name_named_is_in_an_env_example(doc: object) -> None:
     for example in ("backend", "frontend"):
         body = (REPO_ROOT / example / ".env.example").read_text(encoding="utf-8")
         known |= set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]{3,})=", body, flags=re.MULTILINE))
-    named = set(re.findall(r"`([A-Z][A-Z0-9_]{3,})(?:=[^`]*)?`", text_of(doc))) - NOT_SETTINGS
+    named = set(re.findall(r"`([A-Z][A-Z0-9_]{3,})(?:=[^`]*)?`", text_of(doc)))
     named -= {"NEON", "PATH"}
     assert named <= known, sorted(named - known)
 
