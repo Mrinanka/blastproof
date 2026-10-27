@@ -57,9 +57,12 @@ describe("package.json (CONV-16)", () => {
     expect(pkg.engines.node).toBe("24.x");
     expect(read(".nvmrc").trim().split(".")[0]).toBe("24");
   });
-  it.each(["lint", "typecheck", "test", "build", "format:check"])("has the %s script", (name) => {
-    expect(pkg.scripts[name]).toBeTruthy();
-  });
+  it.each(["lint", "typecheck", "test", "build", "format:check", "gen:api"])(
+    "has the %s script",
+    (name) => {
+      expect(pkg.scripts[name]).toBeTruthy();
+    },
+  );
   it("has a lockfile", () => expect(existsSync(join(ROOT, "package-lock.json"))).toBe(true));
 });
 

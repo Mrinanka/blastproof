@@ -1599,3 +1599,15 @@ existing setting.
 ## D-220 · 2026-10-27 · `typecheck` runs `next typegen` first
 **Decision:** the script is `next typegen && tsc --noEmit`. The CI `frontend` job failed on the PR with `Cannot find name 'LayoutProps'`: that type is generated into the git-ignored `.next/types`, which local runs had from earlier builds but a fresh checkout does not. Reproduced locally by deleting `.next`.
 **Why:** typecheck must not depend on a previous build. Rejected: moving `build` before `typecheck` in CI (hides the dependency and slows the fast checks).
+
+## D-221 · 2026-10-27 · F2 versions and devtools placement
+**Decision:** pinned `openapi-fetch` 0.17.0, `openapi-typescript` 7.13.0 (dev), `@tanstack/react-query` 5.104.5 and `@tanstack/react-query-devtools` 5.104.5 (dev). React Query 5.105.0 was under 72 hours old, so one version back, as D-217 did. Devtools sit in devDependencies, imported by `providers.tsx`, as TanStack's Next guidance says; `npm ci` installs them and they are dropped from production bundles.
+**Why:** newest-but-proven versions; devtools in dev only (FE-03).
+
+## D-222 · 2026-10-27 · Path parameter is `action_id`
+**Decision:** the frontend plan (section 5, F2, DW-F02) now says `/v1/actions/{action_id}` with `params.path.action_id`, matching the backend route. The backend parameter is not renamed.
+**Why:** the plan's `{id}` would not compile against the generated types; renaming the backend for a docs typo touches routes, dependency and tests.
+
+## D-223 · 2026-10-27 · Query client rules and F3 hand-off
+**Decision:** `makeQueryClient` sets `refetchOnWindowFocus: true` and `refetchIntervalInBackground: false` explicitly (they are TanStack's defaults); `staleTime` stays 0. `getQueryClient` makes a new client per call on the server and one shared client in the browser. Retry stays at TanStack's default of 3, so 4xx errors retry for about 7 s; F3 sets no-retry on 4xx with its status-carrying error. `noUncheckedIndexedAccess` is left off (it would touch shadcn's generated code); revisit in F12.
+**Why:** pins FE-03 against silent edits; one user's cache must never reach another's request. Polling tests need `window` before TanStack loads (it decides "server" at import), so they sit in their own file.
