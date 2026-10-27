@@ -221,27 +221,28 @@ def _join_on(
     )
 
 
-def _cascade_count_sql(
-    path: Sequence[ForeignKey], target_pk: Sequence[str], diff: str, before_rel: Any
+def cascade_count_sql(
+    path: Sequence[ForeignKey], target_pk: Sequence[str], deleted_keys: str, relation: Any
 ) -> str:
-    """Count the rows at the far end of `path` that hang off the deleted keys in `diff`.
+    """Count the rows at the far end of `path` that hang off the deleted keys.
 
-    Every table is read as it was before the write (`before_rel`), because the cascade has
-    already removed the children inside the transaction.
+    `deleted_keys` is a subquery of the target's deleted primary keys (jsonb), and `relation` turns
+    a table name into what the query reads it from. The shadow run reads every table as it was
+    before the write (`before_rel`), because the cascade has already removed the children inside the
+    transaction; the commit counts on the live tables, before its own write.
     """
     last = len(path)
     joins = []
     for i in range(last, 0, -1):
         fk = path[i - 1]
         joins.append(
-            f"JOIN {before_rel(fk.parent)} a{i - 1} ON "
+            f"JOIN {relation(fk.parent)} a{i - 1} ON "
             + _join_on(f"a{i}", fk.child_columns, f"a{i - 1}", fk.parent_columns)
         )
     return (
-        f"SELECT count(*) FROM {before_rel(path[-1].child)} a{last} "
+        f"SELECT count(*) FROM {relation(path[-1].child)} a{last} "
         + " ".join(joins)
-        + f" WHERE {pk_json_sql('a0', target_pk)} IN"
-        f" (SELECT pk FROM {diff} WHERE change = 'deleted')"
+        + f" WHERE {pk_json_sql('a0', target_pk)} IN ({deleted_keys})"
     )
 
 
@@ -519,8 +520,11 @@ class ShadowRunner:
             if not rows or not any(change == "deleted" for _, _, change in rows):
                 continue
             for path in fk_paths(schema.foreign_keys, target):
-                sql = _cascade_count_sql(
-                    path, schema.tables[target].pk_columns, temp("d", target), before_rel
+                sql = cascade_count_sql(
+                    path,
+                    schema.tables[target].pk_columns,
+                    f"SELECT pk FROM {temp('d', target)} WHERE change = 'deleted'",
+                    before_rel,
                 )
                 count = await conn.fetchval(sql)
                 if count:

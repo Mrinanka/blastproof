@@ -11,10 +11,16 @@ from dataclasses import dataclass, field
 
 import asyncpg
 
-# `t` is the alias of the table being hashed. The text of `row_to_json` depends on session settings
-# (TimeZone, DateStyle, IntervalStyle, extra_float_digits, bytea_output); every connection that
-# hashes rows pins them (`company_db.HASH_SESSION_SETTINGS`).
-ROW_HASH_SQL = "md5(row_to_json(t)::text)"
+
+def row_hash_sql(alias: str) -> str:
+    """A row's hash, `alias` being the row variable. The text of `row_to_json` depends on session
+    settings (TimeZone, DateStyle, IntervalStyle, extra_float_digits, bytea_output); every
+    connection that hashes rows pins them (`company_db.HASH_SESSION_SETTINGS`)."""
+    return f"md5(row_to_json({alias})::text)"
+
+
+# `t` is the alias of the table being hashed.
+ROW_HASH_SQL = row_hash_sql("t")
 
 # pg_constraint.confdeltype
 DELETE_ACTIONS = {

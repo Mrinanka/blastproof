@@ -83,6 +83,15 @@ def writer_url(settings: Settings) -> str | None:
     return url.get_secret_value() if url is not None else None
 
 
+def writer_url_for(profile: str, settings: Settings) -> str | None:
+    """The writer URL of one connection profile (a system's), with no fallback to the other one:
+    an action of the `local` system must never be committed through the Neon URL or the reverse."""
+    url = (
+        settings.local_company_writer_url if profile == "local" else settings.company_db_writer_url
+    )
+    return url.get_secret_value() if url is not None else None
+
+
 def with_database(url: str, database: str) -> str:
     return urlunsplit(urlsplit(url)._replace(path=f"/{database}"))
 
@@ -109,6 +118,17 @@ async def connect_writer(settings: Settings) -> AsyncIterator[asyncpg.Connection
     url = writer_url(settings)
     if url is None:
         logger.error("company_db_not_configured", profile=settings.company_connection_profile)
+        raise CompanyDbUnavailableError("not_configured")
+    async with open_connection(dsn=url, server_settings=HASH_SESSION_SETTINGS) as conn:
+        yield conn
+
+
+@asynccontextmanager
+async def connect_writer_for(profile: str, settings: Settings) -> AsyncIterator[asyncpg.Connection]:
+    """A direct writer connection for the profile of the action being committed (step 16)."""
+    url = writer_url_for(profile, settings)
+    if url is None:
+        logger.error("company_db_not_configured", profile=profile)
         raise CompanyDbUnavailableError("not_configured")
     async with open_connection(dsn=url, server_settings=HASH_SESSION_SETTINGS) as conn:
         yield conn

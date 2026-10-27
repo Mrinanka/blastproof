@@ -6,7 +6,7 @@ the database. `rig()` opens and closes the checkpointer pool inside the test's o
 """
 
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -198,6 +198,7 @@ async def rig(
     real_shadow: Any = None,
     real_knowledge: Any = None,
     clock: Clock | None = None,
+    committer_factory: Callable[[Any, Settings], Any] | None = None,
 ) -> AsyncIterator[Rig]:
     options = {"app_env": "test"} | (settings or {})
     summary_llm = summary_llm or FakeLlm(parsed=report(CALM_HEADLINE))
@@ -212,8 +213,11 @@ async def rig(
     try:
         impact, _ = engine_with(summary_llm, **options)
         judge, _ = judge_with(judge_llm, **options)
+        sessionmaker = make_sessionmaker(engine)
+        if committer_factory is not None:
+            committer = committer_factory(sessionmaker, config)
         deps = WorkflowDeps(
-            sessionmaker=make_sessionmaker(engine),
+            sessionmaker=sessionmaker,
             policy=POLICY,
             shadow=real_shadow or shadow,
             impact=impact,
@@ -320,3 +324,58 @@ async def paused_action(r: Rig, env: WorkflowEnv | None = None) -> uuid.UUID:
 def paused_rig(env: WorkflowEnv, **options: Any) -> Any:
     """`rig` with the Replit diff, so `paused_action` reaches review."""
     return rig(env, diff=replit_diff(), **options)
+
+
+# --- Step 16: the real commit on a throwaway company database -----------------------------------
+
+
+async def no_sleep(_: float) -> None:
+    return None
+
+
+@asynccontextmanager
+async def company_rig(
+    env: WorkflowEnv,
+    company: Any,
+    *,
+    fault: Any = None,
+    sleep: Any = no_sleep,
+    clock: Clock | None = None,
+    settings: dict[str, Any] | None = None,
+    **options: Any,
+) -> AsyncIterator[Rig]:
+    """The real graph with the real `ShadowRunner` and the real `CompanyCommitter`, both on
+    `company` (a `CommitCompany`). The models, retrieval and judge are still fakes."""
+    from app.services.committer import CompanyCommitter
+    from tests.conftest import shadow_runner
+
+    clock = clock or SystemClock()
+    shadow = shadow_runner({"local": company.client(clock)})
+
+    def committer_factory(sessionmaker: Any, config: Settings) -> CompanyCommitter:
+        return CompanyCommitter(sessionmaker, config, clock, fault=fault, sleep=sleep)
+
+    values = {"local_company_writer_url": company.writer_url} | (settings or {})
+    async with rig(
+        env,
+        real_shadow=shadow,
+        committer_factory=committer_factory,
+        settings=values,
+        clock=clock,
+        **options,
+    ) as r:
+        yield r
+
+
+async def review_action(r: Rig, sql: str, *, intent: str = INTENT) -> uuid.UUID:
+    """A write that ran through the real preview to `awaiting_review`."""
+    action_id = new_action(r.env, sql, intent=intent)
+    await r.run(action_id)
+    assert action_row(r.env, action_id)["status"] == "awaiting_review"
+    return action_id
+
+
+async def approve(r: Rig, action_id: uuid.UUID) -> Any:
+    """Claim the approval as step 15 does, then resume the graph."""
+    assert claim(r.env, action_id, approved=True) == 1
+    return await r.resume(action_id, approved=True)

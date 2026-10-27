@@ -103,6 +103,7 @@ SLOW_FILES = frozenset(
         "test_company_main_lock.py",
         "test_cli_knowledge.py",
         "test_seed_demo.py",
+        "test_commit_replit.py",
     }
 )
 
@@ -700,3 +701,94 @@ async def leftover_shadow_databases() -> list[str]:
         return [r["datname"] for r in rows]
     finally:
         await conn.close()
+
+
+# --- Step 16: a small company database for commit tests ---------------------------------------
+
+_SMALL_COMPANY_DATA = """
+INSERT INTO organizations (name, industry, created_at)
+SELECT 'Org ' || g, 'software', now() FROM generate_series(1, 3) g;
+INSERT INTO users (organization_id, email, full_name, phone, country, plan, created_at,
+                   last_login_at)
+SELECT CASE WHEN g <= 6 THEN 1 END, 'user' || g || '@example.com', 'User ' || g,
+       '+1555000' || g, 'US', CASE WHEN g % 20 = 0 THEN 'pro' ELSE 'free' END,
+       now() - interval '2 years', now() - interval '1 year'
+FROM generate_series(1, 200) g;
+INSERT INTO orders (user_id, status, total_cents)
+SELECT u, 'completed', 1000 + o FROM generate_series(1, 50) u, generate_series(1, 3) o;
+INSERT INTO order_items (order_id, product_id, quantity, unit_price_cents)
+SELECT o, 1, 1, 500 FROM generate_series(1, 150) o, generate_series(1, 2) i;
+INSERT INTO invoices (user_id, number, amount_cents, status, issued_at, due_date)
+SELECT g, 'INV-' || g, 1000, 'paid', now(), current_date FROM generate_series(1, 40) g;
+INSERT INTO customer_notes (user_id, body) SELECT g, 'note ' || g FROM generate_series(1, 30) g;
+"""
+
+
+@dataclass
+class CommitCompany:
+    """A throwaway company database (about 200 users) on the Compose company-db, set up like
+    `company_main` (schema, roles, grants), for tests that really commit to it."""
+
+    database: str
+    writer_url: str
+
+    def _admin(self) -> str:
+        return company_url(self.database)
+
+    async def fetch(self, sql: str, *args: object) -> list[asyncpg.Record]:
+        conn = await asyncpg.connect(self._admin())
+        try:
+            return await conn.fetch(sql, *args)
+        finally:
+            await conn.close()
+
+    async def execute(self, sql: str, *args: object) -> None:
+        conn = await asyncpg.connect(self._admin())
+        try:
+            await conn.execute(sql, *args)
+        finally:
+            await conn.close()
+
+    async def count(self, table: str, where: str = "true") -> int:
+        [row] = await self.fetch(f"SELECT count(*) AS n FROM {table} WHERE {where}")
+        return row["n"]
+
+    def client(self, clock: object | None = None) -> FakeNeonClient:
+        return fake_neon_client(clock, source_db=self.database, writer_url=self.writer_url)  # type: ignore[arg-type]
+
+
+async def _create_commit_company() -> CommitCompany:
+    name = f"commit_{uuid.uuid4().hex[:10]}"
+    admin = await asyncpg.connect(company_url("postgres"))
+    try:
+        await admin.execute(f"CREATE DATABASE {name}")
+        await admin.execute(f"REVOKE ALL ON DATABASE {name} FROM PUBLIC")
+        await admin.execute(f"GRANT CONNECT ON DATABASE {name} TO blastproof_reader")
+        await admin.execute(f"GRANT CONNECT, TEMPORARY ON DATABASE {name} TO blastproof_writer")
+    finally:
+        await admin.close()
+    conn = await asyncpg.connect(company_url(name))
+    try:
+        await conn.execute((DEMO_COMPANY_DIR / "schema.sql").read_text(encoding="utf-8"))
+        await conn.execute(_SMALL_COMPANY_DATA)
+    finally:
+        await conn.close()
+    return CommitCompany(name, on_database(COMPANY_WRITER_URL, name))
+
+
+async def _drop_commit_company(company: CommitCompany) -> None:
+    admin = await asyncpg.connect(company_url("postgres"))
+    try:
+        await admin.execute(f"DROP DATABASE IF EXISTS {company.database} WITH (FORCE)")
+    finally:
+        await admin.close()
+
+
+@pytest.fixture
+def commit_company(company_db_seeded: None) -> Iterator[CommitCompany]:
+    """Sync fixture on purpose: it must work from sync and async tests, and from any loop."""
+    company = asyncio.run(_create_commit_company())
+    try:
+        yield company
+    finally:
+        asyncio.run(_drop_commit_company(company))

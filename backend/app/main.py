@@ -28,7 +28,7 @@ from app.db.session import make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.mcp.auth import AgentAuthMiddleware
 from app.mcp.server import build_mcp_server, transport_security
-from app.services.commit import StubCommitter
+from app.services.committer import CompanyCommitter
 from app.services.embeddings import EmbeddingError, build_embedder
 from app.services.impact import ImpactEngine
 from app.services.judge import build_judge
@@ -208,7 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             impact=app.state.impact,
             judge=app.state.judge,
             knowledge=app.state.knowledge,
-            committer=StubCommitter(),
+            committer=CompanyCommitter(app.state.sessionmaker, settings, SystemClock()),
             clock=SystemClock(),
             settings=settings,
         )
