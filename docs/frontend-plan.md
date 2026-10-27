@@ -45,7 +45,7 @@ A mainstream React stack with as few moving parts as possible: no global state l
 | --- | --- | --- |
 | Framework | Next.js (App Router) + React + TypeScript | Pages plus a small server-side proxy in one app |
 | Styling | Tailwind CSS | Utility classes; comes with `create-next-app` |
-| Components | shadcn/ui | Copy-in components (table, dialog, badge, sonner for toasts, form); you own the code. `toast` is deprecated in favour of `sonner`; check `form`'s current status in the shadcn docs |
+| Components | shadcn/ui | Copy-in components (table, dialog, badge, sonner for toasts, field); you own the code. shadcn is on the Radix base (`-b radix`). `toast` is Base UI-only, so we use `sonner`; `form` is legacy, so we use `field` (D-215) |
 | Server data | TanStack Query | Fetching, caching, 5-second polling, mutations |
 | API types | openapi-typescript | Generates TypeScript types from the backend's OpenAPI schema |
 | API client | openapi-fetch | Tiny typed `fetch` wrapper that uses those types |
@@ -199,7 +199,7 @@ All of these fields come from the backend's `ActionDetail` schema (backend plan 
 
 Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real backend through the proxy. Each step ends with a test you can run.
 
-1. **F1. Scaffold.** In the repo root, `npx create-next-app@latest frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `npx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, form, sonner, dropdown-menu, sidebar, skeleton). Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
+1. **F1. Scaffold.** In the repo root, `npx create-next-app@latest frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `npx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, field, sonner, dropdown-menu, sidebar, skeleton), with `npx shadcn@4.22.1 init -b radix`. Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
    *Done when:* `npm run dev` shows the starter page at `http://localhost:3000`.
 2. **F2. Typed API client.** Add `openapi-typescript` and `openapi-fetch`. A `gen:api` script reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts` (committed). `src/lib/api/client.ts` creates the client with base URL `/api/blastproof`. Set up TanStack Query's provider in the root layout, with `refetchOnWindowFocus` on and polling paused while the tab is hidden.
    *Done when:* hovering `api.GET("/v1/actions/{id}")` in your editor shows the backend's real response type.
