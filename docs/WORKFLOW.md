@@ -122,7 +122,7 @@ Three prompts per step. Each step gets its own fresh session.
 ### Prompt 1: plan the next step (in plan mode)
 
 ```text
-Find the first unticked item in PROGRESS.md. That is this session's step. Read CLAUDE.md,
+ Find the first unticked item in PROGRESS.md. That is this session's step. Read CLAUDE.md,
 PROGRESS.md (including Known issues), docs/REQUIREMENTS.md, docs/decisions.md, the plan
 text for this step and any sections it refers to. If a spike for this step has already
 run, read its findings in docs/decisions.md and spikes/.
@@ -164,7 +164,7 @@ When I approve, build it with these rules:
 
 ```text
 Verify this step that you build:
-1. Run the test suite and lint for every part you touched (backend and/or
+1. Run the test suite (never the slow one) and lint for every part you touched (backend and/or
    frontend). Paste the actual output summary, not a description of it.
 2. Run the step's "Done when" check. Paste the actual output.
 3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.
@@ -182,7 +182,7 @@ then paste Prompt 2 again.
 ### Prompt 3: wrap up and commit
 
 ```text
- if no issues to fix, create pr, but make sure you have done below steps:
+ if no issues left to fix, create pr, but make sure you have done below steps:
 1. Update PROGRESS.md: tick the step, add anything partial or deferred to Known issues,
    and set Current focus to the next unticked item.
 2. Tick the requirement IDs this step fully verified in docs/REQUIREMENTS.md. Only tick
