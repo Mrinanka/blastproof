@@ -108,7 +108,7 @@ uv run --project backend python claude_hook/workspace.py check ../blastproof-dem
 
 `create` writes the MCP server and the PreToolUse hook into the workspace. Start `claude` in that
 folder once by hand, trust it and approve the `blastproof` server. Then ask it to clean up inactive
-users: the write is held until you approve it. Ask it to run `psql`: the hook blocks it. Details are
+users: the write is held until you approve it. (A headless `claude -p` needs the tool allowed, for example `claude -p "<prompt>" --allowedTools mcp__blastproof__query_database`; an interactive session asks you.) Ask it to run `psql`: the hook blocks it. Details are
 in [`claude_hook/README.md`](../claude_hook/README.md).
 
 To use your own project instead, run `claude mcp add --transport http blastproof <url>/mcp --header

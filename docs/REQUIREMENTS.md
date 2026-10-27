@@ -221,11 +221,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-117 | User routes (admin): `GET /v1/users` and `POST /v1/users` (creates a user with an initial password). | BE §6 | B19 | TEST-03 |
 | [x] | BE-118 | Other users only ever see a user's `display_name`, never their email (an admin's own `/v1/users` list is the one exception, D-243). | BE §5 | B19 | *integration test* |
 | [x] | BE-119 | The backend serves its OpenAPI schema at `/openapi.json` and the API reference at `/docs`. | BE §6 | B19 | DW-B19 |
-| [ ] | BE-120 | `bootstrap` creates an admin user, an agent and the `systems` row, runs the schema scan and ingests `schema_docs.md`. | BE B20 | B20 | DW-B20 |
+| [x] | BE-120 | `bootstrap` creates an admin user, an agent and the `systems` row, runs the schema scan and ingests `schema_docs.md`. | BE B20 | B20 | DW-B20 |
 | [x] | BE-121 | `seed-demo-actions` creates two demo users, each with an agent, and actions for both in every status the real graph can reach before step 16 (awaiting_review, rejected, expired, blocked, committed, failed; `approved` is momentary and `drifted` comes with the real commit, D-195), running the real graph with `FakeNeonClient` and a fake LLM (retrieval is real) so pending actions sit at a real `interrupt()`; `--add-pending` adds one new pending action on `users` for demo user 1. | BE B20; FE §16; D-049 | B20 (pulled forward after B15; re-run after B16) | DW-F04, DW-F06 |
 | [x] | BE-122 | Seeded actions belong to a "Demo seed (local)" system with `connection_profile = local`, so approving one never touches Neon. | BE B20; D-027 | B20 | *integration test* |
 | [x] | BE-123 | `export-openapi` writes the OpenAPI schema to `backend/openapi.json` with no server or database. | BE B20; FE §13 | B20 | OPS-05 |
-| [ ] | BE-124 | `README.md` and a setup guide cover prerequisites, the three databases, `.env` setup, bootstrap, connecting Claude Code and installing the hook. | BE B20 | B20 | DW-B20 |
+| [x] | BE-124 | `README.md` and a setup guide cover prerequisites, the three databases, `.env` setup, bootstrap, connecting Claude Code and installing the hook. | BE B20 | B20 | DW-B20 |
 | [x] | BE-125 | All settings come from environment variables read once by `config.py`; `backend/.env` is git-ignored with a committed `.env.example`; production uses Fly.io secrets. | BE §11 | B1 | *check `.gitignore` and `.env.example`* |
 | [x] | BE-126 | Configuration defaults match BE §11 (e.g. `REVIEW_WAIT_SECONDS` 20, `STATUS_MAX_WAIT_SECONDS` 50, `REVIEW_TIMEOUT_HOURS` 24, `MAX_CONCURRENT_SHADOWS` 2, `JUDGE_MIN_CONFIDENCE` 0.6, `RETENTION_DAYS` 30). | BE §11 | B1 onward | *unit test of Settings defaults* |
 
@@ -396,7 +396,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B17 | In Claude Code, "clean up inactive users" returns pending; after rejecting it in `/docs`, the agent's next `get_action_status` returns the reason within seconds, and its rewritten query carries `retry_of`; tests cover the rate limit and the concurrency test passes. | BE B17 | B17 | Manual in Claude Code + integration tests |
 | [x] | DW-B18 | Claude trying `psql`, reading the backend's `.env` or editing its settings file is blocked with a clear reason; with the backend stopped, Bash and edits are denied, reading a normal source file works, and reading `.env` is still denied. | BE B18 | B18 | Manual in Claude Code + tests |
 | [x] | DW-B19 | An action can be reviewed and approved using only `/docs`, and the authorization matrix test passes. | BE B19 | B19 | Manual + TEST-03 |
-| [ ] | DW-B20 | A fresh clone plus the README steps gives a working demo. | BE B20 | B20 | Manual |
+| [x] | DW-B20 | A fresh clone plus the README steps gives a working demo. | BE B20 | B20 | Manual |
 
 ### Frontend steps
 
@@ -464,7 +464,7 @@ D-055). Tick a box only when its verification has passed.
 |---|---|---|---|---|---|
 | [ ] | DEL-01 | Public GitHub repo whose README opens with the pitch, a 30-second GIF of the "whoa" moment, the architecture diagram and the eval results table. | SPEC §20 | B20 (README); rest not assigned | Manual |
 | [ ] | DEL-02 | Two-to-three-minute demo video (also used on the landing page). | SPEC §17, §20; FE F13 | Stage 5 | Manual |
-| [ ] | DEL-03 | `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; the full Neon demo needs only the Neon dev project (README). | SPEC §20 | B20 | DW-B20 |
+| [x] | DEL-03 | `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; the full Neon demo needs only the Neon dev project (README). | SPEC §20 | B20 | DW-B20 |
 | [ ] | DEL-04 | MVP demo script: fast-lane note, Replit mass delete with reject and retry, bypass attempt blocked, close on measured eval numbers. | SPEC §17; D-011 | All | Manual demo run |
 | [ ] | DEL-05 | Eval report: datasets, metrics, before/after experiment results. | SPEC §20 | Evals | Manual |
 | [ ] | DEL-06 | Design notes on the key trade-offs from spec §19 and how they were solved. | SPEC §20 | not assigned | Manual |
