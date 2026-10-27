@@ -21,7 +21,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | ARCH-01 | Any error, timeout or unparseable SQL blocks the write (fail closed). | CL; BE §7, §12; SPEC §10, §13; D-008 | B8, B10, B14, B16 | DW-B08, DW-B14; *integration tests for each failure path* |
+| [x] | ARCH-01 | Any error, timeout or unparseable SQL blocks the write (fail closed). | CL; BE §7, §12; SPEC §10, §13; D-008 | B8, B10, B14, B16 | DW-B08, DW-B14; *integration tests for each failure path* |
 | [x] | ARCH-02 | The one exception: if only the AI judge fails, the write goes to human review; a failed check never lets a write through. | CL; BE §7, B13; D-008 | B13, B14 | DW-B13, DW-B14 |
 | [x] | ARCH-03 | `pinned_sql` is what is previewed, approved and committed. | CL; BE §5, §7, B8; D-005 | B8, B10, B16 | DW-B08, DW-B16 |
 | [x] | ARCH-04 | The commit must reproduce the approved diff or roll back. | CL; BE B16; D-005 | B16 | DW-B16 |
@@ -30,7 +30,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | ARCH-07 | Every number in an LLM summary must match the computed facts. | CL; BE B12 | B12 | DW-B12 (guardrail tests) |
 | [x] | ARCH-08 | Rules run before the judge. | CL; SPEC §13; BE §7 | B9, B13, B14 | DW-B14 |
 | [x] | ARCH-09 | The judge can only make a decision stricter, never looser. | CL; SPEC §13; BE B13; D-008 | B13 | DW-B13 |
-| [ ] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
+| [x] | ARCH-10 | Reads take a fast path outside the LangGraph workflow; only writes enter the graph. | CL; BE §7, B14, B17 | B6, B14, B17 | *integration test: a read creates no graph thread* |
 | [x] | ARCH-11 | One SQL statement per write. | CL; BE B8, B9 ("One statement only") | B8, B9 | DW-B08 (multi-statement case) |
 | [x] | ARCH-12 | BEGIN, COMMIT, ROLLBACK (and SAVEPOINT, SET TRANSACTION) from agents are rejected. | CL; BE B8, B9 | B8, B9 | DW-B08 (transaction-control case) |
 | [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
@@ -77,7 +77,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | TEST-05 | Test setup recreates `company_main` from the never-connected `company_template`. | BE B10, §14; D-019 | B10 | DW-B10 (two previews in a row) |
 | [x] | TEST-06 | Tests and evals freeze the classifier's `Clock` at `ANCHOR_DATE`. | BE B3, B8, §14; D-017 | B8 | DW-B08 (frozen-clock case) |
 | [x] | TEST-07 | App startup does not call Neon or download models when `APP_ENV=test`. | BE B1 | B1 | *test that startup succeeds offline* |
-| [ ] | TEST-08 | Agent message templates are tested word for word. | BE §6 | B17 | *unit tests per template* |
+| [x] | TEST-08 | Agent message templates are tested word for word. | BE §6 | B17 | *unit tests per template* |
 | [ ] | TEST-09 | A Playwright e2e test runs against the real local backend with `seed-demo-actions` data: log in as demo user 1, open the seeded pending action, see headline and numbers, reject with a reason, find it in History as rejected with your name, then as demo user 2 confirm it is absent and its URL shows "not found". | FE §12 | F7-F9 (after B20) | OPS-06 (nightly/manual workflow) |
 | [ ] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
 | [ ] | TEST-11 | No snapshot tests and no mocking of the whole backend in the frontend. | FE §12 | F steps | *code review* |
@@ -108,10 +108,10 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-15 | `chunk_embeddings.embedding` has an HNSW index. | BE §5, B11 | B4 or B11 | *migration test* |
 | [ ] | BE-16 | Action statuses follow the canonical state machine in BE §5; "pending" is never stored; `expired` actions have `decided_by` null. | BE §5 | B6, B14-B16 | *unit test of allowed transitions* |
 | [x] | BE-17 | A FastMCP server (official MCP SDK, streamable HTTP) is served by FastAPI at the public path `/mcp` (its route is added to the app, D-096). | BE §3, B6 | B6 | DW-B06 |
-| [ ] | BE-18 | MCP tools `list_tables` (names with one-line descriptions), `describe_table` (columns and types; plus knowledge notes from B11), `query_database` (`sql`, `intent`, optional `retry_of`) and `get_action_status` (`action_id`, optional `wait_seconds` 0-50, default 30). | BE §6, B6 | B6, B11, B17 | DW-B06, DW-B17 |
+| [x] | BE-18 | MCP tools `list_tables` (names with one-line descriptions), `describe_table` (columns and types; plus knowledge notes from B11), `query_database` (`sql`, `intent`, optional `retry_of`) and `get_action_status` (`action_id`, optional `wait_seconds` 0-50, default 30). | BE §6, B6 | B6, B11, B17 | DW-B06, DW-B17 |
 | [x] | BE-19 | Middleware checks the agent key on `/mcp` and puts the agent and owner into a `contextvar` (or the SDK's own mechanism) for tools to read. | BE B6 | B6 | *integration test: bad key 401* |
 | [x] | BE-20 | `query_database` reads use `blastproof_reader` with a 5-second statement timeout and a 500-row cap; a read with more than 500 rows (fetch 501 to tell) returns the first 500 plus the `truncated` notice, with no total count. | BE B6, §6, §12; D-039 | B6 | *integration tests for timeout, cap and notice* |
-| [x] | BE-21 | Every `query_database`, `list_tables` and `describe_table` call is recorded in `actions` and `audit_events` with the owner's `user_id` (reads end as `executed`); `get_action_status` creates no action and is only logged; rate-limited writes (SEC-20) are the other exception. | BE B6; D-038 | B6 | DW-B06; *integration test* |
+| [x] | BE-21 | Every `query_database`, `list_tables` and `describe_table` call is recorded in `actions` and `audit_events` with the owner's `user_id` (reads end as `executed`); `get_action_status` creates no action and is only logged; rate-limited writes (SEC-20) and writes refused because the workflow is not accepting (not configured, recovering or draining; D-206) are the other exceptions. | BE B6; D-038 | B6 | DW-B06; *integration test* |
 | [x] | BE-22 | `session_id` is the MCP session ID when the transport provides one, else null. | BE §6 | B6 | *integration test* |
 | [x] | BE-23 | `/ready` checks that Blastproof's DB, the company DB and the Neon API are reachable; `/health` is liveness only. | BE §6, §13, B6 | B1, B6 | *integration test with a dependency down* |
 | [x] | BE-24 | A demo workspace outside the repo holds no database URL (not in `.env`, not in shell variables) and has `.claude/settings.json` `permissions.deny` rules for the repo, any `.env` and credential files. | BE B7; D-002 | B7 | DW-B07 |
@@ -198,9 +198,9 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-95 | Commit reconciler: if the `applied_actions` row exists, mark committed; if not, re-run the whole commit procedure. | BE B16; D-022 | B16 | DW-B16 |
 | [x] | BE-96 | MVP before-images cover the target table only; cascaded rows are recorded as counts. | BE B16 | B16 | *integration test* |
 | [x] | BE-97 | The commit refuses any action whose system's connection profile doesn't match the connection it is about to use. | BE B20; D-027 | B16/B20 | *integration test* |
-| [ ] | BE-98 | `query_database` runs reads directly; for writes it creates an action (with `retry_of` if given), starts the workflow, waits up to `REVIEW_WAIT_SECONDS` (20), and replies with the matching template. | BE §6, B17; D-012 | B17 | DW-B17 |
-| [ ] | BE-99 | `get_action_status` long-polls up to `wait_seconds` (max `STATUS_MAX_WAIT_SECONDS`, 50); after `AGENT_POLL_BUDGET_MINUTES` (10) of waiting it returns `still_waiting`. | BE §6; D-012, D-020 | B17 | DW-B17; *test for budget* |
-| [ ] | BE-100 | `agent_messages.py` has one template per outcome: committed, blocked, pending, still_waiting, rejected, drifted, expired, busy, ai_unavailable, failed, not_found, plus the `truncated` notice for reads, with the wording in BE §6. | BE §6; D-039, D-055 | B6 (truncated), B17 | TEST-08 |
+| [x] | BE-98 | `query_database` runs reads directly; for writes it creates an action (with `retry_of` if given), starts the workflow, waits up to `REVIEW_WAIT_SECONDS` (20), and replies with the matching template. | BE §6, B17; D-012 | B17 | DW-B17 |
+| [x] | BE-99 | `get_action_status` long-polls up to `wait_seconds` (max `STATUS_MAX_WAIT_SECONDS`, 50); after `AGENT_POLL_BUDGET_MINUTES` (10) of waiting it returns `still_waiting`. | BE §6; D-012, D-020 | B17 | DW-B17; *test for budget* |
+| [x] | BE-100 | `agent_messages.py` has one template per outcome: committed, blocked, pending, in_progress (D-208), still_waiting, rejected, drifted, expired, busy, ai_unavailable, failed, not_found, plus the `truncated` notice for reads, with the wording in BE §6. | BE §6; D-039, D-055 | B6 (truncated), B17 | TEST-08 |
 | [ ] | BE-101 | `claude_hook/pre_tool_use.py` reads the tool call JSON from stdin and posts it to `/v1/hook/pre-tool-use` with `BLASTPROOF_AGENT_KEY`, using an HTTP timeout shorter than the hook timeout. | BE B18 | B18 | DW-B18 |
 | [ ] | BE-102 | On deny the script prints the reason to stderr and exits 2; on allow it prints nothing and exits 0, never emitting a JSON allow. | BE B18 | B18 | DW-B18 |
 | [ ] | BE-103 | If Blastproof is unreachable, times out, returns 5xx or unparseable output, the script retries once after 1 s; then Bash/PowerShell/Monitor/Edit/Write/NotebookEdit exit 2, and Read/Grep/Glob use a local deny-list (`.env*`, credential and key files, the backend directory, `.claude/settings*.json`) and are otherwise allowed. | BE B18; D-026 | B18 | DW-B18 (backend stopped) |
@@ -252,7 +252,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-17 | `FAKE_NEON_ADMIN_URL` is refused at startup when `APP_ENV=production`. | BE §11 | B10 | *unit test* |
 | [ ] | SEC-18 | The demo workspace gets only `BLASTPROOF_AGENT_KEY`. | BE §11, B7 | B7, B18 | DW-B07 |
 | [ ] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
-| [ ] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
+| [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
 | [ ] | SEC-22 | Production backend has no CORS (`CORS_ORIGINS` empty); the dashboard reaches it server to server. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
 | [ ] | SEC-23 | The JWT lives only in an httpOnly cookie (`Secure` in production, `SameSite=Lax`, `Path=/`); never in localStorage or page JavaScript. | CL; FE §4, §11 | F3 | DW-F03; MVP-F01 |
@@ -266,7 +266,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
 | [ ] | SEC-32 | Hiding controls by role in the UI is convenience only; every role check is enforced by the backend. | FE §11; CL | F4, B19 | TEST-03; MVP-F06 |
 | [ ] | SEC-33 | A deactivated agent's key is rejected with 401 on `/mcp` and on the hook endpoint. | BE B5; D-030 | B5 | DW-B05 |
-| [ ] | SEC-34 | `get_action_status` and `retry_of` look up action IDs through `visible_actions` for the agent's owner with admin widening off (filter is the owner's `user_id` even when the owner is an admin); an unknown or foreign ID gets the `not_found` message. | CL; BE B17; D-055 | B17 | *integration test with another owner's action ID* |
+| [x] | SEC-34 | `get_action_status` and `retry_of` look up action IDs through `visible_actions` for the agent's owner with admin widening off (filter is the owner's `user_id` even when the owner is an admin); an unknown or foreign ID gets the `not_found` message. | CL; BE B17; D-055 | B17 | *integration test with another owner's action ID* |
 
 ## FE: dashboard functional requirements
 
@@ -327,7 +327,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | OBS-03 | Every fail-closed block logs `event=fail_closed` with a reason code. | BE §13; SPEC §15 | B14 | *integration test* |
 | [x] | OBS-04 | Middleware adds an `X-Request-ID` header to every response. | BE §13 | B1 | *integration test* |
 | [x] | OBS-05 | Actions record `preview_ms`, `total_ms`, LLM tokens and `llm_cost_usd`. | BE §5, B12 | B10, B12, B14 | *integration test* |
-| [ ] | OBS-06 | Every action has a complete audit timeline in `audit_events`: one event per status change, named after the new status, plus `shadow_done`, `decided` and `fail_closed`. | BE §5; SPEC §7, §10; D-037 | B6, B14-B16 | MVP-B09; *integration test: event types match the status history* |
+| [x] | OBS-06 | Every action has a complete audit timeline in `audit_events`: one event per status change, named after the new status, plus `shadow_done`, `decided` and `fail_closed`. | BE §5; SPEC §7, §10; D-037 | B6, B14-B16 | MVP-B09; *integration test: event types match the status history* |
 | [ ] | OBS-07 | Every decision carries a human-readable reason. | SPEC §7, §10 | B9, B13, B14 | *eval check that reason is non-empty* |
 | [x] | OBS-08 | The approve or reject claim writes its audit event in the same transaction, with the approver's `user_id` and `display_name` in `data`; auto-approvals carry no approver. | SPEC §13; BE §5, B15; D-037 | B15 | *integration test* |
 
@@ -368,7 +368,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | NFR-02 | Fast-lane writes complete in under 300 ms of Blastproof time. | SPEC §10; BE §17; D-007 | B14-B17 | MVP-B02 |
 | [x] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (spike measured p50 5.0 s to a usable branch and about 14 s for a whole preview; about 14 s for a small preview; target: under 20 s for a typical write (a few thousand rows); under 60 s for a write that touches most of a table, such as the 246k-row Replit delete, measured at 44 s on Neon, D-143). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
 | [x] | NFR-04 | Pending approvals survive restarts; no action is lost or applied twice. | SPEC §10; BE §17 | B14-B16 | DW-B15, DW-B16; MVP-B07, MVP-B08 |
-| [ ] | NFR-05 | Several agents and sessions run at once: an integration test runs about 5 writes plus reads concurrently with `FakeNeonClient`; every action ends in the expected state and no more than `MAX_CONCURRENT_SHADOWS` shadow runs overlap. | SPEC §10; BE B17; D-034 | B17 | DW-B17 (concurrency test) |
+| [x] | NFR-05 | Several agents and sessions run at once: an integration test runs about 5 writes plus reads concurrently with `FakeNeonClient`; every action ends in the expected state and no more than `MAX_CONCURRENT_SHADOWS` shadow runs overlap. | SPEC §10; BE B17; D-034 | B17 | DW-B17 (concurrency test) |
 | [ ] | NFR-06 | Runs within free tiers plus LLM usage, under $100 per month at demo scale. | SPEC §10, §12 | Deploy | *monthly bill check* |
 
 ## DW: "Done when" checks
@@ -393,7 +393,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-B14 | A test runs one write through every branch (fast lane, allow, review→approve, review→reject, block, judge failure→review, LLM cost cap exceeded→review); another proves the status after resume is `approved`, not `awaiting_review`. | BE B14 | B14 | Integration tests |
 | [x] | DW-B15 | Tests prove two simultaneous approvals give one commit and one 409, an expired review cannot be approved, an approved-but-never-resumed action is resumed at startup, and an action left in `previewing` is failed at startup. | BE B15 | B15 | Integration tests |
 | [x] | DW-B16 | Approved write commits with matching counts; drift path triggered by a changed row, by a new matching row and by a nulled child FK; committing twice applies once; a kill after company commit is marked committed with before-images on restart; a kill before it is re-run and committed once; a dropped COMMIT connection is resolved by the reconciler; a restart while awaiting review then approval still commits. | BE B16 | B16 | Integration tests |
-| [ ] | DW-B17 | In Claude Code, "clean up inactive users" returns pending; after rejecting it in `/docs`, the agent's next `get_action_status` returns the reason within seconds, and its rewritten query carries `retry_of`; tests cover the rate limit and the concurrency test passes. | BE B17 | B17 | Manual in Claude Code + integration tests |
+| [x] | DW-B17 | In Claude Code, "clean up inactive users" returns pending; after rejecting it in `/docs`, the agent's next `get_action_status` returns the reason within seconds, and its rewritten query carries `retry_of`; tests cover the rate limit and the concurrency test passes. | BE B17 | B17 | Manual in Claude Code + integration tests |
 | [ ] | DW-B18 | Claude trying `psql`, reading the backend's `.env` or editing its settings file is blocked with a clear reason; with the backend stopped, Bash and edits are denied, reading a normal source file works, and reading `.env` is still denied. | BE B18 | B18 | Manual in Claude Code + tests |
 | [ ] | DW-B19 | An action can be reviewed and approved using only `/docs`, and the authorization matrix test passes. | BE B19 | B19 | Manual + TEST-03 |
 | [ ] | DW-B20 | A fresh clone plus the README steps gives a working demo. | BE B20 | B20 | Manual |

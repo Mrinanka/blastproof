@@ -7,15 +7,16 @@ the owner's `user_id` unless admin widening is on. Agents always call it with `i
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, any_, func, or_, select, update
+from sqlalchemy import ColumnElement, Select, any_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.db.enums import ALLOWED_TRANSITIONS, ActionStatus, AuditEventType, Decision
 from app.db.models import Action, Agent, AuditEvent, User
+from app.services.agent_outcomes import AgentView
 
 
 def visible_actions(user_id: uuid.UUID, *, is_admin: bool) -> Select[tuple[Action]]:
@@ -42,8 +43,17 @@ async def create_action(
     sql: str | None = None,
     statement_type: str | None = None,
     tables: list[str] | None = None,
+    pinned_sql: str | None = None,
+    sql_display: str | None = None,
+    pinned_values: dict[str, str] | None = None,
+    retry_of: uuid.UUID | None = None,
+    received_data: dict[str, Any] | None = None,
 ) -> Action:
-    """A new action in `received`, with its `received` audit event."""
+    """A new action in `received`, with its `received` audit event.
+
+    `received_data` goes on that event; `query_database` marks it `{"kind": "write"}` or `"read"`,
+    which the write rate limit counts (`recent_writes`).
+    """
     action = Action(
         user_id=user_id,
         agent_id=agent_id,
@@ -51,15 +61,69 @@ async def create_action(
         tool=tool,
         intent=intent,
         sql=sql,
+        pinned_sql=pinned_sql,
+        sql_display=sql_display,
+        pinned_values=pinned_values,
         statement_type=statement_type,
         tables=tables or [],
+        retry_of=retry_of,
         status=ActionStatus.RECEIVED.value,
     )
     session.add(action)
     await session.flush()
-    session.add(AuditEvent(action_id=action.id, event_type=AuditEventType.RECEIVED.value))
+    session.add(
+        AuditEvent(
+            action_id=action.id,
+            event_type=AuditEventType.RECEIVED.value,
+            data=received_data or {},
+        )
+    )
     await session.flush()
     return action
+
+
+# Distinct from the runner's and the sweep's advisory-lock keys; the second key is the agent.
+WRITE_LIMIT_LOCK_KEY = 0x424C5752 + 1
+RATE_WINDOW_SECONDS = 60
+
+
+async def lock_agent_writes(session: AsyncSession, agent_id: uuid.UUID) -> None:
+    """Hold this agent's write-limit lock until the transaction ends, so counting and creating an
+    action are one step: of 30 calls at once, the count each sees includes the earlier ones."""
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:key, hashtext(:agent))"),
+        {"key": WRITE_LIMIT_LOCK_KEY, "agent": str(agent_id)},
+    )
+
+
+async def recent_writes(session: AsyncSession, agent_id: uuid.UUID) -> tuple[int, float | None]:
+    """How many writes this agent made in the last 60 s, and how old the oldest is (seconds).
+
+    A write is an action whose `received` event says `kind: write`, not one whose statement_type is
+    not `select`: a SELECT that calls an unknown function is a write too. Both sides use the
+    database's clock, so no app clock is involved.
+    """
+    row = (
+        await session.execute(
+            select(
+                func.count(),
+                func.extract("epoch", func.clock_timestamp() - func.min(Action.created_at)),
+            )
+            .select_from(Action)
+            .join(
+                AuditEvent,
+                (AuditEvent.action_id == Action.id)
+                & (AuditEvent.event_type == AuditEventType.RECEIVED.value),
+            )
+            .where(
+                Action.agent_id == agent_id,
+                AuditEvent.data["kind"].astext == "write",
+                Action.created_at > func.clock_timestamp() - timedelta(seconds=RATE_WINDOW_SECONDS),
+            )
+        )
+    ).one()
+    age = row[1]
+    return row[0], float(age) if age is not None else None
 
 
 class IllegalTransitionError(RuntimeError):
@@ -177,6 +241,75 @@ async def status_view(
     )
     row = (await session.execute(query)).first()
     return StatusView(**row._asdict()) if row is not None else None
+
+
+async def agent_view(
+    session: AsyncSession, action_id: uuid.UUID, owner_id: uuid.UUID
+) -> AgentView | None:
+    """What the agent is told about its own action; None for an unknown or someone else's.
+
+    Always through `visible_actions` with admin widening off, so an admin's agent sees only its
+    owner's actions (D-055).
+    """
+    decider = aliased(User)
+    row = (
+        await session.execute(
+            visible_actions(owner_id, is_admin=False)
+            .with_only_columns(
+                Action.id,
+                Action.status,
+                Action.decision,
+                Action.policy_reason,
+                Action.reviewer_note,
+                decider.display_name.label("decided_by_name"),
+                Action.failure_reason,
+                Action.created_at,
+                Action.statement_type,
+                Action.tables,
+                Action.impact,
+            )
+            .outerjoin(decider, Action.decided_by == decider.id)
+            .where(Action.id == action_id)
+            .execution_options(populate_existing=True)
+        )
+    ).first()
+    if row is None:
+        return None
+    events = (
+        await session.execute(
+            select(AuditEvent.event_type, AuditEvent.data)
+            .where(
+                AuditEvent.action_id == action_id,
+                AuditEvent.event_type.in_(
+                    [
+                        AuditEventType.DRIFTED.value,
+                        AuditEventType.DECIDED.value,
+                        AuditEventType.COMMITTED.value,
+                    ]
+                ),
+            )
+            .order_by(AuditEvent.created_at, AuditEvent.id)
+        )
+    ).all()
+    decided = [data for kind, data in events if kind == AuditEventType.DECIDED.value]
+    committed = [data for kind, data in events if kind == AuditEventType.COMMITTED.value]
+    rows = committed[-1].get("rows") if committed else None
+    return AgentView(
+        id=row.id,
+        status=row.status,
+        decision=row.decision,
+        policy_reason=row.policy_reason,
+        reviewer_note=row.reviewer_note,
+        decided_by_name=row.decided_by_name,
+        failure_reason=row.failure_reason,
+        created_at=row.created_at,
+        statement_type=row.statement_type,
+        tables=list(row.tables or []),
+        drifts=sum(1 for kind, _ in events if kind == AuditEventType.DRIFTED.value),
+        ai_unavailable=bool(decided and decided[-1].get("ai_unavailable")),
+        committed_rows=rows if isinstance(rows, int) else None,
+        impact=row.impact,
+    )
 
 
 async def claim_decision(

@@ -211,10 +211,12 @@ def test_query_errors_tell_the_agent_but_store_only_the_code(
     assert sql not in output
 
 
-def test_a_write_is_refused_and_nothing_changes(
+def test_a_write_without_a_workflow_is_refused_and_nothing_changes(
     mcp_client: TestClient, agent: McpAgent, auth_db: AuthDb
 ) -> None:
+    """Step 17: no runner here, so a write is refused and no action is recorded (decision B)."""
     before = company_count("SELECT count(*) FROM customer_notes")
+    [(actions_before,)] = auth_db.execute("SELECT count(*) FROM actions")
     for sql in (
         "DELETE FROM customer_notes",
         "WITH gone AS (DELETE FROM customer_notes RETURNING id) SELECT count(*) FROM gone",
@@ -222,15 +224,14 @@ def test_a_write_is_refused_and_nothing_changes(
     ):
         result = query(mcp_client, agent, sql, intent="clean up notes")
         assert result["status"] == "failed"
-        assert result["message"] == agent_messages.not_supported()
-        row = action_row(auth_db, result["action_id"])
-        assert row["failure_reason"] == "not_supported"
-        assert row["statement_type"] is None
+        assert result["action_id"] is None
+        assert result["message"] == agent_messages.failed("workflow_not_configured")
     assert company_count("SELECT count(*) FROM customer_notes") == before
+    assert auth_db.execute("SELECT count(*) FROM actions") == [(actions_before,)]
 
 
 async def test_the_database_refuses_a_write_even_without_the_check() -> None:
-    """Layers behind check_read: run_read's READ ONLY transaction, then the reader's privileges."""
+    """Layers behind the classifier: READ ONLY transaction, then the reader's privileges."""
     conn = await asyncpg.connect(COMPANY_READER_URL, server_settings=SERVER_SETTINGS)
     try:
         with pytest.raises(asyncpg.ReadOnlySQLTransactionError):
@@ -282,7 +283,7 @@ def test_each_call_is_recorded_under_the_owner(mcp_client: TestClient, auth_db: 
     owner = auth_db.make_user()
     agent = auth_db.make_agent(owner.id)
     executed = query(mcp_client, agent, "SELECT count(*) FROM users", intent="count users")
-    failed = query(mcp_client, agent, "UPDATE users SET plan = 'free'", intent="downgrade")
+    failed = query(mcp_client, agent, "SELECT * FROM userz", intent="typo")
     listed = call_tool(mcp_client, agent.key, "list_tables")
     described = call_tool(mcp_client, agent.key, "describe_table", {"table": "orders"})
 
@@ -305,7 +306,10 @@ def test_each_call_is_recorded_under_the_owner(mcp_client: TestClient, auth_db: 
         assert row["session_id"] is None  # stateless /mcp (D-097)
         assert row["decision"] is None
         assert row["total_ms"] is not None and row["total_ms"] >= 0
-        assert row["pinned_sql"] is None and row["sql_display"] is None  # step 8
+        if tool == "query_database":  # a read stores what ran and its masked display
+            assert row["pinned_sql"] and row["sql_display"]
+        else:
+            assert row["pinned_sql"] is None and row["sql_display"] is None
         assert history(auth_db, result["action_id"]) == ["received", status]
 
     row = action_row(auth_db, executed["action_id"])
@@ -397,7 +401,6 @@ def test_get_action_status_scoped_to_the_owner(mcp_client: TestClient, auth_db: 
     admins_agent = auth_db.make_agent(admin.id)
 
     executed = query(mcp_client, agent, "SELECT 1")["action_id"]
-    refused = query(mcp_client, agent, "DELETE FROM users")["action_id"]
     missing = call_tool(mcp_client, agent.key, "describe_table", {"table": "userz"})["action_id"]
     bad_query = query(mcp_client, agent, "SELECT * FROM userz")["action_id"]
     [(before,)] = auth_db.execute("SELECT count(*) FROM actions")
@@ -409,7 +412,6 @@ def test_get_action_status_scoped_to_the_owner(mcp_client: TestClient, auth_db: 
         "message": None,
     }
     # A failed action repeats the message the agent got when it ran.
-    assert status_of(mcp_client, agent, refused)["message"] == agent_messages.not_supported()
     assert status_of(mcp_client, agent, missing)["message"] == agent_messages.table_not_found(
         "userz"
     )

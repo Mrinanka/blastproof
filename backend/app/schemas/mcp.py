@@ -13,7 +13,10 @@ ReadStatus = Literal["executed", "failed"]
 
 class QueryDatabaseResult(BaseModel):
     action_id: str | None
-    status: ReadStatus
+    # The stored status of the action (executed, committed, awaiting_review, blocked, ...). `failed`
+    # also covers a call that recorded nothing; null for `busy`, which records nothing either.
+    status: str | None
+    decision: str | None = None
     columns: list[str] = Field(default_factory=list)
     # One list per row, in column order; values are JSON-safe (dates ISO 8601, decimals as text).
     rows: list[list[Any]] = Field(default_factory=list)
@@ -59,6 +62,8 @@ class TableDescription(BaseModel):
 
 
 class ActionStatusResult(BaseModel):
+    """`status` is the stored status; a review waiting for a person is `awaiting_review`."""
+
     action_id: str
     # Null when the action was not found (unknown, someone else's, or not an action ID).
     status: str | None

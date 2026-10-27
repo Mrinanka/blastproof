@@ -1539,3 +1539,39 @@ existing setting.
 ## D-205 · 2026-10-27 · Tests simulate a kill by cancelling the task
 **Decision:** the committer has a `fault` seam (stages `start`, `before_commit`, `after_commit`). The kill tests make the seam wait and cancel the task from outside.
 **Why:** LangGraph turns a `CancelledError` raised by node code into `NodeCancelledError`, which the fail-closed wrapper would treat as an ordinary error; only an outside cancel (what a shutdown does) reaches the node as a real cancel.
+
+## D-206 · 2026-10-27 · A write the workflow cannot take records no action
+**Decision:** when no runner exists (`workflow_not_configured`, answered with the `failed` template) or it is recovering or draining (answered with `busy`, 10 seconds), `query_database` creates no action. A drain that begins between that check and `runner.start` fails the action it just created as `failed: workflow_unavailable` and answers `busy`. These are the second and third exceptions to BE-21, next to the rate limit.
+**Why:** step 15's Known issue: a `received` row nobody runs is failed by the stuck sweep 5 minutes later. Recording nothing is the same choice as for the rate limit, and the agent can simply retry.
+
+## D-207 · 2026-10-27 · The classifier is the only read gate; `check_read` is retired
+**Decision:** `reads.check_read`, its function lists and `test_read_check.py` are deleted. `query_database` runs the classifier first: only `read` is run directly, on the pinned statement; `write`, `ddl` and `unknown` enter the graph, where pass 1 blocks DDL and unknown statements.
+**Why:** the classifier's allowlist of functions is stricter than the old denylist (D-124), and the reader role, the READ ONLY transaction and the 5 s timeout stay behind it. Keeping a second weaker gate would only let the two disagree. A read now stores `pinned_sql`, `sql_display` and `pinned_values`, and runs `pinned_sql`, so the record shows what ran.
+
+## D-208 · 2026-10-27 · `in_progress`: a new template for a preview that is not finished
+**Decision:** `agent_messages.in_progress(id)` = "Blastproof is still checking this change (action {id}). Call get_action_status with this ID until it is decided. Do not try another route to the database." It answers any non-final, non-review status after `REVIEW_WAIT_SECONDS` (`received`, `classified`, `previewing`, `approved`, `committing`, `drifted`).
+**Why:** the Replit preview takes 44 s on Neon (D-142, D-143), so `query_database` often returns while still previewing, and "Held for human review" would be false then. Added to BE-100's list.
+
+## D-209 · 2026-10-27 · Templates stay word for word; the agent is told to keep polling
+**Decision:** `pending` is the plan's text. For a review held because the AI check was unavailable, or sent back after a drift, the reply is the plan's `ai_unavailable` or `drifted` text, a space, then `pending`'s instruction sentence (`KEEP_POLLING`). `blocked` has no suggestion (no rule has one): "Blocked: {reason}. Do not retry the same statement." A reason's own trailing full stop is not doubled.
+**Why:** without the instruction an agent may stop at "held for review". Rule suggestions need a new key in `rules.yaml`: later.
+
+## D-210 · 2026-10-27 · Failure codes: one `failed(code)` template, two exceptions
+**Decision:** every `failure_reason` from steps 14 and 16 (`shadow_timeout`, `unknown_table`, `policy_facts`, `not_a_write`, `fast_lane_invalid`, `workflow_error`, `commit_*`, `restart`, `stuck`, `drifted`) uses `failed(code)`. `shadow_busy` is `busy(10)`. A first drift that went back to review says `drifted`; a second drift ends as `failed: drifted` and says `failed("drifted")`.
+**Why:** step 16 said the second drift "fails with the drifted message", but that text says "sent back for review", which would be false.
+
+## D-211 · 2026-10-27 · The write rate limit counts `received` events marked `kind: write`
+**Decision:** `query_database` marks the `received` event `{"kind": "write"}` or `"read"`. `recent_writes` counts the agent's actions in the last 60 s whose `received` event says `write`, using the database's clock on both sides; `lock_agent_writes` (a transaction-level advisory lock keyed on the agent) makes counting and creating one step. At the cap the agent gets `busy(seconds until the oldest write leaves the window, at least 1)` and `rate_limited` is logged with no SQL.
+**Why:** a SELECT that calls an unknown function is a write whose `statement_type` is `select`, so `statement_type` cannot tell them apart; the event needs no migration. Without the lock 30 concurrent calls could all pass the count.
+
+## D-212 · 2026-10-27 · How `get_action_status` waits
+**Decision:** it waits with `runner.wait_for_decision`, for a decided status when the action is `awaiting_review`, otherwise for a decided status, a review or `executed`. `executed` is final: `DECIDED` leaves it out, so a read polled with `wait_seconds=50` would otherwise hang. The polling budget (`AGENT_POLL_BUDGET_MINUTES`) is timed from `created_at`; past it a review answers `still_waiting` at once, with whole minutes. `query_database` never says `still_waiting`. With no runner it does not wait. An unknown, malformed or someone else's ID is `not_found` and records nothing.
+**Why:** BE-99. A drift back to review is reported at the next poll instead of after 50 s.
+
+## D-213 · 2026-10-27 · The shape of `query_database`'s answer
+**Decision:** `QueryDatabaseResult.status` is the stored status string (null when no action was recorded, as for `busy`; `failed` for `workflow_not_configured`) and the result gains `decision`. `retry_of` is accepted on reads too, looked up through `visible_actions` with admin widening off; an unknown or foreign one is `not_found` and nothing is recorded. If waiting for the answer raises, the agent gets `in_progress`, because the run continues without it.
+**Why:** the tool must not drop a link it accepted (D-103's reason), and a wait error is not a failure of the write.
+
+## D-214 · 2026-10-27 · Existing tests that changed
+**Decision:** `test_mcp_tools.py` (a write without a runner is refused with no action; the recording test uses a failing read; the status test drops the `not_supported` lines), `test_mcp_server.py` (the result has a `decision` key) and `test_agent_messages.py` (`not_supported` is gone). `test_read_check.py` is deleted with `check_read`.
+**Why:** each replaced step 6 behaviour that step 17 supersedes (D-103); none was weakened to get green.

@@ -1,118 +1,22 @@
 """Reads on the company database, as the read-only `blastproof_reader` role (step 6).
 
-`check_read` is a temporary first layer until the step 8 classifier replaces it (D-103): anything
-that is not clearly one plain SELECT is refused before it reaches the database. Behind it, the
-reader role (SELECT only), a READ ONLY transaction and the 5 s statement timeout each stop writes
-on their own.
+The classifier (step 8) decides what is a read; only a statement it calls `read` gets here (D-124).
+Behind it, the reader role (SELECT only), a READ ONLY transaction and the 5 s statement timeout each
+stop writes on their own.
 
 `run_read` fetches one row more than the cap, so it can tell the agent the result was cut short.
 """
 
 import math
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
 import asyncpg
-import sqlglot
-from sqlglot import exp
-from sqlglot.errors import SqlglotError
 
 MAX_ROWS = 500
-MAX_SQL_BYTES = 20 * 1024
-
-# Functions with a side effect even inside a SELECT (ending sessions, taking locks, changing
-# settings, moving sequences, sending notifications, reaching other servers or large objects),
-# that run SQL given as text (`query_to_xml('select pg_advisory_lock(1)', ...)`) or that read the
-# server's files. The step 8 classifier should move to an allowlist of functions; until then
-# this list is the first layer (D-121). `pg_sleep` stays allowed: the 5 s timeout stops it.
-_SIDE_EFFECT_FUNCTIONS = frozenset(
-    {
-        "pg_terminate_backend",
-        "pg_cancel_backend",
-        "set_config",
-        "nextval",
-        "setval",
-        "pg_notify",
-        "cursor_to_xml",
-        "cursor_to_xmlschema",
-        "query_to_xml",
-        "query_to_xmlschema",
-        "query_to_xml_and_xmlschema",
-        "pg_stat_file",
-    }
-)
-_SIDE_EFFECT_PREFIXES = (
-    "pg_advisory_",
-    "pg_try_advisory_",
-    "dblink",
-    "lo_",
-    "pg_read_",
-    "pg_ls_",
-)
-
-# Anywhere in the tree, these mean "not a plain read": data-modifying CTEs, SELECT INTO,
-# FOR UPDATE/SHARE, and statements sqlglot could only parse as an opaque command.
-_REFUSED_NODES: tuple[type[exp.Expression], ...] = (
-    exp.Insert,
-    exp.Update,
-    exp.Delete,
-    exp.Merge,
-    exp.Into,
-    exp.Lock,
-    exp.Command,
-    exp.Transaction,
-    exp.Set,
-    exp.Copy,
-)
-
-
-@dataclass(frozen=True)
-class ReadCheck:
-    ok: bool
-    # Why it was refused, as a short code for the logs (never the SQL itself).
-    reason: str | None = None
-    tables: list[str] = field(default_factory=list)
-
-
-def _function_name(node: exp.Func) -> str:
-    return (node.name if isinstance(node, exp.Anonymous) else node.sql_name()).lower()
-
-
-def _is_side_effect_function(name: str) -> bool:
-    return name in _SIDE_EFFECT_FUNCTIONS or name.startswith(_SIDE_EFFECT_PREFIXES)
-
-
-def check_read(sql: str) -> ReadCheck:
-    """Accept one plain SELECT (WITH, UNION, comments and a trailing `;` are fine)."""
-    if len(sql.encode()) > MAX_SQL_BYTES:
-        return ReadCheck(ok=False, reason="too_long")
-    try:
-        statements = [s for s in sqlglot.parse(sql, read="postgres") if s is not None]
-    except SqlglotError:
-        return ReadCheck(ok=False, reason="unparseable")
-    if not statements:
-        return ReadCheck(ok=False, reason="empty")
-    if len(statements) > 1:
-        return ReadCheck(ok=False, reason="multiple_statements")
-    [statement] = statements
-    if not isinstance(statement, exp.Select | exp.SetOperation):
-        return ReadCheck(ok=False, reason="not_a_select")
-    if any(statement.find_all(*_REFUSED_NODES)):
-        return ReadCheck(ok=False, reason="not_a_plain_read")
-    if any(_is_side_effect_function(_function_name(f)) for f in statement.find_all(exp.Func)):
-        return ReadCheck(ok=False, reason="side_effect_function")
-    cte_names = {cte.alias_or_name for cte in statement.find_all(exp.CTE)}
-    tables = sorted(
-        {
-            f"{table.db}.{table.name}" if table.db else table.name
-            for table in statement.find_all(exp.Table)
-            if table.name and table.name not in cte_names
-        }
-    )
-    return ReadCheck(ok=True, tables=tables)
 
 
 @dataclass(frozen=True)

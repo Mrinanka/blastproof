@@ -94,6 +94,7 @@ SLOW_FILES = frozenset(
         "test_shadow_done_when.py",
         "test_shadow_failures.py",
         "test_workflow_end_to_end.py",
+        "test_mcp_concurrency.py",
         "test_impact_done_when.py",
         "test_judge_done_when.py",
         "test_knowledge_done_when.py",

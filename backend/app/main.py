@@ -193,7 +193,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # The write workflow (step 14). Only the closed pool is built here: the saver needs a running
     # event loop, so the lifespan builds it and the graph. Neither opens a connection (TEST-07);
-    # the lifespan opens the pool. The runner (step 15) starts it; step 17 feeds it.
+    # the lifespan opens the pool. The runner (step 15) starts it; `query_database` feeds it (17).
     checkpointer_url = settings.checkpointer_database_url
     app.state.checkpointer_pool = None
     app.state.workflow_deps = None
@@ -215,7 +215,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # One MCP server per app (D-096). Its single /mcp route joins FastAPI's own router, so unknown
     # paths still get FastAPI's 404 and /mcp stays out of the OpenAPI schema.
-    app.state.mcp = build_mcp_server(settings, app.state.sessionmaker)
+    # The runner is built in the lifespan, so the tools read it from app.state at call time.
+    app.state.mcp = build_mcp_server(
+        settings,
+        app.state.sessionmaker,
+        runner=lambda: app.state.runner,
+        clock=SystemClock(),
+    )
     mcp_app = app.state.mcp.streamable_http_app(
         stateless_http=True, json_response=False, transport_security=transport_security(settings)
     )
