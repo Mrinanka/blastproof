@@ -46,6 +46,9 @@ MATRIX: dict[tuple[str, str], dict[str, int]] = {
         "other": 404,
         "admin": 409,
     },
+    # An agent key is the only credential the hook accepts, so a dashboard user's JWT (any role)
+    # and no credential at all are both 401, whatever the body (a dependency runs first).
+    ("POST", "/v1/hook/pre-tool-use"): dict.fromkeys(ROLES, 401),
 }
 
 # A request body for the rows that need a valid one to reach their authorization check.
@@ -112,3 +115,19 @@ def test_every_v1_route_has_a_row_in_the_matrix(auth_settings: Settings) -> None
         for method in operations
     }
     assert routes == set(MATRIX), f"routes without a matrix row: {sorted(routes - set(MATRIX))}"
+
+
+def test_hook_endpoint_agent_keys(
+    matrix_client: TestClient, actors: Actors, auth_db: AuthDb
+) -> None:
+    """The one credential the hook route takes is an agent key (a JWT is refused above)."""
+    url = "/v1/hook/pre-tool-use"
+    body = {"tool_name": "Bash", "tool_input": {"command": "ls"}, "cwd": "/w"}
+    agent = auth_db.make_agent(actors.owner.id)
+    ok = matrix_client.post(url, json=body, headers={"Authorization": f"Bearer {agent.key}"})
+    assert ok.status_code == 200 and ok.json()["decision"] == "allow"
+    wrong = matrix_client.post(url, json=body, headers={"Authorization": "Bearer bp_" + "A" * 43})
+    assert wrong.status_code == 401
+    auth_db.execute("UPDATE agents SET is_active = false WHERE id = %s", (agent.id,))
+    off = matrix_client.post(url, json=body, headers={"Authorization": f"Bearer {agent.key}"})
+    assert off.status_code == 401
