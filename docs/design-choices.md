@@ -925,3 +925,52 @@ in the browser (it would break the rule that numbers come from the backend), and
 open tab (it pauses in a hidden tab). An admin's badge counts every user's pending actions because
 the backend widens admin visibility; I did not change that. Logout still only clears the cookie;
 the token stays valid on the backend until it expires (D-041).
+
+## F5 · Shared components
+
+### 1. Times start as UTC on the server and switch to local time in the browser, from one shared clock
+
+**What I did.** `useNow()` is a tiny shared clock built on React's `useSyncExternalStore`. On the
+server and during hydration it returns `null`, so `TimeAgo` and `LocalTime` print the time in UTC.
+Once the browser takes over it returns a real `Date`, and the same components switch to the user's
+own time zone and to text like "3 minutes ago". One `setInterval` (30 s) serves every timestamp on
+the page; the first component to mount starts it and the last to unmount clears it. All formatting
+goes through `lib/format.ts`, and a source-rule test fails if any other file calls `Intl` or
+`toLocale*`.
+
+**Why.** The server does not know the user's time zone. If it printed one thing and the browser
+another, React would report a hydration mismatch. Starting from a value that is the same on both
+sides avoids that without hacks. A single shared timer avoids a list of 25 rows each running its
+own timer.
+
+**What I rejected.** Next's documented fix is an inline script with `dangerouslySetInnerHTML`, which
+breaks our nonce CSP and our own source rule. `suppressHydrationWarning` alone hides the symptom.
+`date-fns` would add a dependency for something `Intl` already does.
+
+**Trade-off and limits.** For one render the user sees UTC before local time. Today that cannot be
+seen anyway, because data only arrives after the page loads. Relative text can be up to 30 s stale.
+A timestamp with no `Z` or offset is shown as "—" rather than guessed, so a backend contract break
+shows up instead of silently displaying the wrong hour.
+
+### 2. Components never trust what they are given: unknown values show raw, errors show only what the backend said, text is always text
+
+**What I did.** `STATUS_META` and `RISK_META` are typed `Record<ActionStatus, ...>`, so when the
+backend adds a status and we regenerate the API types, `typecheck` fails until we label it. At
+runtime, an unknown status or risk level still renders (raw text, neutral colour) instead of
+crashing. `ErrorState` prints an `ApiError`'s message (the backend's own envelope text) but gives any
+other error the generic "Something went wrong.", so an internal message or stack never reaches the
+screen. `DataTable` keeps old rows visible when a background refresh fails and adds an alert,
+instead of blanking the page. `SQLBlock` and `AuditTimeline` render agent-provided text as React
+text, never as HTML.
+
+**Why.** The dashboard shows data written by agents, and the backend can be newer than the
+frontend. A page that breaks or leaks detail on surprising input is worse than one that shows a
+slightly plain badge. The compile-time check makes the frontend and backend drift loud while
+building, and the runtime fallback keeps it harmless in production.
+
+**What I rejected.** Showing `error.message` for every error (can leak internals), clearing rows on
+a failed poll (the review queue would flash empty), and a default colour for unknown statuses that
+looks meaningful (it would imply a state we do not know).
+
+**Trade-off and limits.** Colour is only a hint: the label always carries the meaning. Dark-mode
+and contrast checks are F12. Nothing here enforces permissions; the backend does.
