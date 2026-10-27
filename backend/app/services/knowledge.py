@@ -208,9 +208,17 @@ def _scan_drafts(
     return drafts
 
 
-async def scan_schema(settings: Settings) -> list[ChunkDraft]:
-    """One chunk per `public` table of the company database, read as the reader role."""
-    async with company_db.connect_reader(settings) as conn:
+async def scan_schema(settings: Settings, profile: str | None = None) -> list[ChunkDraft]:
+    """One chunk per `public` table of the company database, read as the reader role.
+
+    With a `profile` (a system's) it reads through that profile's reader, never the other one's.
+    """
+    reader = (
+        company_db.connect_reader(settings)
+        if profile is None
+        else company_db.connect_reader_for(profile, settings)
+    )
+    async with reader as conn:
         schema = await read_schema(conn)
         types: dict[str, list[tuple[str, str, bool]]] = {}
         for row in await _fetch_types(conn):
@@ -317,8 +325,8 @@ class KnowledgeService:
     async def ingest(self, source: str, data: bytes, tables: Sequence[str] = ()) -> int:
         return await self.ingest_drafts(source, split_document(source, data, tables))
 
-    async def scan(self, settings: Settings) -> int:
-        return await self.ingest_drafts(SCHEMA_SCAN_SOURCE, await scan_schema(settings))
+    async def scan(self, settings: Settings, profile: str | None = None) -> int:
+        return await self.ingest_drafts(SCHEMA_SCAN_SOURCE, await scan_schema(settings, profile))
 
     async def delete_source(self, source: str) -> int:
         async with self._write_lock:

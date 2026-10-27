@@ -68,7 +68,7 @@ def test_mcp_is_not_in_openapi_and_other_paths_still_work(settings: Settings) ->
         missing = client.get("/nope")
         # FastAPI's own 404, not the SDK's: the route joined FastAPI's router (D-096).
         assert missing.status_code == 404
-        assert missing.json() == {"detail": "Not Found"}
+        assert missing.json() == {"error": {"code": "not_found", "message": "No such route."}}
         # Only /mcp exactly is guarded; /mcpx is just an unknown path.
         assert client.post("/mcpx").status_code == 404
 

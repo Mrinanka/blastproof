@@ -74,6 +74,34 @@ async def connect_reader(settings: Settings) -> AsyncIterator[asyncpg.Connection
         yield conn
 
 
+def reader_url_for(profile: str, settings: Settings) -> str | None:
+    """The reader URL of one connection profile (a system's), with no fallback to the other one."""
+    url = (
+        settings.local_company_reader_url if profile == "local" else settings.company_db_reader_url
+    )
+    return url.get_secret_value() if url is not None else None
+
+
+@asynccontextmanager
+async def connect_reader_for(profile: str, settings: Settings) -> AsyncIterator[asyncpg.Connection]:
+    """A reader connection for one system's profile (a schema rescan), with no fallback."""
+    url = reader_url_for(profile, settings)
+    if url is None:
+        logger.error("company_db_not_configured", profile=profile)
+        raise CompanyDbUnavailableError("not_configured")
+    async with (
+        # Only `local` clones company_main, so only it needs the shared lock.
+        advisory_lock(url, shared=True) if profile == "local" else _no_lock(),
+        open_connection(dsn=url, server_settings=SERVER_SETTINGS) as conn,
+    ):
+        yield conn
+
+
+@asynccontextmanager
+async def _no_lock() -> AsyncIterator[None]:
+    yield
+
+
 def writer_url(settings: Settings) -> str | None:
     url = (
         settings.local_company_writer_url

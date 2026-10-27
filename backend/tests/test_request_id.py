@@ -237,3 +237,16 @@ def _line_of(text: str) -> int:
     lines = Path(__file__).read_text(encoding="utf-8").splitlines()
     [number] = [i for i, line in enumerate(lines, 1) if text in line and "_line_of" not in line]
     return number
+
+
+def test_the_log_holds_the_route_pattern_not_the_path_parameters(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A path parameter can be a file name (DELETE /v1/knowledge/{source}), so it is not logged."""
+    caplog.set_level("INFO")
+    client.delete("/v1/knowledge/confidential-plan.md")
+    text = " ".join(
+        f"{rec.getMessage()}" for rec in caplog.records if rec.name == "app.core.request_id"
+    )
+    assert "/v1/knowledge/{source}" in text
+    assert "confidential" not in text

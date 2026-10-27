@@ -1675,3 +1675,39 @@ existing setting.
 ## D-238 · 2026-10-27 · Step 18 test notes
 **Decision:** `test_generated_files_shape` now expects the `hooks` key (the only change to it). `pre_tool_use.py` has a `--retry-pause` argument (default 1 s) so tests need not wait. The end-to-end test starts uvicorn with `log_config=None` and no `log_level`, because a level of `warning` changed the shared `uvicorn.error` logger and broke `test_logging.py` later in the same run. Stale bytecode from a same-length mutation (`block` to `allow`) failed a test once; clear `claude_hook/__pycache__` after mutation checks.
 **Why:** keep the fast tier fast and the suite order-independent.
+
+## D-239 · 2026-10-28 · Step 19: scope and a direct `python-multipart` pin
+**Decision:** Step 19 builds 12 routes (stats, policies, knowledge list/upload/delete, systems list/scan, agents list/create/deactivate, users list/create). The plan's "13 operations" was a miscount of its own route list. `python-multipart==0.0.32` became a direct dependency (owner approved); it was already in `uv.lock` through `mcp`, so nothing new is downloaded. Account tools from D-095 (deactivate a user, reset a password, log out everywhere) stay out.
+**Why:** Starlette's form parsing needs the package, and `mcp` could drop it. **Rejected:** relying on `mcp` to keep pulling it in.
+
+## D-240 · 2026-10-28 · Uploads are parsed by hand, after the admin and length checks
+**Decision:** `POST /v1/knowledge` takes `Request`, not `File`/`Form`. Order: admin check, knowledge service present, `Content-Length` (411 if missing, 413 over 1 MB + 64 KB, both before any body byte is read), then `request.form(max_files=1, max_fields=21)`, then the file (at most 1 MB, name `^[A-Za-z0-9][A-Za-z0-9._ -]{0,99}\.(md|txt)$`, never `schema_scan`), up to 20 `tables`, and an empty document is 422 because ingesting zero chunks would delete the source. The OpenAPI body is declared with `openapi_extra`. A chunked upload with no length gets 411, which is fine for the dashboard's proxy (it buffers).
+**Why:** FastAPI 0.162 parses the body before it runs dependencies, and Starlette caps only non-file parts, so a stranger could make the server spool a huge upload. **Rejected:** `File` parameters plus a size check after parsing.
+
+## D-241 · 2026-10-28 · `DELETE /v1/knowledge/{source}`
+**Decision:** The path parameter is the source name (URL-encoded); upload names cannot contain `/`. An unknown source is 404. Uploading an existing name replaces that source, including `schema_docs.md`, which is how it is updated from the dashboard.
+**Why:** sources are text; no table has an ID. **Rejected:** adding a sources table (a migration for no gain).
+
+## D-242 · 2026-10-28 · No CORS middleware and no `CORS_ORIGINS`
+**Decision:** The app adds no CORS middleware and has no setting for it; `test_cors.py` proves a preflight and a request with an `Origin` get no `access-control-*` header.
+**Why:** the dashboard's browser code calls only its own server, which forwards to the API (SEC-22). **Rejected:** a `CORS_ORIGINS` setting that is empty in production (a switch nobody needs). SEC-22 stays open for the Deploy check.
+
+## D-243 · 2026-10-28 · Emails appear only on the admin-only `/v1/users` (BE-118)
+**Decision:** `AccountView` (id, email, display name, role, is_active, created_at) is returned by `GET`/`POST /v1/users`, both admin-only. Everywhere else a user is `UserRef` (id and display name). `/v1/auth/me` still returns the caller's own email.
+**Why:** the Users page cannot manage logins without them. **Rejected:** leaving `email` out (an admin could not tell accounts apart). **If you want BE-118 absolute,** drop `email` from `AccountView`.
+
+## D-244 · 2026-10-28 · A system rescan reads through that system's own profile, with no fallback
+**Decision:** `company_db.reader_url_for(profile)` and `connect_reader_for(profile)` mirror `writer_url_for`; `KnowledgeService.scan(settings, profile)` uses them. A profile with no reader URL gives 503. Knowledge has one global `schema_scan` source, so scanning either system replaces it (the two schemas are the same today); a known issue.
+**Why:** a `local` system must never be scanned through the Neon reader or the reverse. **Rejected:** scanning through the deployment's profile whatever the system says.
+
+## D-245 · 2026-10-28 · Names that differ from the plan; a second session for writes
+**Decision:** The admin's user type is `AccountView` (and `AccountPage`), because `UserView` already exists for `/v1/auth/me` and OpenAPI would clash. Routes that write after `get_current_user` use `get_write_session`, a second session: the sign-in check begins a transaction on the request's session, and `session.begin()` in the service then fails (found by the first agent and user tests, which got 500). Page types are explicit classes (`AgentPage`, `AccountPage`, ...), not a generic.
+**Why:** clean generated TypeScript names; no change to the existing services' `session.begin()` style. **Rejected:** `session.commit()` inside services (hides who owns the transaction).
+
+## D-246 · 2026-10-28 · The request log holds the route pattern, not the URL path
+**Decision:** `request_finished` logs `/v1/knowledge/{source}` when a route matched, and the raw path only when none did.
+**Why:** a path parameter can be an uploaded file name, and the test "no document text or file name in the logs" failed on `DELETE`. Existing log tests did not change. **Rejected:** a DELETE that takes the name in the body.
+
+## D-247 · 2026-10-28 · Step 19 test notes
+**Decision:** The one existing assertion that expected FastAPI's `{"detail": "Not Found"}` (`test_mcp_server.py`) now expects the envelope. The authorization matrix grew by 12 rows with additive fixture changes (`Actors` gained `agent`, `system`, `source`; `matrix_client` has a model-free knowledge service and the local reader; `BODIES` accepts a function). Deactivating an agent leaves its pending actions reviewable. Agent names may repeat.
+**Why:** a necessary consequence of D-239; keeps every existing row unchanged.

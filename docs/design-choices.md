@@ -974,3 +974,51 @@ looks meaningful (it would imply a state we do not know).
 
 **Trade-off and limits.** Colour is only a hint: the label always carries the meaning. Dark-mode
 and contrast checks are F12. Nothing here enforces permissions; the backend does.
+
+
+## Step 19 · Dashboard API (D-239 to D-247)
+
+### 1. The upload is checked in a fixed order, and the body is not read until the caller has proved who they are and how big the file is
+
+**What I did.** `POST /v1/knowledge` has no `File` parameter. The route first checks that the caller
+is an admin, then reads the `Content-Length` header (missing is 411, over 1 MB plus 64 KB is 413),
+and only then asks Starlette to parse the multipart body, with a limit of one file and 21 fields.
+After that it checks the file name (a plain `.md` or `.txt` name, never `schema_scan`), the 1 MB
+file size, UTF-8, the table tags, and that the document is not empty.
+
+**Why.** FastAPI reads and parses a body before it runs the dependencies that check who is calling,
+and Starlette puts file parts in a temporary file with no size cap. With a normal `File` parameter,
+a stranger with no login could make the server write a huge file to disk before it said "403". Doing
+the checks by hand costs a few lines and a hand-written OpenAPI description, and it means the cheap
+checks (who, how big) always run before the expensive one (reading the body). An empty document is
+refused because "replace this source with nothing" would silently delete it.
+
+**What I rejected.** A `File` parameter followed by a size check (too late), and trusting the proxy
+to limit size (the API must protect itself).
+
+**Trade-off and limits.** A chunked upload with no length is refused (411), so the dashboard's
+proxy has to buffer and send a length. A client that lies about its length is stopped by the web
+server, not by this code.
+
+### 2. Who may see what is decided inside the query, and a test fails if a route has no row in the permission table
+
+**What I did.** Agents are read through `list_visible_agents` and `get_visible_agent`, which add
+"owned by you" unless you are an admin, exactly like `visible_actions` for actions. Someone else's
+agent therefore looks the same as an agent that does not exist: 404, never 403. Stats are computed
+from `visible_actions`, so a member's numbers can only ever count their own actions. Admin-only
+routes (users, knowledge changes, system scans) use the `require_admin` dependency. Every route has a
+row in the authorization matrix (anonymous, owner, another member, admin), and a guard test fails if
+a new `/v1` route has no row.
+
+**Why.** If each route remembers to filter, one forgotten `if` leaks data. Putting the filter in
+the one query function that every route uses means a route cannot read the data without it. Answering
+404 for both "not yours" and "not there" means an attacker cannot learn which IDs exist. The
+matrix test makes the permission table something the build checks, not something people remember.
+
+**What I rejected.** Loading the row first and comparing the owner in the route (easy to forget, and
+leaks existence through 403), and showing every user's email to every signed-in user (BE-118).
+
+**Trade-off and limits.** Admins see emails on `/v1/users`; that is a deliberate exception (D-243).
+The matrix proves each route's answer for four roles, not that every query inside is correct, so
+each list route also has its own test. Hiding buttons in the UI is a convenience; this is the
+enforcement.
