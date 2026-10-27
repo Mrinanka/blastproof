@@ -5,7 +5,7 @@
 > **Test speed (D-179, done 2026-10-26):** local `uv run pytest` runs only the fast unit tests (about 40 s); `uv run pytest --integration` runs all of them, and CI always does. See `docs/test-speed.md` (includes how to reverse it).
 
 ## Current focus
-F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). Next unticked: F2. Typed API client (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
+F1 (frontend scaffold) is built on `feat/f1` (D-215 to D-220). Step 17 (wire up `query_database`) is built on `feat/step-16` (D-206 to D-214). F2 (typed API client) is built on `feat/f1` (D-221 to D-223). Next unticked: F3 (the checklist puts F1 to F5 before the Stage 3 gate; step 18, the Claude Code hook, comes later).
 
 The pull-forward of GET /v1/actions and GET /v1/actions/{id} is done on `feat/actions-read-api` (D-168 to D-172). The LangGraph interrupt and resume spike is done on `spike/langgraph-interrupt` (D-173 to D-178). Step 15 (workflow runner) is done on `feat/step-15` (D-187 to D-189). The approve/reject routes (a pull-forward, D-053) are done on `feat/approve-reject` (D-192 to D-194); `seed-demo-actions` is done on the same branch (D-195 to D-198); Step 16 (commit) is done on `feat/step-16` (D-199 to D-205); next: step 17 (wire up `query_database`). Step 14 (LangGraph workflow) is done on `feat/step-14` (D-180 to D-186). The Stage 2 gate audit is done on `fix/gate-audit-stage-2` (D-165 to D-167). Step 13 (Risk judge, pluggable) is done on `feat/step-13` (decisions D-158 to D-164; its manual read of real Gemini wording is deferred, see Known issues). Step 12 (Impact engine) is done on `feat/step-12`; its manual read of real Gemini wording is deferred (Gemini was overloaded, see Known issues). Decisions D-150 to D-157.
 Step 11 (Knowledge and RAG) is done on `feat/step-11`. Retrieval takes the top 10 similar chunks (D-148).
@@ -58,6 +58,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - By hand 2026-10-27: ran against local `blastproof` with the local values from `.env.example` in the process environment: 14 actions, every one in its expected status, 24 knowledge chunks retrieved. This left users `demo-user-1@example.com` and `demo-user-2@example.com` (password given on stdin) and 14 actions in the local dev database. Not done by hand: the `/docs` walk-through (DW-B19, first half: log in as demo user 1, approve one pending action, reject another, demo user 2 gets 404); the automated API test stands in until you run it.
 - Requirements ticked: BE-121. Left open: DW-B19 (first half by hand), DW-F04, DW-F06, DW-F10, TEST-09 (they use the data in the dashboard steps).
 - Step 16 hand-over: re-run the seed and add a `failed: drifted` action; the commit's profile guard ("refuses any action whose system's profile does not match") is step 16's, not the seed's.
+
+### F2, built 2026-10-27, D-221 to D-223
+- New: `src/lib/api/schema.d.ts` (generated from the local backend), `src/lib/api/client.ts`, `src/lib/query-client.ts`, `src/app/providers.tsx` (Query provider and devtools in the root layout), `gen:api` script, schema ignored by ESLint; tests `api-client.test.ts` (type tests incl. `@ts-expect-error` cases, base path, no env/token, array params), `query-client.test.ts`, `query-polling.test.ts`. 4 pins (D-221).
+- Tests: 40 Vitest; lint, format, typecheck and `npm run build` clean. Mutation checks: each turned a test red (background polling on, focus refetch off, server branch deleted, browser client not shared, base URL changed, `action_id` renamed in the schema: typecheck fails). Backend untouched, so backend tests were not re-run.
+- Not done: the editor hover (DW-F02, by hand: hover `api.GET("/v1/actions/{action_id}")`); a second `gen:api` giving no diff and the `.next/static` devtools check were not run. CI contract check waits for step 20 (OPS-05); regenerate `schema.d.ts` by hand whenever a route changes.
+- Requirements ticked: FE-02, FE-03, CONV-13. CONV-12, CONV-14, CONV-16, OPS-05 and DW-F02 stay open.
 
 ### F1, built 2026-10-27, D-215 to D-218
 - New: `frontend/` (Next.js 16.4.3, React 19.3.1, Tailwind 4.3.3, shadcn 4.22.1 on Radix with 12 components plus `label`, `separator`, `sheet`, `tooltip`), `next.config.ts` headers, Vitest tests in `frontend/tests/`, `.github/workflows/frontend.yml`, `backend/tests/test_frontend_workflow.py`. Edited shadcn's `use-mobile.ts` (lint rule).
@@ -449,6 +455,7 @@ payment card (right after the MVP, for the Jev judge); the `blastproof-company` 
 created at deploy time straight into Fly.io secrets (D-058).
 
 ## Known issues
+- F2: DW-F02 (hover `api.GET("/v1/actions/{action_id}")` in the editor) is a manual check the owner still has to do. `schema.d.ts` has no CI contract check until step 20's `export-openapi` (OPS-05): regenerate it by hand (`npm run gen:api`, backend running) whenever a route changes. TanStack's default of 3 retries also applies to 4xx until F3 sets no-retry on them. `noUncheckedIndexedAccess` is off (revisit in F12). Devtools are a devDependency (D-221).
 - F1: Dependabot has no npm entry yet (owner's choice); add one in the security pass. The `frontend` CI job and the `setup-node` commit hash (from the plan, not yet resolved from GitHub) are verified only by the PR run. ESLint 9.39.5 is marked unsupported by npm (D-217). The CSP for the landing page needs hashes or `'unsafe-inline'` for inline scripts (D-219).
 - Step 17: not yet tried on real Neon under load (the concurrency test uses `FakeNeonClient`, which terminates connections on `company_main` while it clones, so a read could be killed mid-clone locally or in CI). Untested paths: the wait raising after a write starts, `retry_of` on a read, and a SQL string over 20 KB through MCP. Two `assert isinstance` lines in `agent_calls.py` and the `UUID | None | bool` return of `_resolve_retry_of` could be tidied. Real Gemini wording for reviews is still unread (steps 12 and 13). The local dev database holds `dw-b17-admin@example.com` and two rejected test actions.
 - Step 16: children of the deleted rows are counted but not locked (locking 245k rows would double the cost), so a child re-pointed between the cascade check and the delete can slip through; new children are blocked by the parent row locks. A write the commit cannot check (two targets, a write inside a CTE) is only refused at commit as `commit_unsupported` (D-201); a pass-1 rule could catch it earlier. Before-images hold the target table only (BE-96); ON UPDATE cascade paths are not checked.
@@ -670,7 +677,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] 16. Commit
 - [x] 17. Wire up query_database
 - [x] F1. Scaffold
-- [ ] F2. Typed API client
+- [x] F2. Typed API client
 - [ ] F3. Proxy and login
 - [ ] F4. Layout and navigation
 - [ ] F5. Shared components

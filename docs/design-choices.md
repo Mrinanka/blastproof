@@ -808,3 +808,15 @@ the test endpoint had pooling off; I chose direct on design grounds, not on a fa
 **What we did.** `.npmrc` makes `npm install` save exact versions, and a test rejects any `^` or `~`. The lockfile pins everything below that. The frontend job lives in `frontend.yml`, with a Node version taken from `.nvmrc` and actions pinned to commit hashes, instead of being added to the backend `ci.yml`, whose tests allow exactly two jobs.
 **How I'd say it in an interview.** "This tool sits between an AI agent and a customer's database, so a surprise dependency update is a security risk, not just an annoyance. Exact versions mean the code I tested is the code that ships, and an update is a visible diff someone reads. A separate workflow file meant I added a job without loosening a guard on the backend one."
 **Rejected.** Caret ranges with a lockfile alone (a plain `npm install` would still move them) and putting the job in `ci.yml` (it would have meant editing a test that protects the backend job list).
+
+## F2: the typed API client (D-221 to D-223)
+
+### 1. The backend's OpenAPI file is the only source of API types, and the compiler is the test
+**What we did.** `npm run gen:api` turns the running backend's `/openapi.json` into `schema.d.ts`, and the `openapi-fetch` client is typed from it. A wrong path, a missing parameter or a misspelled field is a TypeScript error. The tests include `@ts-expect-error` lines that must keep failing to compile (the old plan path `{id}`, an unknown path, a missing `action_id`, a field that does not exist).
+**How I'd say it in an interview.** "We never write API types by hand, because hand-written types drift from the server and you find out in a reviewer's browser. The backend already describes itself, so we generate the types from that description and let `tsc` catch mistakes. I also test the negative: lines that must not compile, so if the types ever become loose the typecheck goes red."
+**Rejected.** Hand-written interfaces (drift), a shared types package (the backend is Python), and runtime schema validation on every response (cost, and it checks the wrong moment).
+
+### 2. One query client per server request, one shared in the browser, with refetch rules written down
+**What we did.** `getQueryClient` returns a fresh client on the server and a single cached one in the browser. `refetchOnWindowFocus: true` and `refetchIntervalInBackground: false` are set explicitly even though they are TanStack's defaults, and tests prove polling stops while the tab is hidden and resumes on focus.
+**How I'd say it in an interview.** "A server-side cache that outlives a request could hand one user's data to another, so on the server every render gets its own client. In the browser one shared client is what makes the cache work. The two refetch options are defaults today, but this is a review dashboard that must not poll a hidden tab, so I pin them in code and test them rather than trusting a library default to stay put."
+**Rejected.** A module-level client everywhere (cross-user leak risk on the server) and relying on the defaults without a test.

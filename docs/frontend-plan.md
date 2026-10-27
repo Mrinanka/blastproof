@@ -113,7 +113,7 @@ import type { paths } from "./schema";
 export const api = createClient<paths>({ baseUrl: "/api/blastproof" });
 
 // usage: fully typed path, params and response
-const { data, error } = await api.GET("/v1/actions/{id}", { params: { path: { id } } });
+const { data, error } = await api.GET("/v1/actions/{action_id}", { params: { path: { action_id } } });
 ```
 
 The browser always calls `/api/blastproof/...` on the dashboard's own domain; section 4 explains how that reaches the backend.
@@ -202,7 +202,7 @@ Steps F1 to F5 produce an empty dashboard you can log in to, talking to the real
 1. **F1. Scaffold.** In the repo root, `npx create-next-app@latest frontend` with TypeScript, Tailwind, ESLint, App Router and the `src/` folder. Run `npx shadcn@latest init`, then add the components you need (button, card, table, badge, dialog, input, textarea, field, sonner, dropdown-menu, sidebar, skeleton), with `npx shadcn@4.22.1 init -b radix`. Add Prettier and a `typecheck` script. Check the current Next.js docs for the `proxy.ts` file convention and the CSP guide before F3.
    *Done when:* `npm run dev` shows the starter page at `http://localhost:3000`.
 2. **F2. Typed API client.** Add `openapi-typescript` and `openapi-fetch`. A `gen:api` script reads `http://localhost:8000/openapi.json` into `src/lib/api/schema.d.ts` (committed). `src/lib/api/client.ts` creates the client with base URL `/api/blastproof`. Set up TanStack Query's provider in the root layout, with `refetchOnWindowFocus` on and polling paused while the tab is hidden.
-   *Done when:* hovering `api.GET("/v1/actions/{id}")` in your editor shows the backend's real response type.
+   *Done when:* hovering `api.GET("/v1/actions/{action_id}")` in your editor shows the backend's real response type.
 3. **F3. Proxy and login.** Build the three route handlers and the auth proxy (`src/proxy.ts`) from section 4. The login route posts to the backend, puts the JWT in an httpOnly cookie, and returns only the user. The proxy forwards method, path, query string, body and content type, adds the `Authorization` header from the cookie, drops incoming cookies, and returns the backend's status and body unchanged. It rejects any POST or DELETE whose `Origin` is not the dashboard's own address (section 11). A global TanStack Query error handler sends any 401 to `/login`. Add a `useMe()` hook on `/v1/auth/me` for the user's name and role.
    *Done when:* you can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`.
 4. **F4. Layout and navigation.** The `app/dashboard/layout.tsx` layout (a real URL segment, not a route group) has a sidebar (Overview, Review with a count badge, History, Knowledge, and Settings with Agents, Rules and, for admins, Users) and a user menu with logout. The badge reads `total` from `/v1/actions?status=awaiting_review&limit=1` every 5 seconds. Admin-only links (Knowledge, Users) are hidden from members (the backend still enforces roles).
