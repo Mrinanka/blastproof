@@ -1,0 +1,46 @@
+# Fly.io app config (backend plan §15). At the repo root so the build context can see
+# demo_company/schema_docs.md. Guarded by backend/tests/test_fly_toml.py. Steps: docs/deploy.md.
+# Nothing secret belongs here: every secret is a Fly secret (D-058).
+app = "blastproof"
+# Ashburn: Fly has no Ohio region, and iad is the closest to Neon's aws-us-east-2 (D-266).
+primary_region = "iad"
+# Fly's default is SIGINT; uvicorn drains on both, but BE-86 says SIGTERM.
+kill_signal = "SIGTERM"
+# Longer than uvicorn's 10 s for open connections plus the runner's 45 s drain.
+kill_timeout = 60
+
+[build]
+dockerfile = "backend/Dockerfile"
+
+[deploy]
+# Runs in a temporary machine with the secrets; a non-zero exit stops the deploy.
+release_command = "alembic upgrade head"
+strategy = "rolling"
+
+# Not secret. Model settings and provider keys are secrets (D-255).
+[env]
+APP_ENV = "production"
+LOG_LEVEL = "INFO"
+COMPANY_CONNECTION_PROFILE = "neon"
+NEON_CLIENT = "api"
+PUBLIC_BASE_URL = "https://blastproof.fly.dev"
+
+[http_service]
+internal_port = 8080
+force_https = true
+# Exactly one machine, always on: a second one would run a second runner and sweep (D-025).
+auto_stop_machines = "off"
+auto_start_machines = false
+min_machines_running = 1
+
+# Liveness only. /ready depends on Neon and the LLM, and an outage there must not restart us.
+[[http_service.checks]]
+method = "GET"
+path = "/health"
+grace_period = "30s"
+interval = "15s"
+timeout = "5s"
+
+[[vm]]
+size = "shared-cpu-1x"
+memory = "1gb"

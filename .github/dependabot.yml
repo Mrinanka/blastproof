@@ -55,3 +55,16 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+
+  # The digest-pinned base images in backend/Dockerfile (python, uv).
+  - package-ecosystem: docker
+    directory: /backend
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    groups:
+      docker:
+        patterns: ["*"]

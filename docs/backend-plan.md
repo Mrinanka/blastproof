@@ -667,6 +667,8 @@ The Compose superuser is used only by the init scripts; the app connects as `bla
 6. Add a deploy job to GitHub Actions that runs `flyctl deploy` on every merge to `main`, using a `FLY_API_TOKEN` repository secret.
 7. Point Claude Code at the deployed MCP URL (`https://<your-app>.fly.dev/mcp`) and update `BLASTPROOF_AGENT_KEY` for the hook.
 
+**As built (D-261 to D-264).** The deploy job runs on pushes to a `release` branch, not `main`. `fly.toml` is at the repo root (the build context must see `demo_company/schema_docs.md`), with `kill_signal = "SIGTERM"`, and every deploy passes `--ha=false` because `fly deploy` adds a second machine by default. A separate `image.yml` builds the image and smoke-tests it (`docker/image-smoke.sh`); `deploy-check` probes the live URL. `deploy/neon/blastproof-app.sql` sets up the app database and `docs/deploy.md` is the owner's checklist.
+
 Then deploy the dashboard to Vercel by following the frontend plan. Terraform, separate staging and production environments, and Grafana come in phase 2.
 
 ## 16. Schedule

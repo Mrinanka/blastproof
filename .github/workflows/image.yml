@@ -1,0 +1,44 @@
+# Builds the backend image and smoke-tests it (backend plan §15). Guarded by
+# backend/tests/test_image_workflow.py. No secrets: the smoke test runs the image offline with no
+# environment. A separate file from ci.yml, whose job set is fixed by test_ci_workflow.py.
+name: Image
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "demo_company/schema_docs.md"
+      - ".dockerignore"
+      - "fly.toml"
+      - "docker/image-smoke.sh"
+      - ".github/workflows/image.yml"
+  push:
+    branches: [develop, release]
+    paths:
+      - "backend/**"
+      - "demo_company/schema_docs.md"
+      - ".dockerignore"
+      - "fly.toml"
+      - "docker/image-smoke.sh"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: docker build -f backend/Dockerfile -t blastproof-backend:ci .
+
+      - run: bash docker/image-smoke.sh blastproof-backend:ci

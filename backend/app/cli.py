@@ -11,6 +11,7 @@
     uv run python -m app.cli seed-demo-actions [--add-pending] [--password-stdin]
     uv run python -m app.cli bootstrap --admin-email you@example.com --admin-name "You"
     uv run python -m app.cli export-openapi [--out PATH]
+    uv run python -m app.cli deploy-check --url https://blastproof.fly.dev
 
 The first two connect as blastproof_app (BLASTPROOF_DATABASE_URL). A password is never a
 command-line argument (it would land in shell history): create-user asks for it, or reads one
@@ -41,6 +42,9 @@ printed once), the main system and the knowledge base (schema scan plus demo_com
 or --schema-docs PATH). Safe to re-run: each part is reused, and a re-run never shows a key again.
 export-openapi writes the API's OpenAPI schema (default backend/openapi.json) for the frontend's
 generated types; it needs no server, database or .env.
+deploy-check (Deploy, backend plan §15) probes a deployed backend's public URL with read-only
+requests and prints one line per check (exit 1 if any fails). It needs no key and reads no
+.env value.
 Errors print one line and no traceback, so no URL or secret reaches the terminal.
 """
 
@@ -61,6 +65,7 @@ from app.db.enums import Decision, UserRole
 from app.db.session import WrongAppRoleError, make_engine, make_sessionmaker
 from app.logging import configure_logging
 from app.services import auth as auth_service
+from app.services import deploy_check
 from app.services.bootstrap import BootstrapError, BootstrapReport, bootstrap
 from app.services.classifier import Classification, Kind, classify
 from app.services.demo_seed import SeedError, seed_demo_actions
@@ -167,6 +172,11 @@ def _parser() -> argparse.ArgumentParser:
         "export-openapi", help="Write the API's OpenAPI schema (needs no server or database)"
     )
     export.add_argument("--out", type=Path, default=DEFAULT_OPENAPI_PATH)
+
+    check = commands.add_parser(
+        "deploy-check", help="Probe a deployed backend's public URL (read-only, needs no key)"
+    )
+    check.add_argument("--url", required=True, help="e.g. https://blastproof.fly.dev")
     return parser
 
 
@@ -510,6 +520,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         return 0
+    if args.command == "deploy-check":
+        if not args.url.startswith(("http://", "https://")):
+            print("Error: --url must start with https:// (or http://).", file=sys.stderr)
+            return 1
+        checks = asyncio.run(deploy_check.probe(args.url))
+        print(deploy_check.render(checks))
+        return 0 if all(c.ok for c in checks) else 1
     settings = Settings()
     # Logs go to stderr, so stdout holds only the result (and the key, for create-agent).
     configure_logging(settings.log_level, stream=sys.stderr, secrets=known_secrets_from(settings))

@@ -1,0 +1,40 @@
+# Deploys the backend to Fly.io when `release` is pushed (backend plan §15, OPS-12, D-261).
+# Guarded by backend/tests/test_deploy_workflow.py. The one secret, FLY_API_TOKEN, is an environment
+# secret of `production`, limited to the `release` branch, and sits in the deploy step only.
+# CI is green before this runs because `release` is protected: pull requests into it run CI.
+name: Deploy
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two deploys never overlap, and a running one is never cancelled halfway.
+concurrency:
+  group: deploy-fly
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # A manual run from another branch deploys nothing.
+    if: github.ref == 'refs/heads/release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # v1.5
+        with:
+          version: 0.4.123
+
+      # --ha=false: `fly deploy` adds a spare machine by default, and a second machine would run a
+      # second runner, recovery and sweep (D-025). fly.toml is at the repo root.
+      - run: flyctl deploy --remote-only --ha=false
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
