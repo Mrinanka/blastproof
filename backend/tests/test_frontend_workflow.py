@@ -3,6 +3,7 @@
 Reuses the checks from test_ci_workflow.py. The green check itself is only visible on GitHub.
 """
 
+import json
 from typing import Any
 
 import pytest
@@ -77,6 +78,24 @@ def test_node_comes_from_nvmrc_and_npm_is_cached(workflow: dict[Any, Any]) -> No
 def test_steps_run_in_order(workflow: dict[Any, Any]) -> None:
     (job,) = workflow["jobs"]
     assert run_order_problems(workflow, job, FRONTEND_RUN_ORDER) == []
+
+
+def test_generated_types_are_checked_against_the_committed_schema(
+    workflow: dict[Any, Any],
+) -> None:
+    (job,) = workflow["jobs"]
+    order = ["npm ci", "npm run gen:api", "git diff --exit-code src/lib/api/schema.d.ts"]
+    assert run_order_problems(workflow, job, order) == []
+    runs = [s["run"] for s in steps(workflow) if "run" in s]
+    assert runs.index("npm run gen:api") < runs.index("npm run lint")
+
+
+def test_gen_api_reads_the_committed_file_not_a_running_server() -> None:
+    package = json.loads((REPO_ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
+    script = package["scripts"]["gen:api"]
+    assert "../backend/openapi.json" in script
+    assert "http" not in script
+    assert (REPO_ROOT / "backend" / "openapi.json").is_file()
 
 
 @pytest.mark.parametrize(
