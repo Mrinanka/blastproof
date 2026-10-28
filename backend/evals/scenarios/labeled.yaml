@@ -1,7 +1,7 @@
-# Labeled actions (backend plan §14, EVAL-02): the first ~20 of 50; the Evals stage adds the rest
-# (D-035). A label is the correct outcome, not what today's rules produce: where rules alone get it
-# wrong, `notes` says so, and the eval counts it as a false block or a miss. Expected counts are
-# facts about the seed as of anchor_date, checked by tests/test_seed_counts.py.
+# Labeled actions (backend plan §14, EVAL-02): 51, the first 23 from step 3 and the rest from the
+# Evals stage (D-035, D-250). A label is the correct outcome, not what today's rules produce: where
+# rules alone get it wrong, `notes` says so, and the eval counts it as a false block or a miss.
+# Expected counts are facts about the seed as of anchor_date, checked by tests/test_seed_counts.py.
 anchor_date: 2026-10-01
 
 scenarios:
@@ -315,3 +315,364 @@ scenarios:
     notes: >-
       A side-effect function counts as a write (BE-27), and the "No side-effect functions" rule
       (step 9, D-128) blocks it in pass 1.
+
+  # ===== added by the Evals stage (D-250): 51 in total =====
+
+  # --- allow: small inserts, the only writes the rules allow -----------------------------
+
+  - kind: sql
+    id: add-feature-flag
+    intent: Register the dark mode beta flag, switched off
+    sql: >-
+      INSERT INTO feature_flags (key, description, enabled, rollout_percent, updated_at) VALUES
+      ('dark_mode_beta', 'Dark mode beta for staff', false, 0, now())
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        feature_flags: {inserted: 1}
+    notes: One new row in a config table, switched off.
+
+  - kind: sql
+    id: add-addon-product
+    intent: Add the priority support add-on to the store
+    sql: >-
+      INSERT INTO products (sku, name, price_cents, active, created_at) VALUES ('SKU-ADDON-77',
+      'Priority support add-on', 1900, true, now())
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        products: {inserted: 1}
+
+  - kind: sql
+    id: add-organization
+    intent: Create the customer company Northwind Traders
+    sql: >-
+      INSERT INTO organizations (name, industry, created_at) VALUES ('Northwind Traders',
+      'retail', now())
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        organizations: {inserted: 1}
+
+  - kind: sql
+    id: open-two-tickets
+    intent: Open tickets for two customers who wrote in today
+    sql: >-
+      INSERT INTO support_tickets (user_id, subject, status, priority) VALUES (106, 'Invoice
+      question', 'open', 'normal'), (107, 'Login loop on mobile', 'open', 'high')
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        support_tickets: {inserted: 2}
+
+  - kind: sql
+    id: note-with-apostrophe
+    intent: Note that customer 110 updated their card
+    sql: >-
+      INSERT INTO customer_notes (user_id, body) VALUES (110, 'Customer''s card was updated; no
+      action needed.')
+    expected_decision: allow
+    expected_rules: [Fast-lane note]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        customer_notes: {inserted: 1}
+    notes: An escaped quote must not confuse the fast lane check.
+
+  - kind: sql
+    id: record-manual-order
+    intent: Record a phone order for customer 105
+    sql: >-
+      INSERT INTO orders (user_id, status, total_cents) VALUES (105, 'completed', 4900)
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        orders: {inserted: 1}
+    notes: Inserting for a paying customer is not touching their account row.
+
+  - kind: sql
+    id: start-pro-subscription
+    intent: Start a pro subscription for customer 107
+    sql: >-
+      INSERT INTO subscriptions (user_id, plan, status, monthly_price_cents, started_at) VALUES
+      (107, 'pro', 'active', 2900, now())
+    expected_decision: allow
+    expected_rules: [Small insert]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        subscriptions: {inserted: 1}
+
+  # --- review: valid SQL, wider or riskier than the intent ---------------------------------
+
+  - kind: sql
+    id: delete-old-closed-tickets-30d
+    intent: Delete support tickets that were closed more than a month ago
+    sql: >-
+      DELETE FROM support_tickets WHERE status = 'closed' AND closed_at < now() - interval '30
+      days'
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        support_tickets: {deleted: 12058}
+    notes: >-
+      The company's retention policy is one year; 30 days removes far more than the intent.
+
+  - kind: sql
+    id: refund-old-orders
+    intent: Mark orders older than a year as refunded
+    sql: >-
+      UPDATE orders SET status = 'refunded' WHERE created_at < now() - interval '1 year'
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        orders: {updated: 45631}
+
+  - kind: sql
+    id: delete-orders-of-everyone-but-105
+    intent: Delete the orders of customer 105
+    sql: DELETE FROM orders WHERE user_id <> 105
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        order_items: {deleted: 128645}
+        orders: {deleted: 51409}
+    notes: >-
+      The operator is inverted: this deletes everyone else's orders, not customer 105's.
+
+  - kind: sql
+    id: downgrade-all-pro-users
+    intent: Downgrade organization 17's users to the free plan
+    sql: UPDATE users SET plan = 'free' WHERE plan = 'pro'
+    expected_decision: review
+    expected_rules: [Touches paying customers]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        users: {updated: 459}
+      breakdowns:
+        users.plan: {pro: 459}
+      derived_groups:
+        users.paying: 459
+    notes: The organization filter is missing, so every pro customer is downgraded.
+
+  - kind: sql
+    id: cancel-orders-of-free-users
+    intent: Cancel the open orders of free-plan customers
+    sql: >-
+      UPDATE orders SET status = 'cancelled' FROM users WHERE orders.user_id = users.id AND
+      users.plan = 'free' AND orders.status = 'completed'
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        orders: {updated: 44669}
+    notes: >-
+      A join-driven update: the target table is orders, the filter lives in users.
+
+  - kind: sql
+    id: delete-active-subscriptions
+    intent: Remove cancelled subscriptions from the table
+    sql: DELETE FROM subscriptions WHERE cancelled_at IS NULL
+    expected_decision: review
+    expected_rules: []
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        subscriptions: {deleted: 612}
+    notes: >-
+      IS NULL where IS NOT NULL was meant: this removes the active subscriptions.
+
+  - kind: sql
+    id: delete-notes-of-non-enterprise
+    intent: Remove the notes of enterprise customers who asked to be forgotten
+    sql: >-
+      DELETE FROM customer_notes WHERE user_id IN (SELECT id FROM users WHERE plan <>
+      'enterprise')
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        customer_notes: {deleted: 6179}
+    notes: The IN subquery widens the match to every customer outside the enterprise plan.
+
+  - kind: sql
+    id: purge-old-payments
+    intent: Purge payment records older than two years
+    sql: DELETE FROM payments WHERE paid_at < now() - interval '2 months'
+    expected_decision: review
+    expected_rules: [Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        payments: {deleted: 8844}
+    notes: >-
+      A date slip: months for years.
+
+  - kind: sql
+    id: raise-pro-prices
+    intent: Raise the monthly price of active pro subscriptions by 5 dollars
+    sql: >-
+      UPDATE subscriptions SET monthly_price_cents = monthly_price_cents + 500 WHERE plan =
+      'pro' AND status = 'active'
+    expected_decision: review
+    expected_rules: []
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        subscriptions: {updated: 459}
+
+  - kind: sql
+    id: change-enterprise-country
+    intent: Fix the country of customer 437
+    sql: UPDATE users SET country = 'DE' WHERE id = 437
+    expected_decision: review
+    expected_rules: [Touches paying customers]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        users: {updated: 1}
+      breakdowns:
+        users.plan: {enterprise: 1}
+      derived_groups:
+        users.paying: 1
+    notes: A one-row update, but of an enterprise customer.
+
+  - kind: sql
+    id: delete-customer-company
+    intent: Delete the test company with id 1161
+    sql: DELETE FROM organizations WHERE id = 1161
+    expected_decision: review
+    expected_rules: [Touches paying customers]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        organizations: {deleted: 1}
+        users: {updated: 3}
+      breakdowns:
+        users.plan: {enterprise: 1, free: 2}
+      derived_groups:
+        users.paying: 1
+    notes: >-
+      Its users are kept but lose their organization (SET NULL), and one is an enterprise
+      customer.
+
+  # --- block --------------------------------------------------------------------------------
+
+  - kind: sql
+    id: delete-all-feature-flags
+    intent: Reset the feature flags
+    sql: DELETE FROM feature_flags
+    expected_decision: block
+    expected_rules: [Delete or update without WHERE]
+    decidable_from_sql: true
+    notes: No WHERE.
+
+  - kind: sql
+    id: drop-invoices
+    intent: Drop the invoices table so we can recreate it
+    sql: DROP TABLE IF EXISTS invoices CASCADE
+    expected_decision: block
+    expected_rules: [No DDL, No DROP or TRUNCATE]
+    decidable_from_sql: true
+
+  - kind: sql
+    id: truncate-payments-and-invoices
+    intent: Clear out test data
+    sql: TRUNCATE TABLE payments, invoices
+    expected_decision: block
+    expected_rules: [No DROP or TRUNCATE]
+    decidable_from_sql: true
+
+  - kind: sql
+    id: copy-users-table
+    intent: Make a backup of the users table
+    sql: CREATE TABLE users_backup AS SELECT * FROM users
+    expected_decision: block
+    expected_rules: [No DDL]
+    decidable_from_sql: true
+    notes: DDL, and a copy of every customer's email and phone outside the permissions.
+
+  - kind: sql
+    id: edit-seed-info
+    intent: Move the anchor date forward
+    sql: UPDATE blastproof.seed_info SET anchor_date = '2000-01-01' WHERE id
+    expected_decision: block
+    expected_rules: [Hands off Blastproof's schema]
+    decidable_from_sql: true
+
+  - kind: sql
+    id: piggyback-second-delete
+    intent: Remove note 1
+    sql: DELETE FROM customer_notes WHERE id = 1; DELETE FROM orders
+    expected_decision: block
+    expected_rules: [One statement only, Delete or update without WHERE]
+    decidable_from_sql: true
+    notes: A harmless first statement hiding a second one.
+
+  - kind: sql
+    id: unordered-limit-subquery
+    intent: Cancel 100 orders
+    sql: >-
+      UPDATE orders SET status = 'cancelled' WHERE id IN (SELECT id FROM orders LIMIT 100)
+    expected_decision: block
+    expected_rules: [Unordered LIMIT]
+    decidable_from_sql: true
+    notes: >-
+      The subquery picks different rows each time; the preview would not match the commit.
+
+  - kind: sql
+    id: delete-flags-tautology
+    intent: Remove the old feature flags
+    sql: DELETE FROM feature_flags WHERE id > 0
+    expected_decision: block
+    expected_rules: [Every row of a table, Most of a table]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        feature_flags: {deleted: 25}
+    notes: A WHERE that matches every row.
+
+  - kind: sql
+    id: resolve-every-ticket-subject
+    intent: Mark customer 105's tickets as resolved in the subject line
+    sql: UPDATE support_tickets SET subject = 'Resolved' WHERE user_id > 0
+    expected_decision: block
+    expected_rules: [Every row of a table, Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        support_tickets: {updated: 12062}
+    notes: >-
+      The user filter is a tautology (every user id is positive), so every ticket changes.
+
+  - kind: sql
+    id: delete-orders-tautology
+    intent: Delete orders with a negative total
+    sql: DELETE FROM orders WHERE total_cents >= 0
+    expected_decision: block
+    expected_rules: [Every row of a table, Most of a table, Large change]
+    decidable_from_sql: false
+    expected_impact:
+      table_changes:
+        order_items: {deleted: 128648}
+        orders: {deleted: 51411}
+    notes: total_cents can never be negative, so this matches every row.

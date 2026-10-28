@@ -52,6 +52,10 @@ jobs:
 
       - run: uv run pytest
 
+      # The incident replays must all be caught, by the rules alone: no model, no Docker (EVAL-06,
+      # D-045). Exit code 1 on a miss or a scenario that cannot be measured.
+      - run: uv run python -m evals.run --mode rules
+
   # The whole suite (D-179): `--integration` adds the tests that need Postgres. They fail (not
   # skip) if Postgres is down. Guarded by backend/tests/test_ci_workflow.py.
   integration:

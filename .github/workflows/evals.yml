@@ -1,0 +1,97 @@
+# Live evals (backend plan §14, EVAL-09, OPS-02). Guarded by backend/tests/test_evals_workflow.py.
+# The full pipeline with the real models on the local Compose databases, nightly and on demand.
+# Never on pull_request: it holds model and LangSmith keys, which a fork's code must never reach.
+# Pull requests run the rules-only eval in ci.yml instead (no keys, no models).
+name: Evals
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # nightly; GitHub runs schedules only from the default branch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+env:
+  APP_ENV: test
+  NEON_CLIENT: fake
+  COMPANY_CONNECTION_PROFILE: local
+  # The throwaway local Compose values (docker/*-init), not secrets.
+  BLASTPROOF_DATABASE_URL: postgresql+asyncpg://blastproof_app:blastproof_app@localhost:5432/blastproof
+  CHECKPOINTER_DATABASE_URL: postgresql://blastproof_app:blastproof_app@localhost:5432/blastproof
+  LOCAL_COMPANY_READER_URL: postgresql://blastproof_reader:blastproof_reader@localhost:5433/company_main
+  LOCAL_COMPANY_WRITER_URL: postgresql://blastproof_writer:blastproof_writer@localhost:5433/company_main
+  FAKE_NEON_ADMIN_URL: postgresql://company:company@localhost:5433/postgres
+  # Model names, options and prices are repository variables, never code. Empty means the default.
+  # SUMMARY_MODEL_OPTIONS is a secret instead (below): it can hold a provider key, such as an
+  # OpenRouter api_key.
+  SUMMARY_MODEL: ${{ vars.SUMMARY_MODEL }}
+  JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
+  JUDGE_MODEL_OPTIONS: ${{ vars.JUDGE_MODEL_OPTIONS }}
+  LLM_PRICES: ${{ vars.LLM_PRICES }}
+  LANGSMITH_PROJECT: blastproof-evals
+
+jobs:
+  evals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --locked
+
+      - run: docker compose up -d --wait
+        working-directory: ${{ github.workspace }}
+
+      - run: uv run --project backend python demo_company/seed.py --target local
+        working-directory: ${{ github.workspace }}
+
+      - run: uv run alembic upgrade head
+        env:
+          BLASTPROOF_MIGRATOR_URL: postgresql://blastproof_owner:blastproof_owner@localhost:5432/blastproof
+
+      - run: uv run python -m app.cli knowledge-scan
+
+      - run: uv run python -m app.cli knowledge-ingest --file ../demo_company/schema_docs.md
+
+      # Exit code 1 when an incident replay is missed or a scenario cannot be measured (D-045).
+      # LangSmith experiments run only when the key is set.
+      - name: Run the live evals
+        run: |
+          args=""
+          if [ -n "$LANGSMITH_API_KEY" ]; then
+            export LANGSMITH_TRACING=true
+            args="--langsmith"
+          fi
+          uv run python -m evals.run --mode live $args
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SUMMARY_MODEL_OPTIONS: ${{ secrets.SUMMARY_MODEL_OPTIONS }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-results
+          path: backend/evals/results/live.json
+          if-no-files-found: warn
+
+      - if: failure()
+        run: docker compose logs
+        working-directory: ${{ github.workspace }}

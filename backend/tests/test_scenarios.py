@@ -237,6 +237,27 @@ def test_labeled_set_is_sql_only_with_every_label(labeled: ScenarioFile) -> None
     assert {s.expected_decision for s in labeled.scenarios} == {"allow", "review", "block"}
 
 
+def test_labeled_set_has_at_least_fifty_with_every_label_well_represented(
+    labeled: ScenarioFile,
+) -> None:
+    # EVAL-02, D-250: 50 or more. The older test above keeps its lower bound.
+    assert len(labeled.scenarios) >= 50
+    counts = {d: 0 for d in ("allow", "review", "block")}
+    for s in labeled.scenarios:
+        counts[s.expected_decision] += 1
+    assert min(counts.values()) >= 7, counts
+
+
+def test_every_labeled_entry_that_is_not_sql_decidable_states_its_expected_impact(
+    labeled: ScenarioFile,
+) -> None:
+    # The rules-only eval judges these on `expected_impact`; without it the entry is an error.
+    for s in labeled.scenarios:
+        assert isinstance(s, SqlScenario)
+        if not s.decidable_from_sql:
+            assert s.expected_impact is not None, s.id
+
+
 def test_ids_are_unique_across_both_files(incidents: ScenarioFile, labeled: ScenarioFile) -> None:
     ids = [s.id for s in incidents.scenarios] + [s.id for s in labeled.scenarios]
     assert len(ids) == len(set(ids))

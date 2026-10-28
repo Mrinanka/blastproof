@@ -609,6 +609,9 @@ Tests prove the code works; evals prove the safety decisions are good. Both run 
 
 - **In CI:** unit and integration tests on every pull request. Incident replays and rule-only evals also run on every PR (no LLM cost); the PR fails if any incident replay is not caught. False block rate is recorded with no threshold until a first measurement sets one. The full LLM eval runs nightly, by manual trigger, and before any change to SUMMARY\_MODEL or JUDGE\_MODEL, and fails if catch rate drops below 100% on incident replays.
 
+- **As built (D-250 to D-254):** `evals/run.py` (`--mode rules|live`, `--scenarios`, `--out`, `--langsmith`, `--reads-repeat`, `--timeout`; exit 0, 1 for a missed incident or an unmeasured scenario, 2 for a refused run), `evals/metrics.py` (`Outcome`, `summarize`, `gate_failures`, nearest-rank `percentile`), `evals/rules_mode.py`, `evals/live_mode.py` (`live_pipeline`, `run_live`, `measure_reads`, `EmptyKnowledge`), `evals/reads.py`, `evals/langsmith_experiments.py`, `evals/report.py`, `evals/facts.py`. The rules mode judges pass 2 on each scenario's `expected_impact`; the live mode runs the real graph with the stub commit. Write latency is `work_ms` from the graph state, not `total_ms` (not written for a held action). The labeled set has 51 entries. `ci.yml`'s `unit` job runs the rules mode; `evals.yml` runs the live mode on a schedule and by hand, with only `GOOGLE_API_KEY` and `LANGSMITH_API_KEY` as secrets and the model settings as repository variables. Not in this stage: the LangSmith anonymizer, the security pass, calibration, Jev and Qdrant variants, the injection and explanation datasets.
+
+
 ## 15. Local infra, CI and deployment
 
 Locally you run two Postgres containers and the FastAPI app; in production the app runs on Fly.io and both databases live on Neon.

@@ -105,6 +105,7 @@ SLOW_FILES = frozenset(
         "test_cli_knowledge.py",
         "test_seed_demo.py",
         "test_commit_replit.py",
+        "test_eval_live_mode.py",
     }
 )
 
