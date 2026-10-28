@@ -167,6 +167,11 @@ def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -
     npm_dir = REPO_ROOT / updates["npm"]["directory"].lstrip("/")
     assert (npm_dir / "package-lock.json").is_file()
     assert updates["npm"]["cooldown"]["default-days"] >= 7
+    # Major bumps are made on purpose, one at a time: a bundled TypeScript 7 broke `npm ci` against
+    # openapi-typescript's `typescript@^5` peer (D-259).
+    assert {"dependency-name": "*", "update-types": ["version-update:semver-major"]} in updates[
+        "npm"
+    ]["ignore"]
 
 
 @pytest.mark.parametrize(
