@@ -36,7 +36,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
 | [x] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
 | [x] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
-| [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
+| [x] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
 | [x] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
 | [x] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
 | [x] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
@@ -251,7 +251,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-16 | `before_images` are unmasked but never leave the backend and are deleted after `RETENTION_DAYS`. | BE §12 | B15, B16 | DW-B15; *authz test that no route returns them* |
 | [x] | SEC-17 | `FAKE_NEON_ADMIN_URL` is refused at startup when `APP_ENV=production`. | BE §11 | B10 | *unit test* |
 | [x] | SEC-18 | The demo workspace gets only `BLASTPROOF_AGENT_KEY`. | BE §11, B7 | B7, B18 | DW-B07 |
-| [ ] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
+| [x] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
 | [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
 | [x] | SEC-22 | The backend has no CORS middleware and no CORS setting (D-242); the dashboard reaches it server to server. Code half: `test_cors.py`; the deployed check is Deploy. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
