@@ -1767,3 +1767,8 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** the graph's `guarded` wrapper logs `stage_done` with `stage` and `duration_ms` for every node that finishes (including an early `outcome`), `stage_stopped` for an interrupt, a cancellation or a commit with an unknown outcome, and `fail_closed` now carries `duration_ms`. `decision_action_id` is `async def`: a sync FastAPI dependency runs in a copied context, so its `action_id` binding never reached the approve and reject routes (the test failed first). `describe_table` notes are masked with `mask_text` (knowledge text is untrusted, D-149), and `get_action_status` binds `action_id` after the visibility check. The middleware's own `request_finished` line for an MCP call has no `action_id`: the MCP tool runs in a task of its own.
 **Why:** OBS-02 asks for a duration per stage and both ids on every line. Existing per-service lines (`shadow_done`, `judge_done`, ...) are unchanged.
+
+## D-260 · 2026-10-28 · The LangSmith client is offline when tracing is off
+
+**Decision:** `configure_tracing` builds the client with its default `info` when tracing is off, so the client's batching thread does not fetch `/info` from api.smith.langchain.com. With tracing on, the fetch stays.
+**Why:** building the app must open no connection (TEST-07). CI caught `test_building_the_client_with_tracing_off_opens_no_connection`'s case in `test_building_the_app_opens_no_connection`: the thread raced the test and reached the network guard. It passed on my machine only because the thread lost the race. **Rejected:** building the client lazily (nothing runs before the first trace to install it); allowing the host in the network guard (it would hide a real startup call).

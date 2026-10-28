@@ -1,6 +1,7 @@
 """SEC-15: every LangSmith trace leaves through a client that anonymizes it first."""
 
 import json
+import time
 from typing import Any
 
 import pytest
@@ -109,3 +110,18 @@ def test_the_model_does_not_expose_its_key_to_traces() -> None:
     )
     assert "PLANTEDKEY1234567890" not in str(model._get_invocation_params())
     assert "PLANTEDKEY1234567890" not in str(model._get_ls_params())
+
+
+def test_building_the_client_with_tracing_off_opens_no_connection(
+    monkeypatch: pytest.MonkeyPatch, no_network: Any
+) -> None:
+    # The client's batching thread asks the LangSmith API for `/info` unless it already has it. With
+    # tracing off nothing may leave the process (TEST-07: building the app stays offline).
+    monkeypatch.setattr(tracing, "_client", None)
+    monkeypatch.setattr(tracing.langsmith, "configure", lambda **_: None)
+    tracing.configure_tracing(Settings(_env_file=None))
+    client = tracing.installed_client()
+    assert client is not None
+    assert client._info is not None  # known up front, so nothing is fetched
+    time.sleep(0.5)  # let the background thread run
+    assert no_network.blocked == []
