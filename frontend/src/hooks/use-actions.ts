@@ -9,10 +9,14 @@ export type ActionsQuery = NonNullable<paths["/v1/actions"]["get"]["parameters"]
 // Under "actions" so invalidating ["actions"] after a decision refreshes every list too.
 export const actionsKey = (query: ActionsQuery) => ["actions", "list", query] as const;
 
-export function useActions(query: ActionsQuery, options: { refetchInterval?: number } = {}) {
+export function useActions(
+  query: ActionsQuery,
+  options: { refetchInterval?: number; enabled?: boolean } = {},
+) {
   return useQuery({
     queryKey: actionsKey(query),
     refetchInterval: options.refetchInterval,
+    enabled: options.enabled,
     // Changing page keeps the old rows on screen instead of flashing a skeleton.
     placeholderData: keepPreviousData,
     queryFn: () => unwrap(api.GET("/v1/actions", { params: { query } })),
