@@ -285,7 +285,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-11 | Admin-only links (Knowledge, Users) are hidden from members. | FE F4, F10 | F4 | MVP-F06 |
 | [x] | FE-12 | Shared components `StatusBadge`, `RiskBadge`, `TimeAgo`, `SQLBlock`, `NumberBreakdown`, `AuditTimeline`, `DataTable` with pagination, plus skeleton loading, empty and error states. | FE F5 | F5 | DW-F05 |
 | [ ] | FE-13 | The dashboard has the ten pages and routes in FE §7: `/`, `/login`, `/dashboard`, `/dashboard/review`, `/dashboard/actions/[id]`, `/dashboard/history`, `/dashboard/settings/agents`, `/dashboard/settings/rules`, `/dashboard/knowledge` (admin), `/dashboard/settings/users` (admin). | FE §7 | F3-F13 | MVP-F checks |
-| [ ] | FE-14 | Review queue lists the user's `awaiting_review` actions oldest first (agent, intent, headline, risk badge, waiting time), polling every 5 seconds, each row linking to its change request page. | FE §7, F6 | F6 | DW-F06; MVP-F02 |
+| [x] | FE-14 | Review queue lists the user's `awaiting_review` actions oldest first (agent, intent, headline, risk badge, waiting time), polling every 5 seconds, each row linking to its change request page. | FE §7, F6 | F6 | DW-F06; MVP-F02 |
 | [ ] | FE-15 | Change request page shows, top to bottom: header (status and risk badges, agent, age, decider), plain-language impact (headline, key points, concerns), decision bar, intent and `sql_display`, impact numbers (rows per table with cascades marked, breakdowns, derived groups such as "paying: 12"), masked sample rows, judge result (recommendation, confidence, reason, which judge), matched rules with reasons, knowledge used (source, table, first line), audit timeline. | FE §7, F7 | F7 | MVP-F03 |
 | [ ] | FE-16 | When values were pinned, the SQL block shows the original next to it and lists the pinned values; a retry links to the action it replaces (`retry_of`). | FE §7 | F7 | *component test* |
 | [ ] | FE-17 | The change request page refreshes every 5 s while pending and shows "not found" for an action that isn't the user's. | FE §7 | F7 | TEST-09 step 6 |
@@ -407,7 +407,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F03 | You can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`. | FE F3 | F3 | Manual |
 | [x] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
 | [x] | DW-F05 | Vitest tests pass for the badges and formatting helpers. | FE F5 | F5 | `npm test` |
-| [ ] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
+| [x] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
 | [ ] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |
 | [ ] | DW-F08 | Changing filters updates the URL and the back button restores the previous view. | FE F8 | F8 | Manual |
 | [ ] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |

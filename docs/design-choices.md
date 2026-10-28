@@ -1194,3 +1194,44 @@ health check at `/ready`.
 **Trade-off and limits.** One machine means a short gap during each deploy and no failover. That is
 fine for a demo, and the first live run showed the cost of a mistake here: on 512 MB the server was
 killed for lack of memory, so the machine stays at 1 GB.
+
+## F6: Review queue (D-270)
+
+### 1. The page polls every 5 seconds, and all filtering and ordering stays in the backend
+
+**What I did.** The queue asks `GET /v1/actions?status=awaiting_review&order=oldest&limit=25` and
+repeats the request every 5 seconds with TanStack Query's `refetchInterval`. When the answer changes,
+React redraws the table. The page sends no user or owner parameter, does not re-sort and does not
+filter the rows.
+
+**Why.** A held write has to show up without anyone pressing refresh, and polling is the simplest way
+that needs no new backend work. Keeping the filtering in the backend follows the rule that the
+dashboard holds no business logic: `visible_actions(user)` already decides whose actions a person
+sees, so the page cannot show something it should not, even if the front-end code has a bug.
+
+**What I rejected.** Server-sent events or WebSockets (instant, but they need a new backend channel
+and more moving parts for a demo), and filtering by owner in the browser (a second place to get
+permissions wrong).
+
+**Trade-off and limits.** A new row can be up to 5 seconds late, and every open page makes a small
+request every 5 seconds. An admin sees everyone's actions with no owner column, because the API does
+not return one.
+
+### 2. One shared list hook under the `["actions"]` key, with the old page kept while the next loads
+
+**What I did.** `useActions` is a shared hook whose query key is `["actions", "list", query]` and
+which uses `keepPreviousData`. F7 will invalidate `["actions"]` after an approve or reject, which
+refreshes the queue and the sidebar badge together. If the owner clicks Next, the current rows stay
+on screen until the next page arrives. If decisions shrink the queue below the page being viewed, the
+page steps back to the last page that exists.
+
+**Why.** One key prefix means one invalidation updates every list, so the badge and the queue cannot
+disagree for long. Keeping the old rows avoids a flash of skeleton lines on each click and each poll.
+The hook is reused by History (F8) and Overview (F9) rather than copied.
+
+**What I rejected.** A separate request key per page, with no shared prefix (each decision would
+need to know about every list), and putting the offset in the URL (the queue has no filters, so F8
+builds URL state once, where it is needed).
+
+**Trade-off and limits.** The offset is local state, so reloading the page returns to page 1.
+"Waiting" counts from `created_at` because the API has no review-requested time.
