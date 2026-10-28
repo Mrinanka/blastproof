@@ -79,8 +79,10 @@ from app.services.llm import LlmConfigError
 from app.services.neon import NeonApiClient, neon_client_for
 from app.services.openapi_export import openapi_document
 from app.services.policy import Policy, evaluate_pass_two, load_policy
+from app.services.redaction import known_secrets_from
 from app.services.shadow import ShadowBusyError, ShadowFailedError, ShadowResult, ShadowRunner
 from app.services.vectorstores import build_vector_store
+from app.tracing import configure_tracing
 
 
 class CliError(Exception):
@@ -510,7 +512,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     settings = Settings()
     # Logs go to stderr, so stdout holds only the result (and the key, for create-agent).
-    configure_logging(settings.log_level, stream=sys.stderr)
+    configure_logging(settings.log_level, stream=sys.stderr, secrets=known_secrets_from(settings))
+    configure_tracing(settings)
     try:
         if args.command == "preview-sql":
             print(asyncio.run(_preview(settings, args.sql, args.confirm_project)))

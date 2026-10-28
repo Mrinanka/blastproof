@@ -163,9 +163,9 @@ When I approve, build it with these rules:
 ### Prompt 2: verify with evidence
 
 ```text
-Verify this step that you build:
+ Verify this step that you build:
 1. Run the test suite (never the slow one) and lint for every part you touched (backend and/or
-   frontend). Paste the actual output summary, not a description of it.
+   frontend). Paste the actual output summary, not a description of it - do not redo if already done.
 2. Run the step's "Done when" check. Paste the actual output.
 3. Give me the exact commands to run the "Done when" check myself, so I can confirm it.
 4. Review your own diff against the step's plan text and the architecture rules in
@@ -182,7 +182,7 @@ then paste Prompt 2 again.
 ### Prompt 3: wrap up and commit
 
 ```text
- if no issues left to fix, create pr, but make sure you have done below steps:
+  if no issues left to fix, create pr, but make sure you have done below steps:
 1. Update PROGRESS.md: tick the step, add anything partial or deferred to Known issues,
    and set Current focus to the next unticked item.
 2. Tick the requirement IDs this step fully verified in docs/REQUIREMENTS.md. Only tick

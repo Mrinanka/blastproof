@@ -112,3 +112,18 @@ def test_an_inactive_agent_still_gets_401(
     body, headers = mcp_call("describe_table", {"table": "users"})
     response = mcp_client.post("/mcp", json=body, headers=headers | bearer(inactive.key))
     assert response.status_code == 401
+
+
+def test_an_uploaded_note_is_masked_before_the_agent_sees_it(
+    mcp_client: TestClient, agent: McpAgent, notes_db: AuthDb
+) -> None:
+    # Knowledge text is untrusted and may hold personal data (ARCH-17, D-149).
+    notes_db.execute(
+        "INSERT INTO knowledge_chunks (source, table_names, content) VALUES (%s, %s, %s)",
+        ("upload.md", ["users"], "Ask ana@example.com or call +1 (415) 555-0132 about users."),
+    )
+    result = call_tool(mcp_client, agent.key, "describe_table", {"table": "users"})
+    text = " ".join(note["text"] for note in result["notes"])
+    assert "ana@example.com" not in text
+    assert "555-0132" not in text
+    assert "[email]" in text and "[phone]" in text

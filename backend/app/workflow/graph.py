@@ -137,6 +137,10 @@ def run_config(action_id: uuid.UUID, agent_id: uuid.UUID, env: str) -> dict[str,
     }
 
 
+def _elapsed_ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
+
+
 # --- Routing (pure) -----------------------------------------------------------------------------
 
 
@@ -615,10 +619,12 @@ class _Nodes:
                 except (GraphBubbleUp, asyncio.CancelledError, CommitOutcomeUnknownError):
                     # Not errors: the interrupt machinery, shutdown, and a commit that may have
                     # happened (the action stays `committing`, the checkpoint before `commit`).
+                    logger.info("stage_stopped", stage=name, duration_ms=_elapsed_ms(started))
                     raise
                 except Exception as exc:
                     return await self._fail(state, name, exc, started)
-            elapsed = round((time.perf_counter() - started) * 1000)
+                elapsed = _elapsed_ms(started)
+                logger.info("stage_done", stage=name, duration_ms=elapsed)
             if "outcome" in update_:
                 return update_
             return {**update_, "work_ms": state.get("work_ms", 0) + elapsed}
@@ -633,7 +639,13 @@ class _Nodes:
         else:
             reason = "workflow_error"
         # The class only: an exception message can hold SQL, row values or a connection string.
-        logger.error("fail_closed", reason_code=reason, node=node, error_class=type(exc).__name__)
+        logger.error(
+            "fail_closed",
+            reason_code=reason,
+            node=node,
+            error_class=type(exc).__name__,
+            duration_ms=_elapsed_ms(started),
+        )
         action_id = self._id(state)
         async with self._tx() as session:
             action = await session.get(Action, action_id, with_for_update=True)

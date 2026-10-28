@@ -49,8 +49,10 @@ from app.services.judge import build_judge
 from app.services.knowledge import KnowledgeService
 from app.services.neon import BRANCH_LIFETIME, build_neon_clients, sweep_stale_shadows
 from app.services.policy import load_policy
+from app.services.redaction import known_secrets_from
 from app.services.shadow import ShadowRunner
 from app.services.vectorstores import build_vector_store
+from app.tracing import configure_tracing
 from app.workflow.checkpointer import make_checkpointer, make_checkpointer_pool
 from app.workflow.graph import WorkflowDeps, build_graph
 from app.workflow.runner import WorkflowRunner
@@ -163,7 +165,8 @@ def _check_production_settings(settings: Settings) -> None:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, secrets=known_secrets_from(settings))
+    configure_tracing(settings)
     _check_production_settings(settings)
 
     app = FastAPI(title="Blastproof", version="0.1.0", lifespan=lifespan)

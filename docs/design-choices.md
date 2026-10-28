@@ -1113,3 +1113,41 @@ flag (a flag can be forgotten; a refusal cannot).
 Blastproof's own work time (classify to decision), not the real commit or the tool layer, and read
 overhead on my machine (165 ms at p95) misses the 50 ms target.
 
+
+## Security pass and observability (D-256 to D-258)
+
+### 1. A redactor behind the allowlist, not instead of it
+
+**What I did.** Call sites still log and send only fields chosen for the purpose. Behind them, one
+redactor (`app/services/redaction.py`) runs on every log line after the traceback is formatted, and
+on every LangSmith input, output, metadata field and error string. It replaces secrets by shape (URL
+passwords, `bp_` keys, JWTs, `Bearer`, `password=` pairs), secrets by value (every secret the process
+holds), and emails and phone numbers.
+
+**Why.** An allowlist protects against what we thought of. Uvicorn, httpx and langsmith write their
+own text, and a future call site can slip. A second layer that does not trust the first means one
+mistake is not a leak. Matching known values exactly catches a key in a shape no pattern knows.
+
+**What I rejected.** Redacting only at call sites (nothing catches a slip), and keeping the old rule
+that forbade pattern masking of logs (it left third-party tracebacks unprotected).
+
+**Trade-off and limits.** Over-masking: a 7 to 15 digit run in a trace may become `[phone]`. Secrets
+under 12 characters are not registered as values, or a password like `company` would blank ordinary
+words. The LangSmith dataset examples are not covered; they come from committed, synthetic data.
+
+### 2. One tracing client, installed always
+
+**What I did.** `configure_tracing` builds a single LangSmith client with the anonymizer and installs
+it as the process default, whether tracing is on or off. Every LangChain and LangGraph run then uses
+it without being told.
+
+**Why.** The switch is an environment variable that can change later. If the masked client only
+existed when tracing was on, a trace could go out through LangChain's default, unmasked client.
+Installing it unconditionally makes the safe path the only path.
+
+**What I rejected.** Wrapping each model call with its own masking (easy to forget on the next one),
+and building the client only when `LANGSMITH_TRACING` is set.
+
+**Trade-off and limits.** The client starts a background thread, so it is created once per process.
+A real-LangSmith check is still a manual step: tests prove nothing leaves the client unmasked, but
+only opening a live trace shows it end to end.

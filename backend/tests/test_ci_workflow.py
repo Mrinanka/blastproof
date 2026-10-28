@@ -157,13 +157,16 @@ def test_uv_version_comes_from_an_exact_pin(ci: dict[Any, Any]) -> None:
 def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -> None:
     assert dependabot["version"] == 2
     updates = {u["package-ecosystem"]: u for u in dependabot["updates"]}
-    assert set(updates) == {"uv", "github-actions", "docker-compose"}
+    assert set(updates) == {"uv", "github-actions", "docker-compose", "npm"}
     for update in updates.values():
         assert update["target-branch"] == "develop"
     uv_dir = REPO_ROOT / updates["uv"]["directory"].lstrip("/")
     compose_dir = REPO_ROOT / updates["docker-compose"]["directory"].lstrip("/")
     assert (uv_dir / "uv.lock").is_file()
     assert (compose_dir / "docker-compose.yml").is_file()
+    npm_dir = REPO_ROOT / updates["npm"]["directory"].lstrip("/")
+    assert (npm_dir / "package-lock.json").is_file()
+    assert updates["npm"]["cooldown"]["default-days"] >= 7
 
 
 @pytest.mark.parametrize(

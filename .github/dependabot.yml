@@ -38,3 +38,16 @@ updates:
     groups:
       docker-compose:
         patterns: ["*"]
+
+  # The dashboard's npm packages (frontend/package-lock.json).
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: develop
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    groups:
+      npm:
+        patterns: ["*"]

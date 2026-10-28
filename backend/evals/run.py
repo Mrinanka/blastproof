@@ -28,6 +28,8 @@ from pydantic import ValidationError
 from app.config import DEFAULT_POLICY_FILE, Settings
 from app.logging import configure_logging
 from app.services.policy import load_policy
+from app.services.redaction import known_secrets_from
+from app.tracing import configure_tracing, masked_client
 from evals.metrics import Outcome, gate_failures, summarize
 from evals.report import format_table, write_json
 from evals.rules_mode import EvalError, error_text, run_rules
@@ -76,13 +78,12 @@ async def _live(
     outcomes += await measure_reads(settings, repeat=args.reads_repeat)
     notes: list[str] = []
     if args.langsmith:
-        from langsmith import Client
         from langsmith.evaluation import aevaluate
 
         from evals.langsmith_experiments import run_experiments
 
         runs = await run_experiments(
-            Client(),
+            masked_client(),
             aevaluate,
             settings=settings,
             policy=load_policy(settings.policy_file),
@@ -115,7 +116,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             names = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
             print(f"Error: the settings are invalid: {', '.join(names)}.", file=sys.stderr)
             return 2
-        configure_logging(settings.log_level, stream=sys.stderr)
+        configure_logging(
+            settings.log_level, stream=sys.stderr, secrets=known_secrets_from(settings)
+        )
+        configure_tracing(settings)
         if args.langsmith and not os.environ.get("LANGSMITH_API_KEY"):
             print("Error: --langsmith needs LANGSMITH_API_KEY in the environment.", file=sys.stderr)
             return 2
