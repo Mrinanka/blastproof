@@ -81,5 +81,6 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 `frontend/`. CI fails if either generated file is stale. Progress and known issues:
 [`PROGRESS.md`](PROGRESS.md).
 
-> Status: backend MVP steps 1 to 20 done; the dashboard is partly built; the demo GIF and eval
+> Status: backend MVP steps 1 to 20 and the evals runner are done (`uv run python -m evals.run`, see
+> [`docs/setup.md`](docs/setup.md)); the dashboard is partly built; the demo GIF and the published eval
 > results table are still to come.

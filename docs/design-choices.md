@@ -1068,3 +1068,48 @@ only the types (it would not say which side forgot to update).
 **Trade-off and limits.** The file is one more thing to commit after a route change; the failing
 test names the exact command to run. Line endings matter: the fresh-clone check found that Windows
 turned the file into CRLF, so `.gitattributes` now pins it to LF.
+
+---
+
+## Evals stage (D-250 to D-254)
+
+### 1. Two eval modes: a cheap deterministic one that gates every pull request, a live one that measures
+
+**What I did.** `evals.run` has a rules mode and a live mode. Rules mode needs no Docker and no
+model. It takes each scenario, runs the real classifier and the real policy rules, and for the second
+rules pass it uses the row counts the scenario file already states (those counts are proven against
+the real seed by other tests). Hook scenarios go through the real hook rules. It runs in a few
+seconds, so CI runs it on every pull request and fails if any incident replay is not caught.
+Live mode runs the whole pipeline: real preview on a copy of the database, retrieval, the summary
+model and the judge. It is slow and costs money, so it runs nightly and by hand.
+
+**Why.** A safety gate that people skip because it is slow or costs money is not a gate. The part
+that must never regress (the rules catching the incidents) needs no model at all, so it can run
+everywhere for free. The part that depends on a model needs a real run, but it can run less often.
+
+**What I rejected.** Running a real preview for every scenario on every pull request (10 to 15
+seconds each), and a gate that also needed a model key (a fork's code could then reach the key).
+
+**Trade-off and limits.** Rules mode trusts the labeled counts instead of measuring them; a test
+that measures them for real (`test_shadow_scenarios`) keeps that honest. An error, a timeout or a
+missing label counts as a failure, never as a pass. The live mode has not yet produced real
+explanation or judge numbers: the model API answered "quota exhausted" on every call.
+
+### 2. The live eval changes nothing and cannot touch production
+
+**What I did.** Live mode refuses to start in production, on any Neon profile, with a seed whose
+anchor date differs from the scenarios, or with an empty knowledge base. It uses the stub commit, so
+the company database is never changed, and it acts as its own member account (`evals@example.com`),
+never as a real user. Time is frozen at the scenario date so "six months ago" means the same thing
+the labels were measured with.
+
+**Why.** An eval that runs real writes is itself a risk. The rule is: measure the pipeline, not the
+data. Failing before connecting, with a message that holds no URL, is safer than a half-run.
+
+**What I rejected.** Reusing a demo user's account (it would pollute their history) and a "dry run"
+flag (a flag can be forgotten; a refusal cannot).
+
+**Trade-off and limits.** The eval's actions do appear in a local admin's History. Write latency is
+Blastproof's own work time (classify to decision), not the real commit or the tool layer, and read
+overhead on my machine (165 ms at p95) misses the 50 ms target.
+

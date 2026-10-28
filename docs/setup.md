@@ -126,7 +126,36 @@ add `--confirm <host>`), then run `bootstrap` as above. A write preview on a rea
 about 45 seconds for a mass delete. Add `GOOGLE_API_KEY` (and start with `--env-file .env`) to get
 real summaries and judging.
 
-## 10. Troubleshooting
+## 10. Evals
+
+`evals.run` replays the incident and labeled scenarios and prints the catch rate, the false block
+rate, explanation accuracy and latency. Run it from `backend/`.
+
+- **Rules only (the default):** `uv run python -m evals.run`. No Docker and no model: the policy
+  rules and hook rules judge each scenario on its labeled facts. It prints the table, saves
+  `evals/results/rules.json` and exits 1 if an incident replay is not caught or a scenario cannot be
+  measured. CI runs it on every pull request.
+- **Live:** `uv run --env-file .env python -m evals.run --mode live`. It runs the real pipeline
+  (preview on a clone of `company_main`, retrieval, `SUMMARY_MODEL` and `JUDGE_MODEL`) and also
+  measures the overhead on reads. It needs Docker up, the seed at the scenarios' anchor date, the
+  knowledge base filled (`bootstrap`, or `knowledge-scan` and `knowledge-ingest`), and the local
+  profile: `COMPANY_CONNECTION_PROFILE=local`, `NEON_CLIENT=fake`, `LOCAL_COMPANY_WRITER_URL` and
+  `FAKE_NEON_ADMIN_URL`. The Blastproof database must store its `company` system with the local
+  profile (a fresh Compose volume does; one that was bootstrapped against Neon does not, and the read
+  measurement says so). Nothing is committed and `company_main` is not changed. The runs appear in
+  the dashboard's History under the member `evals@example.com`. It never runs with
+  `APP_ENV=production`.
+- **LangSmith:** add `--langsmith` to a live run, with `LANGSMITH_API_KEY` set. It uploads the labeled
+  set as a dataset named after the file's hash and runs three experiments: `rules-only`,
+  `rules+judge` and `rules+judge-no-rag`.
+- **Nightly and by hand:** `.github/workflows/evals.yml` runs the live eval every night and on
+  "Run workflow". In the repository settings add the secrets for the providers you use
+  (`GOOGLE_API_KEY`, `GROQ_API_KEY`), `SUMMARY_MODEL_OPTIONS` (a secret, because it can hold an
+  OpenRouter `api_key`) and, optionally, `LANGSMITH_API_KEY`; and the variables `SUMMARY_MODEL`,
+  `JUDGE_MODEL`, `JUDGE_MODEL_OPTIONS` and `LLM_PRICES`. Trigger the workflow by hand before you change
+  `SUMMARY_MODEL` or `JUDGE_MODEL`. The results JSON is attached to the run.
+
+## 11. Troubleshooting
 
 - **Ports 5432 or 5433 are taken:** another Postgres is running; stop it or change the Compose ports.
 - **`bootstrap` says the company database could not be scanned:** check `LOCAL_COMPANY_READER_URL`

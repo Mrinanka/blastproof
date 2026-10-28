@@ -307,16 +307,16 @@ D-055). Tick a box only when its verification has passed.
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
 | [x] | EVAL-01 | `backend/evals/scenarios/incidents.yaml` holds the MVP incident replays: Replit-style mass delete, DROP TABLE, delete without WHERE (and `WHERE true`), `psql` bypass attempt, hook-settings edit, and PocketOS-lite (credential hunt denied, no credential in the workspace). | SPEC §14; BE B3, §14; D-011 | B3 | DW-B03 |
-| [ ] | EVAL-02 | A first `labeled.yaml` with about 20 labeled actions is written in step 3; the Evals stage tops it up to 50 SQL statements labeled allow, review or block, including subtle cases. | BE B3, §14; D-035 | B3, Evals | DW-B03; pytest: at least 50 entries and every label present |
+| [x] | EVAL-02 | A first `labeled.yaml` with about 20 labeled actions is written in step 3; the Evals stage tops it up to 50 SQL statements labeled allow, review or block, including subtle cases. | BE B3, §14; D-035 | B3, Evals | DW-B03; pytest: at least 50 entries and every label present |
 | [x] | EVAL-03 | Each scenario has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`; the scenario files carry `anchor_date: 2026-10-01` at the top, which backend tests and evals read. | BE B3; D-052 | B3 | DW-B03; CI test: `anchor_date` equals `seed_info.anchor_date` on local `company_main` |
 | [x] | EVAL-04 | Scenario files load and validate against a Pydantic schema. | BE B3 | B3 | DW-B03 |
-| [ ] | EVAL-05 | Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them. | BE B3 | B8-B13 | DW-B08, DW-B09, DW-B10 |
+| [x] | EVAL-05 | Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them. | BE B3 | B8-B13 | DW-B08, DW-B09, DW-B10 |
 | [ ] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
 | [ ] | EVAL-07 | Metrics: catch rate, false block rate, explanation accuracy (numbers checked by code; the LLM-as-judge score is deferred, D-036) and added latency (p50/p95 of `total_ms` per path: read, fast lane, previewed; read overhead = Blastproof time minus the same query run directly). | SPEC §14; BE §14; D-034, D-036 | Evals | MVP-B10; eval runner output |
-| [ ] | EVAL-08 | `uv run python -m evals.run` prints a results table and saves it as JSON. | CL; BE §14 | Evals | *run it* |
+| [x] | EVAL-08 | `uv run python -m evals.run` prints a results table and saves it as JSON. | CL; BE §14 | Evals | *run it* |
 | [ ] | EVAL-09 | The labeled set is uploaded as a LangSmith dataset to compare variants as experiments (MVP: rules only vs rules plus judge, with vs without RAG context). | SPEC §14; BE §14 | Evals | *LangSmith experiment exists* |
 | [ ] | EVAL-10 | Incident replays and rule-only evals run on every pull request (no LLM cost); the full LLM eval runs nightly, on manual trigger and before any change to `SUMMARY_MODEL` or `JUDGE_MODEL`. Both the PR run and the nightly run fail if any incident replay is not caught; false block rate is recorded with no threshold yet. | SPEC §14; BE §14, §15; D-045 | B2, Evals | CI |
-| [ ] | EVAL-11 | Catch rate and false block rate on the labeled set are recorded. | BE §17 | Evals | MVP-B10 |
+| [x] | EVAL-11 | Catch rate and false block rate on the labeled set are recorded. | BE §17 | Evals | MVP-B10 |
 
 ## OBS: observability
 
@@ -328,7 +328,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | OBS-04 | Middleware adds an `X-Request-ID` header to every response. | BE §13 | B1 | *integration test* |
 | [x] | OBS-05 | Actions record `preview_ms`, `total_ms`, LLM tokens and `llm_cost_usd`. | BE §5, B12 | B10, B12, B14 | *integration test* |
 | [x] | OBS-06 | Every action has a complete audit timeline in `audit_events`: one event per status change, named after the new status, plus `shadow_done`, `decided` and `fail_closed`. | BE §5; SPEC §7, §10; D-037 | B6, B14-B16 | MVP-B09; *integration test: event types match the status history* |
-| [ ] | OBS-07 | Every decision carries a human-readable reason. | SPEC §7, §10 | B9, B13, B14 | *eval check that reason is non-empty* |
+| [x] | OBS-07 | Every decision carries a human-readable reason. | SPEC §7, §10 | B9, B13, B14 | *eval check that reason is non-empty* |
 | [x] | OBS-08 | The approve or reject claim writes its audit event in the same transaction, with the approver's `user_id` and `display_name` in `data`; auto-approvals carry no approver. | SPEC §13; BE §5, B15; D-037 | B15 | *integration test* |
 
 ## OPS: CI, infra and deployment
@@ -364,7 +364,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
+| [x] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
 | [ ] | NFR-02 | Fast-lane writes complete in under 300 ms of Blastproof time. | SPEC §10; BE §17; D-007 | B14-B17 | MVP-B02 |
 | [x] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (spike measured p50 5.0 s to a usable branch and about 14 s for a whole preview; about 14 s for a small preview; target: under 20 s for a typical write (a few thousand rows); under 60 s for a write that touches most of a table, such as the 246k-row Replit delete, measured at 44 s on Neon, D-143). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
 | [x] | NFR-04 | Pending approvals survive restarts; no action is lost or applied twice. | SPEC §10; BE §17 | B14-B16 | DW-B15, DW-B16; MVP-B07, MVP-B08 |
