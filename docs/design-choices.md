@@ -1235,3 +1235,43 @@ builds URL state once, where it is needed).
 
 **Trade-off and limits.** The offset is local state, so reloading the page returns to page 1.
 "Waiting" counts from `created_at` because the API has no review-requested time.
+
+## F7: Change request page (D-271)
+
+### 1. The page keeps polling until the action is final, not just while it is pending
+
+**What I did.** The page asks `GET /v1/actions/{id}` every 5 seconds, and stops only when the
+status has no way forward (rejected, expired, blocked, committed, executed, failed) or the answer is
+a 404. A table in the code lists every status as final or not, typed so that a status the backend
+adds later breaks the build instead of silently polling forever. Approve and Reject both invalidate
+the whole `["actions"]` key, on success and on error, so the page, the queue and the sidebar badge
+refresh together.
+
+**Why.** The reviewer's real question after clicking Approve is "did it land?". Stopping at
+"not pending" would freeze the page on "Approved" and hide the commit. Refreshing on error too
+matters: a 409 or 404 means the page is out of date, so it should fix itself.
+
+**What I rejected.** Polling only while awaiting review (hides the commit), and a manual refresh
+button (the reviewer would be looking at stale facts while deciding).
+
+**Trade-off and limits.** Up to 5 seconds of staleness, and a click just after expiry gets a 409
+and a refresh instead of a prevented click. A `drifted` write goes back to previewing in the
+backend, so it counts as not final.
+
+### 2. The backend decides and words everything; the page only shows it
+
+**What I did.** The decision bar appears only when the backend says `can_decide` is true and the
+status is awaiting review. When two people decide at once, the loser's toast shows the backend's
+409 message word for word ("Already approved by Demo User 2."). I do not build that sentence from
+`decided_by`. A 409 on reject also toasts, because the refresh that follows removes the dialog.
+
+**Why.** CLAUDE.md says the dashboard holds no business logic. Permission and "who won" are
+database facts; if the page re-derived them it could disagree with the server. The backend
+re-checks on every POST anyway, so hiding the button is a courtesy, not the security boundary.
+
+**What I rejected.** Computing "can I decide" from role and owner in the browser, and composing
+the 409 text from the action's decider (it would also miss the expiry wording).
+
+**Trade-off and limits.** `can_decide` is computed when the page loads, so it can be up to 5
+seconds old; the 409 path covers that. A fast double click is stopped by a flag set at once,
+because the mutation's own pending state arrives one tick late.

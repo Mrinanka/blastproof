@@ -1,9 +1,11 @@
-// Placeholder until F7 builds the change request page.
-export default function Page() {
+import { ChangeRequest } from "@/components/change-request/change-request";
+
+export default async function Page(props: PageProps<"/dashboard/actions/[id]">) {
+  const { id } = await props.params;
   return (
-    <div className="p-6">
+    <div className="space-y-4 p-6">
       <h1 className="text-xl font-semibold">Change request</h1>
-      <p className="text-sm text-muted-foreground">Built in F7.</p>
+      <ChangeRequest id={id} />
     </div>
   );
 }
