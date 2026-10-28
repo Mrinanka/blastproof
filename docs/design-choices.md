@@ -1275,3 +1275,61 @@ the 409 text from the action's decider (it would also miss the expiry wording).
 **Trade-off and limits.** `can_decide` is computed when the page loads, so it can be up to 5
 seconds old; the 409 path covers that. A fast double click is stopped by a flag set at once,
 because the mutation's own pending state arrives one tick late.
+
+## F8: History (D-272)
+
+### 1. The URL is the page's state: one parser, one writer, one history entry per view
+
+**What I did.** History has no filter state of its own. Every render reads the address bar
+through one pure function, `parseHistoryParams`, which turns `?status=rejected&agent=…&page=2` into
+a typed filters object and silently drops anything invalid (an unknown status, an agent that is
+not a UUID, an impossible date like 30 February, a page of 0). Every change goes back out through
+one writer, `toSearchString`, which always puts the keys in the same order and leaves defaults out.
+So one view has exactly one URL. A filter or page change is a `router.push`, which means one
+browser history entry per view. That is what makes Back and Forward restore the earlier view:
+the browser moves the URL, the page re-reads it, and TanStack Query serves the rows it already
+cached for that query. Three details keep the history clean. The table box only commits on Enter or
+blur, not on each keystroke. A date is only sent once it is complete. And fixing a bookmarked page
+that is past the end uses `replace`, so it adds no extra entry.
+
+**Why.** The plan's check is literally "the back button restores the previous view", and
+CLAUDE.md says filters live in the URL. If filters lived in React state and were copied into the
+URL, there would be two sources of truth, and Back would change one without the other. Reading
+from the URL on every render removes that whole class of bug. Dropping bad values matters too: a
+shared or hand-edited link should show what was actually asked for, never a 422 error page. A
+backwards date range is the one case I cannot quietly fix, so it shows a message and sends nothing.
+
+**What I rejected.** Local state synced to the URL in an effect (two sources of truth). Writing
+`offset` instead of `page` (worse in a shared link). Pushing on every keystroke (Back would replay
+the user's typing). Showing a 422 for a bad bookmark.
+
+**Trade-off and limits.** Text boxes keep a small draft while you type, which is reset whenever the
+URL changes, so a half-typed value is thrown away on Back. The automated Back/Forward test runs on an
+in-memory stand-in for Next's router, so a real browser check (DW-F08) is still needed. Admins have
+no owner filter because the list response carries no owner.
+
+### 2. A date range is the viewer's local days, sent as a half-open UTC interval
+
+**What I did.** The From and To boxes are calendar days in the viewer's own time zone, the same
+zone every timestamp on the dashboard is shown in. The page turns them into exact instants before
+calling the backend: `from` becomes local midnight at the start of the From day, and `to` becomes
+local midnight at the start of the day *after* the To day. The backend treats `from` as inclusive
+and `to` as exclusive, so "1 Oct to 1 Oct" means every action on 1 October, and nothing at
+midnight is counted twice or missed. The arithmetic uses the Date object's own day counting, so the
+day daylight saving ends is 25 hours long, and a test pins that in New York time.
+
+**Why.** People think in days on a calendar, but the database stores UTC instants. A half-open
+interval `[start, next start)` is the standard way to cut time into days without gaps or overlaps.
+Sending "To at 23:59:59" would miss the last second, and adding 24 hours would be wrong twice a
+year. Using the viewer's local day matches what they see in the table. A row shown as
+"Oct 1, 11:30 PM" must appear when they filter on 1 October.
+
+**What I rejected.** UTC days (simpler, but a user in India would see evening actions land on the
+"wrong" day). A calendar picker component (it needs a new dependency, `react-day-picker`, while the
+browser's own date input is free and accessible). Putting ISO instants in the URL (unreadable, and
+tied to one zone).
+
+**Trade-off and limits.** The URL holds plain days, so a link shared with someone in another time
+zone covers their local day, a few hours off from the sender's. The Overview's "today" counts stay
+on the UTC day (D-051), so the two pages can disagree near midnight. That difference is documented,
+not hidden.

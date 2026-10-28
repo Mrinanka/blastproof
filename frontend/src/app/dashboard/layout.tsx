@@ -15,7 +15,9 @@ export default async function DashboardLayout({ children }: LayoutProps<"/dashbo
     <TooltipProvider>
       <SidebarProvider defaultOpen={defaultOpen}>
         <AppSidebar />
-        <SidebarInset>
+        {/* min-w-0: a flex child grows to fit wide content; without it a wide table widens the
+            whole page instead of scrolling inside its own container. */}
+        <SidebarInset className="min-w-0">
           <header className="flex h-12 items-center gap-2 border-b px-4">
             <SidebarTrigger />
           </header>

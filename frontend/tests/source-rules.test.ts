@@ -49,4 +49,16 @@ describe("source rules", () => {
     const layout = files.find((f) => f.name === "app/dashboard/layout.tsx");
     expect(layout?.text).toMatch(/<TooltipProvider>[\s\S]*<SidebarProvider/);
   });
+
+  // F8: a flex child grows to fit its content; without min-w-0 a wide table widened the page.
+  it("lets the dashboard's main area shrink below its content width", () => {
+    const layout = files.find((f) => f.name === "app/dashboard/layout.tsx");
+    expect(layout?.text).toMatch(/<SidebarInset className="[^"]*\bmin-w-0\b/);
+  });
+
+  // F8: collapsed to icons, the name ran under the sidebar trigger.
+  it("hides the product name when the sidebar is collapsed to icons", () => {
+    const sidebar = files.find((f) => f.name === "components/layout/app-sidebar.tsx");
+    expect(sidebar?.text).toMatch(/group-data-\[collapsible=icon\]:hidden">Blastproof</);
+  });
 });
