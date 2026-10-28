@@ -16,26 +16,15 @@ from app.services.classifier import Classification, classify
 from app.services.company_schema import ForeignKey
 from app.services.impact import ImpactEngine, ImpactReport
 from app.services.policy import Policy, load_policy
-from app.services.shadow import CascadePath, Diff, SampleRow, TableDiff
-from evals.schema import ExpectedImpact, SqlScenario, load_scenario_file
+from app.services.shadow import CascadePath, Diff
+
+# Re-exported: the tests import them from here (they live in evals/facts.py for the eval runner).
+from evals.facts import SEED_ROWS as SEED_ROWS
+from evals.facts import diff_from as diff_from
+from evals.schema import SqlScenario, load_scenario_file
 from tests.conftest import REPLIT_SCENARIO_ID, SCENARIOS_DIR
 
 POLICY: Policy = load_policy(DEFAULT_POLICY_FILE)
-
-# Rows per table in the seeded company_main (counted on the local seed, 2026-10-26).
-SEED_ROWS: Mapping[str, int] = {
-    "customer_notes": 6_303,
-    "feature_flags": 25,
-    "invoices": 10_087,
-    "order_items": 128_648,
-    "orders": 51_411,
-    "organizations": 2_000,
-    "payments": 10_087,
-    "products": 40,
-    "subscriptions": 2_107,
-    "support_tickets": 12_062,
-    "users": 50_000,
-}
 
 REPLIT_SQL = "DELETE FROM users WHERE last_login_at < now() - interval '6 months'"
 REPLIT_INTENT = "Clean up inactive users"
@@ -74,34 +63,6 @@ def scenarios_with_impact() -> list[SqlScenario]:
 
 def replit_scenario() -> SqlScenario:
     return next(s for s in scenarios_with_impact() if s.id == REPLIT_SCENARIO_ID)
-
-
-def diff_from(
-    impact: ExpectedImpact,
-    targets: Sequence[str],
-    *,
-    cascades: Sequence[CascadePath] = (),
-    samples: Sequence[SampleRow] = (),
-    rows: Mapping[str, int] = SEED_ROWS,
-) -> Diff:
-    """A `Diff` as the shadow run would build it from a scenario's measured impact."""
-    tables = {name: TableDiff(name, rows_before=n) for name, n in rows.items()}
-    for name, change in impact.table_changes.items():
-        tables[name] = TableDiff(
-            name,
-            deleted=change.deleted,
-            updated=change.updated,
-            inserted=change.inserted,
-            rows_before=rows[name],
-            is_cascade=name not in targets,
-        )
-    return Diff(
-        tables=tables,
-        breakdowns={k: dict(v) for k, v in impact.breakdowns.items()},
-        derived_groups=dict(impact.derived_groups),
-        cascade_expectations=tuple(cascades),
-        samples=tuple(samples),
-    )
 
 
 def classified(sql: str) -> Classification:
