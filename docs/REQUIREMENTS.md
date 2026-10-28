@@ -101,7 +101,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-08 | `rebase-dates` shifts every timestamp column by (today − anchor), records the new anchor in `blastproof.seed_info`, prints the target project and asks for confirmation; it is owner-run only and never run by Claude Code. | BE B3; D-017, D-029 | B3 | *unit test of the shift; manual confirmation prompt check* |
 | [x] | BE-09 | Company roles: `blastproof_reader` (SELECT only) and `blastproof_writer` (SELECT, INSERT, UPDATE, DELETE on company tables, plus INSERT and SELECT on `blastproof.applied_actions`; no DDL, no role changes). | BE B3, §12 | B3 | *integration test of each role's privileges* |
 | [x] | BE-10 | `seed.py --target local` (run from host or CI, not an init script) builds `company_template`, closes its connections, locks it (`ALLOW_CONNECTIONS false`) and clones `company_main` from it. | BE B3; D-019 | B3 | DW-B03 |
-| [ ] | BE-11 | Step 3 loads the seed into local `company-db` and Neon `blastproof-company-dev` (Claude asks before the dev load); the owner loads Neon `blastproof-company` at deploy time, after the command prints the target and asks for confirmation; Claude Code never runs that load. | BE B3, §15; D-003, D-054 | B3, Deploy | DW-B03; OPS-11 |
+| [x] | BE-11 | Step 3 loads the seed into local `company-db` and Neon `blastproof-company-dev` (Claude asks before the dev load); the owner loads Neon `blastproof-company` at deploy time, after the command prints the target and asks for confirmation; Claude Code never runs that load. | BE B3, §15; D-003, D-054 | B3, Deploy | DW-B03; OPS-11 |
 | [x] | BE-12 | `schema_docs.md` has one `## table: <name>` heading per table and a `## business rules` section (e.g. paying = pro or enterprise; enterprise must never be deleted). | BE B3 | B3 | DW-B11 (rules retrieved) |
 | [x] | BE-13 | SQLAlchemy models for the eleven tables in BE §5 (`users`, `login_attempts`, `agents`, `systems`, `actions`, `audit_events`, `preview_rows`, `before_images`, `hook_events`, `knowledge_chunks`, `chunk_embeddings`) with the listed columns. | BE §5, B4 | B4 | DW-B04 |
 | [x] | BE-14 | Migrations run as `blastproof_owner`; the first one runs `CREATE EXTENSION vector`. | BE B4 | B4 | DW-B04 |
@@ -186,7 +186,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | BE-83 | `resume()` first claims the decision with `UPDATE … WHERE id=$1 AND status='awaiting_review' RETURNING id`; zero rows returns 409 and never calls `Command(resume=…)`. | BE B15; D-006 | B15 | DW-B15 |
 | [x] | BE-84 | A background loop every 10 minutes, under an advisory lock, expires reviews older than `REVIEW_TIMEOUT_HOURS` (24), fails actions stuck in `previewing` over 5 minutes, and deletes `preview_rows`, `before_images`, `hook_events` and `login_attempts` older than `RETENTION_DAYS` (30); `audit_events` are never deleted. | BE §5, B15; D-048 | B15 | DW-B15 (expired case); *tests for the others* |
 | [x] | BE-85 | Startup recovery, under the advisory lock and before serving: `received`/`classified`/`previewing` fail with reason `restart`; `approved`/`rejected` are resumed if paused at `interrupt()`, continued from checkpoint if past it, or failed if the thread is missing; `committing` goes to the commit reconciler. | BE B15; D-025, D-029 | B15, B16 | DW-B15, DW-B16 |
-| [ ] | BE-86 | On SIGTERM, new writes get `busy` and in-flight previews and commits get up to 45 s; `fly.toml` sets `kill_timeout = 60`. | BE B15, §15; D-025 | B15, Deploy | *integration test of drain* |
+| [x] | BE-86 | On SIGTERM, new writes get `busy` and in-flight previews and commits get up to 45 s; `fly.toml` sets `kill_timeout = 60`. | BE B15, §15; D-025 | B15, Deploy | *integration test of drain* |
 | [x] | BE-87 | The commit uses `blastproof_writer` on the company main branch (direct endpoint, `TimeZone=UTC`) in one company transaction with `SET LOCAL lock_timeout = '3s'` and `statement_timeout = '30s'`, after setting the action to `committing`. | BE B16, §12 | B16 | DW-B16 |
 | [x] | BE-88 | The commit inserts into `blastproof.applied_actions … ON CONFLICT DO NOTHING RETURNING`; no row returned means already applied: roll back and mark committed. | BE B16; D-006 | B16 | DW-B16 (commit twice) |
 | [x] | BE-89 | Row check: approved deleted/updated keys are locked `FOR UPDATE` and their `ROW_HASH_SQL` hashes compared with `preview_rows.before_hash`; any difference or missing row is drift; the returned JSON rows are the before-images. | BE B16; D-005 | B16 | DW-B16 |
@@ -254,7 +254,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
 | [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
-| [ ] | SEC-22 | The backend has no CORS middleware and no CORS setting (D-242); the dashboard reaches it server to server. Code half: `test_cors.py`; the deployed check is Deploy. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
+| [x] | SEC-22 | The backend has no CORS middleware and no CORS setting (D-242); the dashboard reaches it server to server. Code half: `test_cors.py`; the deployed check is Deploy. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
 | [x] | SEC-23 | The JWT lives only in an httpOnly cookie (`Secure` in production, `SameSite=Lax`, `Path=/`); never in localStorage or page JavaScript. | CL; FE §4, §11 | F3 | DW-F03; MVP-F01 |
 | [x] | SEC-24 | The login route stores the JWT in the cookie and returns only the user's name and role to the browser. | FE §4, F3 | F3 | DW-F03 |
 | [x] | SEC-25 | The BFF route adds `Authorization` from the cookie and drops incoming cookies before calling the backend. | FE F3, §12 | F3 | TEST-10 |
@@ -338,16 +338,16 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
 | [ ] | OPS-02 | A second workflow runs the LLM evals nightly with the `GOOGLE_API_KEY` repository secret. | BE §14, §15 | Evals | *workflow run* |
 | [ ] | OPS-03 | Frontend CI job on every PR: `npm ci` (cached), lint, typecheck, test (Vitest), build. | FE §13 | F1 onward | MVP-F08 |
-| [ ] | OPS-04 | `main` is protected so merging requires both backend and frontend jobs to pass. | FE §13 | Deploy | *repo settings check* |
+| [ ] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
 | [x] | OPS-05 | Contract check: the backend's `export-openapi` output regenerates `schema.d.ts`, and the job fails if the file changed. | FE §13, §16 | F2 + B20 | MVP-F08 |
 | [ ] | OPS-06 | A nightly or manual workflow starts Postgres and the backend, runs `seed-demo-actions`, starts the dashboard and runs Playwright. | FE §13 | F7+ | MVP-F08 |
-| [ ] | OPS-07 | Three company databases are never mixed: test/CI uses `company-db`, local dev uses Neon `blastproof-company-dev`, the deployed demo uses Neon `blastproof-company` (touched only by the deployed backend). | BE §15; D-003 | B3, B10, Deploy | *config review* |
-| [ ] | OPS-08 | A multi-stage `Dockerfile` installs with uv, runs as a non-root user on port 8080, and downloads the embedding model at build time. | BE §15 | Deploy | *image build* |
-| [ ] | OPS-09 | The Neon `blastproof-app` project holds Blastproof's production database with `CREATE EXTENSION vector`. | BE §2, §15 | Deploy | *manual check* |
-| [ ] | OPS-10 | `fly.toml` sets `release_command = "alembic upgrade head"` (migrator URL), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1`, `kill_timeout = 60`, and the app runs on exactly one machine. | BE §15 | Deploy | *config review* |
+| [x] | OPS-07 | Three company databases are never mixed: test/CI uses `company-db`, local dev uses Neon `blastproof-company-dev`, the deployed demo uses Neon `blastproof-company` (touched only by the deployed backend). | BE §15; D-003 | B3, B10, Deploy | *config review* |
+| [x] | OPS-08 | A multi-stage `Dockerfile` installs with uv, runs as a non-root user on port 8080, and downloads the embedding model at build time. | BE §15 | Deploy | *image build* |
+| [x] | OPS-09 | The Neon `blastproof-app` project holds Blastproof's production database with `CREATE EXTENSION vector`. | BE §2, §15 | Deploy | *manual check* |
+| [x] | OPS-10 | `fly.toml` sets `release_command = "alembic upgrade head"` (migrator URL), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1`, `kill_timeout = 60`, and the app runs on exactly one machine. | BE §15 | Deploy | *config review* |
 | [ ] | OPS-11 | Every secret in BE §11 is set with `fly secrets set`; the owner loads the seed into `blastproof-company` (D-054); bootstrap is run once via `fly ssh console`; `rebase-dates` is run (by the owner) against `blastproof-company` before recording the demo. | BE §15 | Deploy | *manual checklist* |
-| [ ] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy` on every merge to `main` using `FLY_API_TOKEN`. | BE §15; SPEC §16 | Deploy | MVP-B11 |
-| [ ] | OPS-13 | Claude Code is pointed at the deployed MCP URL and the hook's `BLASTPROOF_AGENT_KEY` is updated. | BE §15 | Deploy | MVP-B01 |
+| [ ] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
+| [x] | OPS-13 | Claude Code is pointed at the deployed MCP URL and the hook's `BLASTPROOF_AGENT_KEY` is updated. | BE §15 | Deploy | MVP-B01 |
 | [ ] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `main` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
 | [ ] | OPS-15 | The first admin is created with the backend's bootstrap command and the demo is run end to end on the deployed stack. | FE §13 | Deploy (Stage 5) | MVP-F checks |
 
@@ -441,7 +441,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | MVP-B08 | A pending review survives a server restart. | BE §17 | B15, B16 | Final audit; DW-B16 |
 | [ ] | MVP-B09 | Every action has a complete audit timeline and every write has a LangSmith trace; two users each see only their own agents' actions; an admin sees all. | BE §17 | B14-B19 | Final audit |
 | [ ] | MVP-B10 | Incident replays score 100% caught; catch rate and false block rate on the labeled set are recorded. | BE §17 | Evals | Final audit |
-| [ ] | MVP-B11 | CI is green, and merges to `main` deploy to Fly.io automatically. | BE §17 | B2, Deploy | Final audit |
+| [ ] | MVP-B11 | CI is green, and pushes to `release` deploy to Fly.io automatically. | BE §17 | B2, Deploy | Final audit |
 | [ ] | MVP-B12 | A fresh clone reaches a working demo by following the README. | BE §17 | B20 | Final audit |
 
 ### Dashboard MVP (frontend plan §15), checked on the deployed Vercel site

@@ -1,7 +1,8 @@
 # Setup guide
 
 How to run Blastproof on one machine, from a fresh clone. The **local path** (sections 1 to 8) needs
-no Neon account and no model key. Section 9 adds Neon. Section 10 lists known snags.
+no Neon account and no model key. Section 9 adds Neon. Section 10 lists known snags. To deploy the backend to Fly.io, see
+[`deploy.md`](deploy.md).
 
 All commands run from the repo root unless a `cd` says otherwise.
 

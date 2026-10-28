@@ -1151,3 +1151,46 @@ and building the client only when `LANGSMITH_TRACING` is set.
 **Trade-off and limits.** The client starts a background thread, so it is created once per process.
 A real-LangSmith check is still a manual step: tests prove nothing leaves the client unmasked, but
 only opening a live trace shows it end to end.
+
+
+---
+
+## Deploy: the backend on Fly.io
+
+### 1. A tiny, locked-down image that cannot leak what it never contained
+
+**What I did.** The backend ships as a Docker image built from an *allowlist*. The `.dockerignore`
+starts with `*` (exclude everything) and then names only the folders the app needs. It runs as a
+normal user, not root. The embedding model is downloaded while the image is built, so the running
+server never needs the internet to start. Every base image is pinned to an exact digest. A smoke test
+starts the image with no network and no secrets and checks that it answers, that production refuses
+to start without its secrets, and that no `.env`, tests or evals are inside.
+
+**Why.** Blastproof's promise is that credentials stay out of places where they can leak. A normal
+`.dockerignore` lists what to leave out, and the one thing you forget is the one that ends up in the
+image. An allowlist turns that around: a new file stays out until someone decides it belongs.
+
+**What I rejected.** A blocklist `.dockerignore`, and downloading the model on first start (slow, and
+it needs the network, so a Hugging Face outage could keep the server from starting).
+
+**Trade-off and limits.** Rebuilding is slower when the dependencies change. A few of the tests only
+read the Dockerfile; the real proof is the smoke script in CI and the live probe.
+
+### 2. Exactly one machine, with a graceful stop and a health check that does not depend on anyone else
+
+**What I did.** `fly.toml` runs one machine, always on, and every deploy passes `--ha=false`. When Fly
+stops it, it sends SIGTERM and waits 60 seconds. Uvicorn takes 10 for open connections and the app
+gives running writes 45 to finish. Fly's health check calls `/health`, which only says the process is
+alive. It does not call `/ready`, which also checks Neon and the models.
+
+**Why.** Blastproof keeps state in one process: the write runner, recovery and the sweep. A second
+machine would run a second copy of each and they would trip over each other. Stopping gently means a
+deploy does not cut a write in half. Keeping the health check shallow means a Neon outage cannot make
+Fly restart the app in a loop and make a small outage worse.
+
+**What I rejected.** Two machines for high availability (needs a real lock design), and pointing the
+health check at `/ready`.
+
+**Trade-off and limits.** One machine means a short gap during each deploy and no failover. That is
+fine for a demo, and the first live run showed the cost of a mistake here: on 512 MB the server was
+killed for lack of memory, so the machine stays at 1 GB.

@@ -1,0 +1,20 @@
+# An allowlist: nothing enters the build context unless it is re-included here. That keeps .env
+# files, tests, evals, virtualenvs, caches and the frontend out of every image (guarded by
+# backend/tests/test_dockerignore.py).
+*
+
+!backend/Dockerfile
+!backend/pyproject.toml
+!backend/uv.lock
+!backend/app/
+!backend/migrations/
+!backend/policies/
+!backend/alembic.ini
+!backend/log_config.json
+!demo_company/schema_docs.md
+
+# Re-included folders can still hold local junk.
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*

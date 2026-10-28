@@ -1777,3 +1777,42 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** `configure_tracing` builds the client with its default `info` when tracing is off, so the client's batching thread does not fetch `/info` from api.smith.langchain.com. With tracing on, the fetch stays.
 **Why:** building the app must open no connection (TEST-07). CI caught `test_building_the_client_with_tracing_off_opens_no_connection`'s case in `test_building_the_app_opens_no_connection`: the thread raced the test and reached the network guard. It passed on my machine only because the thread lost the race. **Rejected:** building the client lazily (nothing runs before the first trace to install it); allowing the host in the network guard (it would hide a real startup call).
+
+## D-261 · 2026-10-28 · Deploys come from a `release` branch
+
+**Decision:** the deploy workflow runs on pushes to `release` (and manual runs, which deploy only from `release`), not on `main`. `release` is protected with the `unit`, `integration`, `frontend` and `image` checks required, so CI is green before a deploy. `FLY_API_TOKEN` is an environment secret of `production`, limited to `release`, and sits in the deploy step's `env` alone. OPS-04, OPS-12 and MVP-B11 now say `release`. The owner runs every production command (Fly, the Neon role script, the seed).
+**Why:** the owner chose it; `develop` stays the integration branch and a deploy is a deliberate merge. **Rejected:** deploying from `main` (the plan's wording); deploying from `develop` (every merge would go live).
+
+## D-262 · 2026-10-28 · Exactly one machine, SIGTERM, liveness-only check
+
+**Decision:** `fly.toml` sets `kill_signal = "SIGTERM"` (Fly's default is SIGINT), `kill_timeout = 60` (uvicorn's 10 s plus the runner's 45 s drain plus 5), `auto_stop_machines = "off"`, `auto_start_machines = false`, `min_machines_running = 1`, a `GET /health` check and `shared-cpu-1x` with 1 GB, in `ord`. Every deploy passes `--ha=false`, because `fly deploy` defaults to two machines and a second one would run a second runner, recovery and sweep (D-025). Tests read the numbers from the runner's `DRAIN_SECONDS`.
+**Why:** `/ready` depends on Neon and the models, and an outage there must not restart the machine in a loop. Fly has no Ohio region; `ord` is about 10 ms from Neon's aws-us-east-2, and `/ready`'s timing in `deploy-check` shows whether that holds.
+
+## D-263 · 2026-10-28 · The image: allowlisted context, model baked in, offline at runtime
+
+**Decision:** `backend/Dockerfile` is built from the repo root, with every base image pinned by digest (the uv image tag must equal `required-version`). `.dockerignore` is an allowlist (`*`, then what the image needs), so `.env`, tests, evals and the frontend can never enter the context. The embedding model is downloaded at build through `build_embedder(Settings(_env_file=None)).load()`, and `HF_HUB_OFFLINE=1` stops any runtime call to Hugging Face. The app runs as uid 10001. A separate `image.yml` builds the image and runs `docker/image-smoke.sh` (non-root, `/health` with no network, the embedder offline, production without secrets refusing to start, no `.env`/tests/evals, `alembic upgrade head --sql`); `ci.yml` keeps its two jobs. Dependabot gets a `docker` entry for `/backend`.
+**Why:** the name and folder of the model come from config, not a second copy; fastembed would otherwise write lock files into a folder it does not own.
+
+## D-264 · 2026-10-28 · `deploy-check` and the Neon app-database script
+
+**Decision:** `python -m app.cli deploy-check --url ...` sends only requests that change nothing (health, ready, http to https, an unknown route, a CORS preflight, an unauthenticated `POST /mcp`, `/docs`) and needs no key and no Settings. It fails on a leaked database URL, agent key or Neon key/host, and reports the kind, never the value. `deploy/neon/blastproof-app.sql` mirrors `docker/blastproof-init/01-roles.sql` with password placeholders; an integration test runs it as a simulated non-superuser `neondb_owner` and checks the owners and access lists.
+**Why:** the deployed half of SEC-22, BE-119 and OPS-13 must be checkable by a command, not by memory. `/ready` names `blastproof_db`, `company_db`, `checkpointer`, `workflow` and `neon_api`; the probe requires all five.
+
+## D-265 · 2026-10-28 · Start on 512 MB
+
+**Decision:** the Fly machine starts as `shared-cpu-1x` with 512 MB (about $3 a month), not the plan's 1 GB (NFR-06). If the log shows an out-of-memory kill or `/ready` slows because of memory, go back to 1 GB (`memory = "1gb"` here and in `test_fly_toml.py`).
+**Why:** the owner chose to start cheaper. The risk is the ONNX embedding model plus LangChain, which the plan sized at 1 GB. **Also found:** a Fly trial account stops machines after 5 minutes until a credit card is added, so an always-on machine needs one at any size.
+
+## D-266 · 2026-10-28 · Region iad (Ashburn), not ord
+
+**Decision:** `primary_region = "iad"`. This replaces `ord` (backend plan section 15, as built in D-262). **Why:** the owner asked for Ashburn or Secaucus; Fly has no Ohio region and Ashburn is the closest to Neon's aws-us-east-2. The machine had to be recreated to move (a deploy does not move an existing machine), which also clears the trial-account stop (found the same day).
+
+## D-267 · 2026-10-28 · Back to 1 GB
+
+**Decision:** `memory = "1gb"` again, reversing D-265. **Why:** on 512 MB the kernel killed uvicorn (`Out of memory: Killed process`, anon-rss about 350 MB) the moment `bootstrap` ran over `fly ssh console`: a second process loads the embedding model beside the server. The plan's 1 GB was right. The same run showed the card works: no "Trial machine stopping" message after the account was upgraded.
+
+## D-268 · 2026-10-29 · First deploy: what the live run showed
+
+**Decision:** nothing new in code; this records the first live run (2026-10-28 to 29) so the checklist stays honest. Deployed to `blastproof` in `iad`, one machine, 1 GB. `deploy-check` passes 9 of 9 (`/ready` 1.4 to 1.8 s, all five components). From Claude Code: a read works; the hook blocks editing its own settings; the Replit-style delete (48,336 users, 48 paying) was **blocked** by the judge, not held, which is the parked Groq-judge issue; a narrowed delete (48,288 rows, 245,657 changed rows over 8 tables, preview 12.6 s) was held for review, rejected through `/docs`, and Claude read the rejection. A `get_action_status` call ran 48.4 s through Fly's proxy and returned 200, so a poll of about 50 s survives (D-101). The impact summary fell back to the template once, because its numbers failed the number check (by design).
+**Problems met and fixed:** `blastproof_app` could not log in because the SQL Editor ran as a role that cannot change another role's password (the fix was run as `neondb_owner`); the free trial stops machines after 5 minutes; 512 MB is too small (D-267); bootstrap over `fly ssh` mis-stored the typed password. The deploy guide now says how to avoid each.
+**Not checked yet:** `psql` through the hook itself (Claude refused first, from the workspace `CLAUDE.md`); the first green Deploy workflow run (OPS-12).

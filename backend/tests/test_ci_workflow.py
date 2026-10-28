@@ -157,7 +157,7 @@ def test_uv_version_comes_from_an_exact_pin(ci: dict[Any, Any]) -> None:
 def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -> None:
     assert dependabot["version"] == 2
     updates = {u["package-ecosystem"]: u for u in dependabot["updates"]}
-    assert set(updates) == {"uv", "github-actions", "docker-compose", "npm"}
+    assert set(updates) == {"uv", "github-actions", "docker-compose", "npm", "docker"}
     for update in updates.values():
         assert update["target-branch"] == "develop"
     uv_dir = REPO_ROOT / updates["uv"]["directory"].lstrip("/")
@@ -166,6 +166,9 @@ def test_dependabot_watches_every_pinned_ecosystem(dependabot: dict[Any, Any]) -
     assert (compose_dir / "docker-compose.yml").is_file()
     npm_dir = REPO_ROOT / updates["npm"]["directory"].lstrip("/")
     assert (npm_dir / "package-lock.json").is_file()
+    docker_dir = REPO_ROOT / updates["docker"]["directory"].lstrip("/")
+    assert (docker_dir / "Dockerfile").is_file()
+    assert updates["docker"]["cooldown"]["default-days"] >= 7
     assert updates["npm"]["cooldown"]["default-days"] >= 7
     # Major bumps are made on purpose, one at a time: a bundled TypeScript 7 broke `npm ci` against
     # openapi-typescript's `typescript@^5` peer (D-259).
