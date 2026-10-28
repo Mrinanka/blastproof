@@ -254,3 +254,12 @@ def test_order_check_catches_a_seed_before_postgres() -> None:
     assert run_order_problems(bad, "integration", INTEGRATION_RUN_ORDER) == [
         f"steps out of order: {INTEGRATION_RUN_ORDER}"
     ]
+
+
+def test_unit_job_runs_the_rules_only_evals_after_pytest(ci: dict[Any, Any]) -> None:
+    # EVAL-06, OPS-01: every pull request replays the incidents with the rules alone. No model, no
+    # Docker, no secret; the job set stays {unit, integration} (above).
+    assert run_order_problems(ci, "unit", ["uv run pytest", "evals.run --mode rules"]) == []
+    (step,) = [s for s in steps(ci, "unit") if "evals.run" in s.get("run", "")]
+    assert step["run"].strip() == "uv run python -m evals.run --mode rules"
+    assert "env" not in step
