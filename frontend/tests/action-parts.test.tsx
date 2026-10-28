@@ -73,6 +73,11 @@ describe("AuditTimeline", () => {
     }
   });
 
+  it("labels a status-named event with the status label", () => {
+    render(<AuditTimeline events={[ev("awaiting_review", "2026-10-27T10:00:00Z")]} />);
+    expect(screen.getByText("Awaiting review")).toBeTruthy();
+  });
+
   it("keeps the backend order", () => {
     render(
       <AuditTimeline
