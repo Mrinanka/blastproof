@@ -12,6 +12,7 @@ from typing import Any
 import langsmith
 from langsmith import Client
 from langsmith.anonymizer import create_anonymizer
+from langsmith.utils import tracing_is_enabled
 
 from app.config import Settings
 from app.services.redaction import known_secrets_from, redact, set_known_secrets
@@ -34,5 +35,8 @@ def configure_tracing(settings: Settings) -> None:
     global _client
     set_known_secrets(known_secrets_from(settings))
     if _client is None:
-        _client = masked_client()
+        # The client's batching thread fetches `/info` from the LangSmith API unless it already has
+        # it. With tracing off nothing may leave the process (building the app stays offline), so
+        # the defaults are given up front; with tracing on the fetch is wanted and expected.
+        _client = masked_client() if tracing_is_enabled() else masked_client(info={})
         langsmith.configure(client=_client)
