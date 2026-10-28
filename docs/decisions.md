@@ -1768,6 +1768,11 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 **Decision:** the graph's `guarded` wrapper logs `stage_done` with `stage` and `duration_ms` for every node that finishes (including an early `outcome`), `stage_stopped` for an interrupt, a cancellation or a commit with an unknown outcome, and `fail_closed` now carries `duration_ms`. `decision_action_id` is `async def`: a sync FastAPI dependency runs in a copied context, so its `action_id` binding never reached the approve and reject routes (the test failed first). `describe_table` notes are masked with `mask_text` (knowledge text is untrusted, D-149), and `get_action_status` binds `action_id` after the visibility check. The middleware's own `request_finished` line for an MCP call has no `action_id`: the MCP tool runs in a task of its own.
 **Why:** OBS-02 asks for a duration per stage and both ids on every line. Existing per-service lines (`shadow_done`, `judge_done`, ...) are unchanged.
 
+## D-259 · 2026-10-28 · Dependabot ignores major npm updates
+
+**Decision:** the `npm` entry in `.github/dependabot.yml` ignores `version-update:semver-major` for every package, so its weekly group carries only minor and patch bumps. Major upgrades (TypeScript, ESLint, `@types/node`, `@hookform/resolvers`) are done by hand, one at a time.
+**Why:** the first npm PR bundled TypeScript 5 to 7 with three other majors and failed `npm ci`: `openapi-typescript@7.13.0` requires `typescript@^5.x`. A bot cannot know which package still lags behind. **Rejected:** one PR per package for majors (noisy, and each still needs a human look); leaving the group as it was (the same failure every week).
+
 ## D-260 · 2026-10-28 · The LangSmith client is offline when tracing is off
 
 **Decision:** `configure_tracing` builds the client with its default `info` when tracing is off, so the client's batching thread does not fetch `/info` from api.smith.langchain.com. With tracing on, the fetch stays.
