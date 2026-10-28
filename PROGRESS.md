@@ -782,3 +782,4 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [ ] Dashboard deployed to Vercel
 - [ ] FINAL AUDIT against both MVP done checklists
 - [ ] Demo video recorded
+  - Parked for the demo: with the Groq judge the live eval turned the Replit mass delete from review into block (2026-10-28), so the owner could not approve it. Decide the judge prompt or threshold, or a rule that keeps a judge block on a mass delete as review, before recording.
