@@ -147,7 +147,8 @@ rate, explanation accuracy and latency. Run it from `backend/`.
   `APP_ENV=production`.
 - **LangSmith:** add `--langsmith` to a live run, with `LANGSMITH_API_KEY` set. It uploads the labeled
   set as a dataset named after the file's hash and runs three experiments: `rules-only`,
-  `rules+judge` and `rules+judge-no-rag`.
+  `rules+judge` and `rules+judge-no-rag`. Every trace leaves through a client that redacts secrets,
+  emails and phone numbers first (D-257); the backend and the CLI install it at startup.
 - **Nightly and by hand:** `.github/workflows/evals.yml` runs the live eval every night and on
   "Run workflow". In the repository settings add the secrets for the providers you use
   (`GOOGLE_API_KEY`, `GROQ_API_KEY`), `SUMMARY_MODEL_OPTIONS` (a secret, because it can hold an

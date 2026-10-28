@@ -45,6 +45,7 @@ from app.services import agent_messages, agent_outcomes, company_db, reads
 from app.services.agent_outcomes import BUSY_RETRY_SECONDS, INTERNAL_ERROR
 from app.services.classifier import Classification, Kind, classify_in_worker
 from app.services.knowledge import SCHEMA_SCAN_SOURCE
+from app.services.masking import mask_text
 from app.services.systems import ensure_main_system
 from app.workflow.runner import (
     DECIDED,
@@ -417,7 +418,7 @@ async def _notes_for(ctx: CallContext, table: str) -> list[KnowledgeNote]:
     except Exception as exc:
         logger.error("notes_failed", reason_code=type(exc).__name__)
         return []
-    return [KnowledgeNote(source=c.source, text=c.content) for c in chunks]
+    return [KnowledgeNote(source=c.source, text=mask_text(c.content)) for c in chunks]
 
 
 async def describe_table(ctx: CallContext, table: str) -> TableDescription:
@@ -481,6 +482,8 @@ async def action_status(
     if answer is None:
         return not_found
     view, outcome = answer
+    # After the visibility check, so another owner's ID never lands in a log line.
+    structlog.contextvars.bind_contextvars(action_id=str(view.id))
     runner = ctx.runner()
     status = ActionStatus(view.status)
     waiting = status == ActionStatus.AWAITING_REVIEW

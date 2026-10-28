@@ -33,7 +33,7 @@ def get_runner(request: Request) -> WorkflowRunner | None:
     return request.app.state.runner
 
 
-def decision_action_id(action_id: str) -> uuid.UUID:
+async def decision_action_id(action_id: str) -> uuid.UUID:
     """A malformed ID is a 404, answered before the body is checked (a dependency runs first)."""
     try:
         parsed = uuid.UUID(action_id)

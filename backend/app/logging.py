@@ -5,13 +5,22 @@ Two libraries can write raw values into our logs, so they are held back here (D-
   an email or a connection string. Its records keep only their bare format string, with no
   arguments, traceback or stack, plus the exception's class as `exc_type`; the level is WARNING.
 - sqlglot warns with the SQL it could not fully parse; only its errors are kept.
+- httpx and httpcore log every request URL at INFO (Neon project and branch IDs, model endpoints);
+  only their warnings and errors are kept.
+
+Behind those, every line passes `redact_event_dict` after the traceback is formatted and before it
+is rendered: secrets and personal data a call site or a third-party library let through are replaced
+(SEC-14, SEC-15). The call-site allowlist stays the primary rule; this is the last layer.
 """
 
 import logging
 import sys
+from collections.abc import Iterable
 from typing import TextIO
 
 import structlog
+
+from app.services.redaction import redact_event_dict, set_known_secrets
 
 # Marks the handler this module installs, so reconfiguring replaces it and leaves others alone.
 _HANDLER_FLAG = "_blastproof_handler"
@@ -24,7 +33,13 @@ _SHARED_PROCESSORS: list[structlog.typing.Processor] = [
 ]
 
 _MCP_LOGGER = "mcp"
-_QUIET_LOGGERS = {_MCP_LOGGER: logging.WARNING, "sqlglot": logging.ERROR}
+_QUIET_LOGGERS = {
+    _MCP_LOGGER: logging.WARNING,
+    "sqlglot": logging.ERROR,
+    "httpx": logging.WARNING,
+    "httpcore": logging.WARNING,
+    "httpx2": logging.WARNING,
+}
 
 
 class StripMcpDetails(logging.Filter):
@@ -56,6 +71,7 @@ def make_handler(stream: TextIO | None = None) -> logging.Handler:
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
             structlog.processors.format_exc_info,
+            redact_event_dict,
             structlog.processors.JSONRenderer(),
         ],
     )
@@ -66,7 +82,12 @@ def make_handler(stream: TextIO | None = None) -> logging.Handler:
     return handler
 
 
-def configure_logging(level: str = "INFO", stream: TextIO | None = None) -> None:
+def configure_logging(
+    level: str = "INFO", stream: TextIO | None = None, secrets: Iterable[str] = ()
+) -> None:
+    """`secrets` are the values this process holds (`known_secrets_from`); the redactor replaces
+    them wherever they appear in a log line."""
+    set_known_secrets(secrets)
     structlog.configure(
         processors=[*_SHARED_PROCESSORS, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),

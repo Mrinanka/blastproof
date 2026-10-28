@@ -580,6 +580,8 @@ The MVP covers the essentials that matter most for a gateway holding credentials
 - **Abuse limits:** cap each agent at `MAX_WRITES_PER_MINUTE_PER_AGENT` (default 30) writes per minute, counted from its `actions` rows; over the cap it gets the `busy` message (step 17).
 - **Dependencies:** pin versions in `uv.lock` and enable GitHub Dependabot alerts.
 
+> **As built (security pass, D-256 to D-258):** logs pass `redact_event_dict` as a last layer; LangSmith uses one anonymizing client (`app/tracing.py`); the graph logs `stage_done` with `duration_ms`; `docs/security-pass.md` is the sink-by-sink review.
+
 ## 13. Observability
 
 Two tools are enough for the MVP: LangSmith for everything AI, and structured logs for everything else. Grafana and OpenTelemetry come in phase 2.
