@@ -338,7 +338,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
 | [ ] | OPS-02 | A second workflow runs the LLM evals nightly with the `GOOGLE_API_KEY` repository secret. | BE §14, §15 | Evals | *workflow run* |
 | [ ] | OPS-03 | Frontend CI job on every PR: `npm ci` (cached), lint, typecheck, test (Vitest), build. | FE §13 | F1 onward | MVP-F08 |
-| [ ] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
+| [x] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
 | [x] | OPS-05 | Contract check: the backend's `export-openapi` output regenerates `schema.d.ts`, and the job fails if the file changed. | FE §13, §16 | F2 + B20 | MVP-F08 |
 | [ ] | OPS-06 | A nightly or manual workflow starts Postgres and the backend, runs `seed-demo-actions`, starts the dashboard and runs Playwright. | FE §13 | F7+ | MVP-F08 |
 | [x] | OPS-07 | Three company databases are never mixed: test/CI uses `company-db`, local dev uses Neon `blastproof-company-dev`, the deployed demo uses Neon `blastproof-company` (touched only by the deployed backend). | BE §15; D-003 | B3, B10, Deploy | *config review* |
@@ -346,7 +346,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | OPS-09 | The Neon `blastproof-app` project holds Blastproof's production database with `CREATE EXTENSION vector`. | BE §2, §15 | Deploy | *manual check* |
 | [x] | OPS-10 | `fly.toml` sets `release_command = "alembic upgrade head"` (migrator URL), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1`, `kill_timeout = 60`, and the app runs on exactly one machine. | BE §15 | Deploy | *config review* |
 | [ ] | OPS-11 | Every secret in BE §11 is set with `fly secrets set`; the owner loads the seed into `blastproof-company` (D-054); bootstrap is run once via `fly ssh console`; `rebase-dates` is run (by the owner) against `blastproof-company` before recording the demo. | BE §15 | Deploy | *manual checklist* |
-| [ ] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
+| [x] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
 | [x] | OPS-13 | Claude Code is pointed at the deployed MCP URL and the hook's `BLASTPROOF_AGENT_KEY` is updated. | BE §15 | Deploy | MVP-B01 |
 | [ ] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `main` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
 | [ ] | OPS-15 | The first admin is created with the backend's bootstrap command and the demo is run end to end on the deployed stack. | FE §13 | Deploy (Stage 5) | MVP-F checks |
