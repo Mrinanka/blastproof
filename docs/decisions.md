@@ -1772,3 +1772,8 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** the `npm` entry in `.github/dependabot.yml` ignores `version-update:semver-major` for every package, so its weekly group carries only minor and patch bumps. Major upgrades (TypeScript, ESLint, `@types/node`, `@hookform/resolvers`) are done by hand, one at a time.
 **Why:** the first npm PR bundled TypeScript 5 to 7 with three other majors and failed `npm ci`: `openapi-typescript@7.13.0` requires `typescript@^5.x`. A bot cannot know which package still lags behind. **Rejected:** one PR per package for majors (noisy, and each still needs a human look); leaving the group as it was (the same failure every week).
+
+## D-260 · 2026-10-28 · The LangSmith client is offline when tracing is off
+
+**Decision:** `configure_tracing` builds the client with its default `info` when tracing is off, so the client's batching thread does not fetch `/info` from api.smith.langchain.com. With tracing on, the fetch stays.
+**Why:** building the app must open no connection (TEST-07). CI caught `test_building_the_client_with_tracing_off_opens_no_connection`'s case in `test_building_the_app_opens_no_connection`: the thread raced the test and reached the network guard. It passed on my machine only because the thread lost the race. **Rejected:** building the client lazily (nothing runs before the first trace to install it); allowing the host in the network guard (it would hide a real startup call).
