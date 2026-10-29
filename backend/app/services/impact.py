@@ -33,6 +33,7 @@ from app.services.llm import (
     build_chat_model,
     cost_usd,
     price_for,
+    text_ok,
     usage_tokens,
 )
 from app.services.masking import mask_text
@@ -434,13 +435,12 @@ class ImpactReport(BaseModel):
 
 
 def shape_ok(report: ImpactReport) -> bool:
-    headline = report.headline.strip()
-    if not headline or len(report.headline) > MAX_HEADLINE_CHARS:
+    if not text_ok(report.headline) or len(report.headline) > MAX_HEADLINE_CHARS:
         return False
     for items in (report.key_points, report.concerns):
         if len(items) > MAX_ITEMS:
             return False
-        if any(not item.strip() or len(item) > MAX_ITEM_CHARS for item in items):
+        if any(not text_ok(item) or len(item) > MAX_ITEM_CHARS for item in items):
             return False
     return True
 

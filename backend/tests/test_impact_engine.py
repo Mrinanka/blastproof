@@ -149,8 +149,27 @@ async def test_a_result_that_is_not_a_mapping_is_a_parse_error() -> None:
         report("Deletes 48,213 users.", concerns=["Fine."] * 9),
         report("Deletes 48,213 users.", key_points=["y" * 301]),
         report("Deletes 48,213 users.", concerns=["Fine.", " "]),
+        # The live eval's reply that passed .strip() and then failed the JSONB write.
+        report("\N{NO-BREAK SPACE}\N{ZERO WIDTH SPACE}" * 3 + "\x00"),
+        report("Deletes 48,213 users.\x00"),
+        report("Deletes 48,213 users.", key_points=["Fine.\x00"]),
+        report("\N{ZERO WIDTH SPACE}\N{ZERO WIDTH SPACE}"),
+        report("Deletes 48,213 users.", concerns=["\ud800"]),
     ],
-    ids=["blank", "empty", "long-headline", "9-points", "9-concerns", "long-item", "blank-item"],
+    ids=[
+        "blank",
+        "empty",
+        "long-headline",
+        "9-points",
+        "9-concerns",
+        "long-item",
+        "blank-item",
+        "ci-junk",
+        "nul-headline",
+        "nul-item",
+        "zero-width-only",
+        "lone-surrogate",
+    ],
 )
 async def test_a_badly_shaped_report_gives_the_template(bad: ImpactReport) -> None:
     engine, _ = engine_with(FakeLlm(parsed=bad))

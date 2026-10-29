@@ -1377,7 +1377,43 @@ agree in practice. If the first stats load fails, all five cards give way to one
 even though the pending count might have loaded. If a later poll fails, the last numbers stay on
 screen with a "Couldn't refresh" warning.
 
-## F10: Knowledge (D-276, D-277)
+## Gate 2 fix 13: the live eval fails when no model answered
+
+### 1. The live gate requires at least one real model summary
+
+**What I did.** `gate_failures` has a `require_model` switch. The live run turns it on, and the run
+fails if zero model summaries came back ("no model answered: 0 summaries came back (judge
+unavailable on N of M scenarios)"). The rules-only run leaves it off.
+
+**Why.** Blastproof fails closed: when a model call breaks, the write goes to review. So with a
+broken key every scenario is "held", and "100% of incidents caught" is true for the wrong reason.
+The nightly run on 2026-10-29 showed this: 0 summaries, judge unavailable 30 of 30, and it still
+said "success". The check has to be about whether a model actually answered, not only about what the
+decision was.
+
+**What I rejected.** Failing on any unavailable judge (one provider hiccup would fail the night).
+Changing the exit code only in the workflow file (the CLI would still lie when run by hand).
+
+**Trade-off and limits.** It only checks that at least one summary came back, so a run where the
+model answered 1 of 30 still passes. A second rule covers the judge: the run also fails if the judge
+was unavailable on every previewed scenario, so a working summary model cannot hide a dead judge.
+One judge failure still passes.
+
+### 2. A switch on the existing gate, not a new check
+
+**What I did.** The new rule lives in the one function that already decides pass or fail
+(`gate_failures`), with a default that keeps the old behaviour.
+
+**Why.** Every caller (CI rules eval, live run, tests) goes through the same function, so there is
+one place that says what "green" means, and existing callers did not change.
+
+**What I rejected.** A separate post-run check in `run.py`, which would split the pass/fail logic
+in two places.
+
+**Trade-off and limits.** The caller must remember to pass `require_model`; the CLI test
+`test_a_live_run_with_no_model_answer_exits_1` guards that the live path does.
+
+## F10: Knowledge (D-278, D-279)
 
 ### 1. Members get a read-only view, and the proxy stops big bodies before the backend sees them
 
@@ -1397,7 +1433,7 @@ error messages still decide the real limit; the proxy only guards memory. Embedd
 slow, so a 30 s timeout would cut off uploads that were still working.
 
 **What I rejected.** Making the list admin-only in the backend (the owner chose a read-only member
-view instead, D-278). Setting
+view instead, D-280). Setting
 the cap equal to the backend's limit (it would hide the backend's clearer messages). A long timeout
 for every route (a hung read would hold a connection for two minutes).
 
@@ -1423,7 +1459,7 @@ and the dashboard never talks to that database).
 rescan first. Documents already tagged with a table that later disappears keep the old tag.
 
 
-## F11: Agents, users and rules (D-281 to D-283)
+## F11: Agents, users and rules (D-283 to D-285)
 
 ### 1. The agent key is shown once and never kept by the app
 
@@ -1443,7 +1479,7 @@ storage (CLAUDE.md forbids tokens there).
 
 **Trade-off and limits.** Close the tab before pressing Done and the key is gone for good; the fix is to
 create another agent. The `claude mcp add` line the backend gives still puts the key in shell history
-(D-283); that is the backend's format, not changed here.
+(D-285); that is the backend's format, not changed here.
 
 ### 2. The page only saves a request; the backend decides who may do what
 

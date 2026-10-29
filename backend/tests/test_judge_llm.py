@@ -138,8 +138,24 @@ async def test_a_result_that_is_not_a_mapping_has_unknown_cost() -> None:
         verdict(reason=""),
         verdict(reason="   \n"),
         verdict(reason="x" * 501),
+        verdict(reason="\N{NO-BREAK SPACE}\N{ZERO WIDTH SPACE}" * 3 + "\x00"),
+        verdict(reason="Deletes rows.\x00"),
+        verdict(reason="\N{ZERO WIDTH SPACE}\N{ZERO WIDTH SPACE}"),
+        verdict(reason="Deletes rows.\ud800"),
     ],
-    ids=["negative", "above-one", "nan", "inf", "empty", "blank", "long"],
+    ids=[
+        "negative",
+        "above-one",
+        "nan",
+        "inf",
+        "empty",
+        "blank",
+        "long",
+        "ci-junk",
+        "nul",
+        "zero-width-only",
+        "lone-surrogate",
+    ],
 )
 async def test_a_verdict_out_of_bounds_is_bad_shape(bad: JudgeVerdict) -> None:
     judge, _ = judge_with(FakeJudgeLlm(parsed=bad))

@@ -137,6 +137,19 @@ def run_config(action_id: uuid.UUID, agent_id: uuid.UUID, env: str) -> dict[str,
     }
 
 
+def _cause(exc: BaseException) -> dict[str, str]:
+    """The wrapped driver error's class and SQLSTATE, so a `DBAPIError` says what the database
+    refused. Never the message: it can hold SQL, row values or a connection string."""
+    inner = getattr(exc, "orig", None) or exc.__cause__
+    if inner is None:
+        return {}
+    found = {"cause_class": type(inner).__name__}
+    sqlstate = getattr(inner, "sqlstate", None) or getattr(inner, "pgcode", None)
+    if isinstance(sqlstate, str) and len(sqlstate) == 5:
+        found["sqlstate"] = sqlstate
+    return found
+
+
 def _elapsed_ms(started: float) -> int:
     return round((time.perf_counter() - started) * 1000)
 
@@ -644,6 +657,7 @@ class _Nodes:
             reason_code=reason,
             node=node,
             error_class=type(exc).__name__,
+            **_cause(exc),
             duration_ms=_elapsed_ms(started),
         )
         action_id = self._id(state)
@@ -666,7 +680,12 @@ class _Nodes:
                     session,
                     action_id,
                     AuditEventType.FAIL_CLOSED,
-                    {"reason": reason, "node": node, "error_class": type(exc).__name__},
+                    {
+                        "reason": reason,
+                        "node": node,
+                        "error_class": type(exc).__name__,
+                        **_cause(exc),
+                    },
                 )
         return {"outcome": "failed", "work_ms": self._total_ms(state, started)}
 

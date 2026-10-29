@@ -1854,43 +1854,53 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 **Decision:** `review-queue.tsx` gives Intent (`min-w-64 max-w-md`) and Headline (`min-w-64`) `whitespace-normal`, as History's Summary column already does (D-273).
 **Why:** shadcn table cells never wrap, so a real intent of two sentences made the queue scroll sideways and hid Risk and Waiting (owner's deployed-backend screenshots, 2026-10-29). **Rejected:** truncating with an ellipsis (hides what the reviewer needs to read before approving); an `overflow-x-hidden` wrapper (hides the problem). Covered by a new test that fails without the class.
 
-## D-276 · 2026-10-29 · F10: the BFF caps bodies at 2 MB and gives upload and scan 120 s
+## D-276 · 2026-10-29 · The live eval fails when no model answered (Gate 2 fix 13)
+
+**Decision:** `gate_failures(..., require_model=True)`, set for `--mode live` only, adds two failures: no model summary came back at all, and the judge was unavailable on every previewed scenario. Rules mode is unchanged.
+**Why:** a failed model call fails closed to review, so with no working model every write is held and "100% caught" says nothing about the models. The nightly of 2026-10-29 reported success with 0 summaries and the judge unavailable 30 of 30. The judge check covers a working summary model with a dead judge. A single judge failure still passes (a provider hiccup should not fail the night). **Rejected:** failing on any unavailable judge; changing only the workflow file (the CLI would still pass by hand). Covered by metrics tests and `test_a_live_run_with_no_model_answer_exits_1`; each guard removed turned a test red. Real-model proof waits for the owner's secrets (Gate 2 fix 14).
+
+## D-277 · 2026-10-29 · Model text with a NUL, a control character or nothing visible is a bad reply
+
+**Decision:** `text_ok` (`app/services/llm.py`) returns False for any control character but line breaks (`\n`, `\r`) and tab, any lone surrogate, and text made only of whitespace, separators and format characters (NBSP, zero-width space). The impact summary's `shape_ok` and the judge's `verdict_ok` use it in place of `.strip()`, so such a reply is `bad_shape`: the template summary, or a judge failure that goes to review.
+**Why:** the first live eval (run 40895279559) failed `delete-cancelled-orders` with `workflow_error`: the summary model replied with NBSP, zero-width spaces and a NUL (U+0000), `.strip()` did not see it as blank, and Postgres refused the `impact_report` UPDATE (U+0000 cannot be converted to text). Fail closed held, but a broken reply should take the fallback, not end the workflow. **Rejected:** stripping the bad characters and keeping the rest (keeps a reply the model got wrong, and a reply of only invisible characters would still need the blank check); a new fallback reason (`bad_shape` already means "the reply does not fit", and a new code would change the API enum). Covered by the CI reply and NUL, zero-width and surrogate cases in `test_impact_engine.py` and `test_judge_llm.py`, and `text_ok` tests in `test_llm_factory.py`.
+
+## D-278 · 2026-10-29 · F10: the BFF caps bodies at 2 MB and gives upload and scan 120 s
 
 **Decision:** the proxy refuses a request body over 2 MB with 413 `too_large` before forwarding (it checks `Content-Length`, then counts bytes while reading). `timeoutFor` gives `POST /v1/knowledge` and `POST /v1/systems/{id}/scan` 120 s; everything else keeps 30 s. A 504 on upload tells the admin it may still be finishing. No `maxDuration` on the route yet.
 **Why:** this closes the F3 known issues (uncapped buffering, 30 s too short for embedding up to 1 MB). 2 MB sits above the backend's 1 MB + 64 KB, so the backend's own 413 and 422 text still decides the real limit. Vercel's function limit depends on plan, so the Vercel deploy step must check it. **Rejected:** a cap equal to the backend's (would hide its messages); async ingest (a backend change).
 
-## D-277 · 2026-10-29 · F10: the Knowledge page fetches nothing for a member; the table picker offers scanned tables only
+## D-279 · 2026-10-29 · F10: the Knowledge page fetches nothing for a member; the table picker offers scanned tables only
 
 **Decision:** `Knowledge` calls `GET /v1/knowledge` and `/v1/systems` only once `me.role` is `admin`; a member sees "Knowledge is for admins". Table tags come from the schema scan's tables (checkboxes), not free text. The `schema_scan` row has no Delete (Rescan replaces it). A rescan toast says "N chunks" (the API returns chunks, not tables). Upload and delete guard double clicks with a ref, because `isPending` lags a click by a render.
-**Why:** the backend lets any signed-in user read the list (BE-114); (the member gate in this entry was replaced by D-278); a typo'd tag would never match an action's tables and DW-F10 would fail silently. **Open:** whether `GET /v1/knowledge` should become admin-only (owner's call; not changed).
+**Why:** the backend lets any signed-in user read the list (BE-114); (the member gate in this entry was replaced by D-280); a typo'd tag would never match an action's tables and DW-F10 would fail silently. **Open:** whether `GET /v1/knowledge` should become admin-only (owner's call; not changed).
 
-## D-278 · 2026-10-29 · F10: members get a read-only Knowledge page (changes the plan's "admin-only")
+## D-280 · 2026-10-29 · F10: members get a read-only Knowledge page (changes the plan's "admin-only")
 
 **Decision:** the Knowledge page and its sidebar link are shown to every signed-in user. A member sees the source list (name, kind, chunks, tables, updated) and nothing else: no upload form, Delete buttons, Rescan buttons or `/v1/systems` request. Admins see everything, as before. `GET /v1/knowledge` stays open to signed-in users; upload, delete and rescan stay admin-only (403). FE-23 and the F10 plan text are reworded.
 **Why:** the AI's explanation of a member's change is built from these documents, so the owner of that change should be able to see what it read; the backend already shared the list on purpose (BE-114), and hiding it only in the UI was inconsistent (owner's call, 2026-10-29). The list holds names and counts, never document text. **Rejected:** making `GET /v1/knowledge` admin-only.
 
-## D-279 · 2026-10-29 · F10 hand test: an error page shows its HTTP status; file-name messages name the cause
+## D-281 · 2026-10-29 · F10 hand test: an error page shows its HTTP status; file-name messages name the cause
 
 **Decision:** when an error response has no `{"error": ...}` envelope, `unwrap` now says "The server returned an error (HTTP 502)." instead of "Something went wrong." (the body is still never shown). `checkUploadFile` explains a refused name by cause: the extension, the first character, the first character outside letters, digits, space, `.`, `_`, `-` (for example a comma), or the length. Same rule as the backend's `SOURCE_NAME`; the backend rule is unchanged. The Source column wraps at word edges (`min-w-40`, `overflow-wrap:anywhere`), and the upload form says "Large documents can take a minute to index." while it runs.
-**Why:** the owner's hand test against the deployed backend. `PROGRESS.md` (130 KB, 89 chunks) failed with a bare "Something went wrong.": the Fly machine (1 GB) was **OOM-killed** while embedding (`anon-rss` 876 MB, Fly logs 16:23:29 UTC) and Fly's proxy answered 502 with its own body. A file name with a comma was refused with "has no slashes". **Not changed here:** the planned backend catch-all (`RequestIdMiddleware` already returns a 500 envelope; a killed process cannot answer at all). The memory fix is D-280.
+**Why:** the owner's hand test against the deployed backend. `PROGRESS.md` (130 KB, 89 chunks) failed with a bare "Something went wrong.": the Fly machine (1 GB) was **OOM-killed** while embedding (`anon-rss` 876 MB, Fly logs 16:23:29 UTC) and Fly's proxy answered 502 with its own body. A file name with a comma was refused with "has no slashes". **Not changed here:** the planned backend catch-all (`RequestIdMiddleware` already returns a 500 envelope; a killed process cannot answer at all). The memory fix is D-282.
 
-## D-280 · 2026-10-29 · Embed 8 chunks per model call, not 64
+## D-282 · 2026-10-29 · Embed 8 chunks per model call, not 64
 
 **Decision:** `EMBED_BATCH_SIZE` in `app/services/knowledge.py` goes from 64 to 8 (used by ingest, upload, rescan and reindex). Owner's choice over a 2 GB Fly machine.
-**Why:** the deployed 1 GB machine was OOM-killed embedding a 130 KB upload (89 chunks, D-279). Measured locally on that file with the real `bge-small` model, peak working set: batch 64 = 1,471 MB (24.2 s), batch 8 = 495 MB (23.2 s); the time did not get worse. **Rejected:** `fly scale memory 2048` (more cost, and the batch would still grow with the document); a smaller upload limit (hides the problem). **Covered by** `test_embeddings.py::test_ingest_embeds_in_small_batches_and_keeps_order` (fails at 64). It reaches Fly only when `release` is pushed.
+**Why:** the deployed 1 GB machine was OOM-killed embedding a 130 KB upload (89 chunks, D-281). Measured locally on that file with the real `bge-small` model, peak working set: batch 64 = 1,471 MB (24.2 s), batch 8 = 495 MB (23.2 s); the time did not get worse. **Rejected:** `fly scale memory 2048` (more cost, and the batch would still grow with the document); a smaller upload limit (hides the problem). **Covered by** `test_embeddings.py::test_ingest_embeds_in_small_batches_and_keeps_order` (fails at 64). It reaches Fly only when `release` is pushed.
 
-## D-281 · 2026-10-29 · The agent key lives in page state only; the dialog cannot be dismissed by accident
+## D-283 · 2026-10-29 · The agent key lives in page state only; the dialog cannot be dismissed by accident
 
 **Decision:** `POST /v1/agents` runs with `gcTime: 0`, and `CreateAgentForm` calls `mutation.reset()` right after handing the created agent to the page, so no query or mutation cache entry holds the key. The key dialog is controlled with no `onOpenChange`, ignores Escape and outside clicks, and closes only with "Done, I have copied it", which drops the object from state.
 **Why:** the key is shown once (SEC-32); TanStack keeps mutation results in its cache and devtools. A tested guard (`agents.test.tsx`) serializes both caches and checks for the key. `navigator.clipboard` is used only in `components/agents/copy-field.tsx` (source rule); if the clipboard is unavailable (non-secure context) a toast says to select the text.
 **How to apply:** any future one-time secret goes through the same pattern.
 
-## D-282 · 2026-10-29 · Users and Agents pages gate by role in the browser only to save a request
+## D-284 · 2026-10-29 · Users and Agents pages gate by role in the browser only to save a request
 
 **Decision:** a member opening `/dashboard/settings/users` sees "Users is for admins." and no `/v1/users` request is sent (`useUsers(enabled)`); admins also see every agent's owner on the Agents page. Rules (`/v1/policies`) are read-only for everyone and not polled. Lists stop at 100 with a note; no pagination UI. Client-side validation copies the backend bounds (agent name 1 to 100, email shape, password 12 to 256 untrimmed); backend 409 and 422 messages are still shown.
-**Why:** the backend enforces every permission (403/404); the UI only avoids a pointless call (same pattern as D-277). The copied bounds can drift, as with F10's file-name rule.
+**Why:** the backend enforces every permission (403/404); the UI only avoids a pointless call (same pattern as D-279). The copied bounds can drift, as with F10's file-name rule.
 
-## D-283 · 2026-10-29 · Known issue: the shown `claude mcp add` line puts the key in shell history
+## D-285 · 2026-10-29 · Known issue: the shown `claude mcp add` line puts the key in shell history
 
 **Decision:** F11 shows the backend's `claude_mcp_add` and `agent_key_env` lines verbatim. The `--header "Authorization: Bearer <key>"` form puts the key in shell history and `~/.claude.json` (local scope). The dialog also says the hook is installed by `workspace.py create`, which the dashboard cannot do.
 **Why:** the plan says to show the lines exactly as returned. A later backend change could return a `.mcp.json` snippet using `${BLASTPROOF_AGENT_KEY}` (what `workspace.py` already does). Not done here.
