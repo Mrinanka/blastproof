@@ -1853,3 +1853,8 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** `review-queue.tsx` gives Intent (`min-w-64 max-w-md`) and Headline (`min-w-64`) `whitespace-normal`, as History's Summary column already does (D-273).
 **Why:** shadcn table cells never wrap, so a real intent of two sentences made the queue scroll sideways and hid Risk and Waiting (owner's deployed-backend screenshots, 2026-10-29). **Rejected:** truncating with an ellipsis (hides what the reviewer needs to read before approving); an `overflow-x-hidden` wrapper (hides the problem). Covered by a new test that fails without the class.
+
+## D-276 · 2026-10-29 · The live eval fails when no model answered (Gate 2 fix 13)
+
+**Decision:** `gate_failures(..., require_model=True)`, set for `--mode live` only, adds two failures: no model summary came back at all, and the judge was unavailable on every previewed scenario. Rules mode is unchanged.
+**Why:** a failed model call fails closed to review, so with no working model every write is held and "100% caught" says nothing about the models. The nightly of 2026-10-29 reported success with 0 summaries and the judge unavailable 30 of 30. The judge check covers a working summary model with a dead judge. A single judge failure still passes (a provider hiccup should not fail the night). **Rejected:** failing on any unavailable judge; changing only the workflow file (the CLI would still pass by hand). Covered by metrics tests and `test_a_live_run_with_no_model_answer_exits_1`; each guard removed turned a test red. Real-model proof waits for the owner's secrets (Gate 2 fix 14).
