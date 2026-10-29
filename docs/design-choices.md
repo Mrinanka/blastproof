@@ -1333,3 +1333,46 @@ tied to one zone).
 zone covers their local day, a few hours off from the sender's. The Overview's "today" counts stay
 on the UTC day (D-051), so the two pages can disagree near midnight. That difference is documented,
 not hidden.
+
+## F9: Overview (D-274)
+
+### 1. The cards show one backend field each, and the page does no arithmetic
+
+**What I did.** Every card on the Overview is a single field from `GET /v1/stats`, passed through a
+formatter. "Reviewed today" is `today.reviewed`, "Blocked today" is `today.blocked`, and so on. The
+page never adds, divides or counts. The "Today (UTC): Oct 29, 2026" line above the cards also comes
+from the backend's `today.day`, so the label and the numbers always describe the same day.
+
+**Why.** The project rule is "code counts, the LLM explains, the dashboard holds no business logic".
+If the browser summed things up, the Overview could disagree with the database, and with the
+History page. The tempting shortcut was to add up `today.by_decision` for "decisions today". That
+number means something different (automatic decisions on actions created today), so the card would
+have looked right and been wrong. Using `reviewed` (what a person approved or rejected today) says
+exactly what the label says.
+
+**What I rejected.** Summing `by_decision` in the browser. Counting rows from the latest-actions
+list (it only holds 10).
+
+**Trade-off and limits.** "Today" is the UTC day, not the viewer's, so near local midnight the
+Overview and History can disagree. The cards say "(UTC)" so that is visible, not hidden (D-051).
+
+### 2. The Pending card shares the sidebar badge's query, and stats sit under the `actions` key
+
+**What I did.** The Pending card reads `usePendingCount()`, the same query the sidebar badge uses,
+instead of `stats.pending_reviews`. The stats query itself is stored under the key
+`["actions", "stats"]`, so when someone approves or rejects an action, the existing "refresh
+everything under `actions`" call refreshes the cards as well, with no change to the decision code.
+
+**Why.** TanStack Query sends one request for two components that ask the same question, so there
+is no extra traffic, and the card and the badge can never show different numbers. Stats refresh
+every 15 s and the badge every 5 s, so using `pending_reviews` would let the two disagree for up to
+ten seconds. Putting the key under `actions` reuses a rule the app already has instead of adding a
+second way to keep things fresh.
+
+**What I rejected.** `stats.pending_reviews` (can lag the badge). Wiring the approve button to
+refresh stats by name (couples two features and is easy to forget).
+
+**Trade-off and limits.** The two numbers come from two endpoints that are both SQL counts, so they
+agree in practice. If the first stats load fails, all five cards give way to one error with Retry,
+even though the pending count might have loaded. If a later poll fails, the last numbers stay on
+screen with a "Couldn't refresh" warning.

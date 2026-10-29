@@ -1,15 +1,32 @@
 // F5 guards: CONV-17.
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import {
   formatConfidence,
   formatDateTime,
+  formatDay,
   formatDuration,
   formatNumber,
   formatRelative,
   formatUsd,
   parseTimestamp,
 } from "../src/lib/format";
+
+describe("formatDay", () => {
+  const savedTz = process.env.TZ;
+  afterAll(() => {
+    process.env.TZ = savedTz;
+  });
+
+  it.each(["America/Los_Angeles", "Asia/Kolkata"])("is the same day in %s", (tz) => {
+    process.env.TZ = tz;
+    expect(formatDay("2026-10-29")).toBe("Oct 29, 2026");
+  });
+
+  it.each(["2026-02-30", "", "2026-10-29T00:00:00Z"])("rejects %j", (s) => {
+    expect(formatDay(s)).toBe("—");
+  });
+});
 
 describe("formatNumber", () => {
   it.each([
