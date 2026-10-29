@@ -136,7 +136,7 @@ def test_only_the_pgvector_store_is_accepted() -> None:
 
 
 async def test_ingest_embeds_in_small_batches_and_keeps_order() -> None:
-    """F10 hand test (D-280): 89 chunks in batches of 64 got the 1 GB Fly machine OOM-killed.
+    """F10 hand test (D-282): 89 chunks in batches of 64 got the 1 GB Fly machine OOM-killed.
 
     Memory grows with the batch, so every model call gets at most 8 texts, in order.
     """

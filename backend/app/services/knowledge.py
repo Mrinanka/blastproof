@@ -36,7 +36,7 @@ MAX_CHUNK_CHARS = 2000  # bge reads the first 512 tokens only
 SIMILAR_CHUNKS = 10
 RETRIEVAL_TIMEOUT_SECONDS = 10
 # Texts per model call. Peak memory grows with the batch: 64 long chunks got the 1 GB deploy
-# OOM-killed (D-280).
+# OOM-killed (D-282).
 EMBED_BATCH_SIZE = 8
 FIRST_LINE_CHARS = 200
 

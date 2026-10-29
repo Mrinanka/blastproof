@@ -1377,7 +1377,7 @@ agree in practice. If the first stats load fails, all five cards give way to one
 even though the pending count might have loaded. If a later poll fails, the last numbers stay on
 screen with a "Couldn't refresh" warning.
 
-## F10: Knowledge (D-276, D-277)
+## F10: Knowledge (D-278, D-279)
 
 ### 1. Members get a read-only view, and the proxy stops big bodies before the backend sees them
 
@@ -1397,7 +1397,7 @@ error messages still decide the real limit; the proxy only guards memory. Embedd
 slow, so a 30 s timeout would cut off uploads that were still working.
 
 **What I rejected.** Making the list admin-only in the backend (the owner chose a read-only member
-view instead, D-278). Setting
+view instead, D-280). Setting
 the cap equal to the backend's limit (it would hide the backend's clearer messages). A long timeout
 for every route (a hung read would hold a connection for two minutes).
 
