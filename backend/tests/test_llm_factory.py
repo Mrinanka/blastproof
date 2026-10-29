@@ -17,6 +17,7 @@ from app.services.llm import (
     build_chat_model,
     cost_usd,
     price_for,
+    text_ok,
 )
 from tests.conftest import NetworkGuard
 
@@ -94,3 +95,35 @@ async def test_lazy_model_retries_after_a_failed_build_and_then_caches() -> None
     assert await lazy.get() == "model"
     assert await lazy.get() == "model"
     assert calls["n"] == 2
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Deletes 9 rows.",
+        "Line one.\nLine two.",
+        "Line one.\r\nLine two.",
+        "Col\tvalue",
+        "Löscht 9 Zeilen",
+        "x\N{NO-BREAK SPACE}y",
+    ],
+)
+def test_text_ok_accepts_ordinary_sentences(text: str) -> None:
+    assert text_ok(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "  \n\t",
+        "\N{NO-BREAK SPACE}\N{ZERO WIDTH SPACE}\u0000",
+        "\N{ZERO WIDTH SPACE}\N{ZERO WIDTH NO-BREAK SPACE}",
+        "ok\x00",
+        "ok\x1b[0m",
+        "ok\ud800",
+    ],
+    ids=["empty", "whitespace", "ci-junk", "format-only", "nul", "escape", "lone-surrogate"],
+)
+def test_text_ok_rejects_unstorable_or_invisible_text(text: str) -> None:
+    assert not text_ok(text)

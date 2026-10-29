@@ -7,6 +7,7 @@ never logged, because they could hold a key.
 
 import asyncio
 import re
+import unicodedata
 from collections.abc import Callable, Mapping
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Final
@@ -104,6 +105,28 @@ def usage_tokens(raw: object) -> tuple[int, int] | None:
     if not isinstance(tokens_in, int) or not isinstance(tokens_out, int):
         return None
     return tokens_in, tokens_out
+
+
+# Whitespace a sentence may hold. Any other control character, \x00 above all, cannot be stored:
+# Postgres text and JSONB reject \u0000, and a lone surrogate cannot be encoded as UTF-8.
+_ALLOWED_CONTROLS: Final = frozenset("\n\r\t")
+
+
+def text_ok(text: str) -> bool:
+    """Model text that can be stored and has something visible in it.
+
+    False for any control character but line breaks and tab, any lone surrogate, and text made only
+    of spaces, separators (NBSP) and format characters (zero-width space). A model once answered
+    with nothing but those and a NUL, which passed `.strip()` and then failed the database write.
+    """
+    visible = False
+    for ch in text:
+        category = unicodedata.category(ch)
+        if category == "Cs" or (category == "Cc" and ch not in _ALLOWED_CONTROLS):
+            return False
+        if category != "Cf" and category[0] != "Z" and not ch.isspace():
+            visible = True
+    return visible
 
 
 class LazyModel[T]:
