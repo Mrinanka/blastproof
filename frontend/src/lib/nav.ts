@@ -30,7 +30,7 @@ export const NAV: NavGroup[] = [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
       { href: "/dashboard/review", label: "Review", icon: Inbox, badge: "pending" },
       { href: "/dashboard/history", label: "History", icon: History },
-      { href: "/dashboard/knowledge", label: "Knowledge", icon: BookOpen, adminOnly: true },
+      { href: "/dashboard/knowledge", label: "Knowledge", icon: BookOpen },
     ],
   },
   {

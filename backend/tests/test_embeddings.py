@@ -133,3 +133,31 @@ def test_empty_values_mean_the_defaults() -> None:
 def test_only_the_pgvector_store_is_accepted() -> None:
     with pytest.raises(ValueError):
         settings(vector_store="qdrant")
+
+
+async def test_ingest_embeds_in_small_batches_and_keeps_order() -> None:
+    """F10 hand test (D-282): 89 chunks in batches of 64 got the 1 GB Fly machine OOM-killed.
+
+    Memory grows with the batch, so every model call gets at most 8 texts, in order.
+    """
+    from app.services.knowledge import EMBED_BATCH_SIZE, KnowledgeService
+    from tests.knowledge_helpers import WordEmbedder
+
+    class CountingEmbedder(WordEmbedder):
+        def __init__(self) -> None:
+            super().__init__()
+            self.sizes: list[int] = []
+
+        async def embed(self, texts):  # type: ignore[no-untyped-def]
+            self.sizes.append(len(texts))
+            return await super().embed(texts)
+
+    embedder = CountingEmbedder()
+    service = KnowledgeService(None, embedder, None)  # type: ignore[arg-type]
+    texts = [f"chunk {i}" for i in range(89)]
+    vectors = await service._embed_all(texts)
+
+    assert EMBED_BATCH_SIZE == 8
+    assert max(embedder.sizes) <= 8
+    assert sum(embedder.sizes) == 89
+    assert vectors == [WordEmbedder.vector(t) for t in texts]

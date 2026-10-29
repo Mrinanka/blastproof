@@ -75,28 +75,28 @@ afterEach(() => {
 });
 
 describe("AppSidebar", () => {
-  it("hides Knowledge and Users from a member", async () => {
+  it("shows Knowledge to a member and hides Users", async () => {
     route({ me: () => Response.json(me("member")), totals: () => 0 });
     renderSidebar();
     await screen.findByText("Demo One");
     expect(link("Review")).not.toBeNull();
-    expect(link("Knowledge")).toBeNull();
+    expect(link("Knowledge")).not.toBeNull();
     expect(link("Users")).toBeNull();
   });
 
   it("shows Knowledge and Users to an admin", async () => {
     route({ me: () => Response.json(me("admin")), totals: () => 0 });
     renderSidebar();
-    expect(await screen.findByRole("link", { name: "Knowledge" })).toBeTruthy();
-    expect(link("Users")).not.toBeNull();
+    // Users is the admin-only link, so it is the one that proves the role has loaded.
+    expect(await screen.findByRole("link", { name: "Users" })).toBeTruthy();
+    expect(link("Knowledge")).not.toBeNull();
   });
 
-  it("shows no admin links while /me is pending or fails", async () => {
+  it("shows no admin-only links while /me is pending or fails", async () => {
     route({ me: () => new Response(null, { status: 500 }), totals: () => 0 });
     renderSidebar();
     await screen.findByRole("link", { name: "Review" });
     await new Promise((r) => setTimeout(r, 20));
-    expect(link("Knowledge")).toBeNull();
     expect(link("Users")).toBeNull();
   });
 
