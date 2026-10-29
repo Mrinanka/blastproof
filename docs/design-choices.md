@@ -1421,3 +1421,43 @@ and the dashboard never talks to that database).
 
 **Trade-off and limits.** You cannot tag a table the scan has not seen, so a new table needs a
 rescan first. Documents already tagged with a table that later disappears keep the old tag.
+
+
+## F11: Agents, users and rules (D-281 to D-283)
+
+### 1. The agent key is shown once and never kept by the app
+
+**What I did.** When you create an agent the backend returns the full key a single time. The page holds
+it in one piece of component state and shows it in a dialog with Copy buttons. The request that created
+it is set to be forgotten at once (`gcTime: 0`) and is reset right after the page takes the key, so
+neither of TanStack Query's caches (queries and mutations) ever holds it. The dialog cannot be dismissed
+by Escape or an outside click; only "Done, I have copied it" closes it, and that drops the key.
+
+**Why.** After this moment the backend cannot show the key again, so losing it by a stray click means
+making a new agent, and keeping it somewhere longer than needed means a secret sits in memory and in
+developer tools. The test serializes both caches and the page text and checks the key is gone after Done.
+
+**What I rejected.** Letting a normal dialog close on outside click (one mis-click loses the key). Keeping
+the mutation result and just hiding it (it would still be in the cache). Saving it in the browser's
+storage (CLAUDE.md forbids tokens there).
+
+**Trade-off and limits.** Close the tab before pressing Done and the key is gone for good; the fix is to
+create another agent. The `claude mcp add` line the backend gives still puts the key in shell history
+(D-283); that is the backend's format, not changed here.
+
+### 2. The page only saves a request; the backend decides who may do what
+
+**What I did.** A member who opens the Users page sees "Users is for admins." and the page sends no
+`/v1/users` request. Admins see an Owner column on Agents. The sign-up checks (name length, email shape,
+12-character password that is not trimmed) are copied from the backend so mistakes show at once, but a
+409 or 422 from the backend is always shown as it comes.
+
+**Why.** The dashboard holds no business logic (CLAUDE.md). Hiding things is a courtesy that avoids a
+pointless call and a 403; the real refusal is in the backend. Copying the checks gives fast feedback
+without becoming the authority.
+
+**What I rejected.** Trusting the hidden controls as security. Showing the Users form to everyone and
+waiting for a 403. Dropping client checks entirely (every typo would cost a round trip).
+
+**Trade-off and limits.** The copied bounds can drift from the backend; the backend's message still wins
+when they do. Lists stop at 100 with a note, no pagination.

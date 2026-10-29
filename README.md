@@ -55,7 +55,7 @@ Open <http://localhost:8000/docs>, log in with `POST /v1/auth/login`, and approv
 actions. Without a model key the summary uses a template and the judge sends writes to human review.
 
 The dashboard (`cd frontend && npm ci && npm run dev`, <http://localhost:3000>) has login,
-navigation and shared components so far; its pages are placeholders until the dashboard steps land.
+navigation, shared components and every page up to Settings (Agents, Users, Rules); the polish pass and landing page come next.
 
 ## Connect Claude Code
 
