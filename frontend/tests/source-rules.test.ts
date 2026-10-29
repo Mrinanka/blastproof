@@ -56,6 +56,12 @@ describe("source rules", () => {
     expect(layout?.text).toMatch(/<SidebarInset className="[^"]*\bmin-w-0\b/);
   });
 
+  // F11: the key dialog's copy field is the one place that writes to the clipboard.
+  it("uses navigator.clipboard only in the agents copy field", () => {
+    const found = files.filter((f) => f.text.includes("navigator.clipboard"));
+    expect(found.map((f) => f.name)).toEqual(["components/agents/copy-field.tsx"]);
+  });
+
   // F8: collapsed to icons, the name ran under the sidebar trigger.
   it("hides the product name when the sidebar is collapsed to icons", () => {
     const sidebar = files.find((f) => f.name === "components/layout/app-sidebar.tsx");

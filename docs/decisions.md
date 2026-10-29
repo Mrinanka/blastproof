@@ -1888,3 +1888,19 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** `EMBED_BATCH_SIZE` in `app/services/knowledge.py` goes from 64 to 8 (used by ingest, upload, rescan and reindex). Owner's choice over a 2 GB Fly machine.
 **Why:** the deployed 1 GB machine was OOM-killed embedding a 130 KB upload (89 chunks, D-281). Measured locally on that file with the real `bge-small` model, peak working set: batch 64 = 1,471 MB (24.2 s), batch 8 = 495 MB (23.2 s); the time did not get worse. **Rejected:** `fly scale memory 2048` (more cost, and the batch would still grow with the document); a smaller upload limit (hides the problem). **Covered by** `test_embeddings.py::test_ingest_embeds_in_small_batches_and_keeps_order` (fails at 64). It reaches Fly only when `release` is pushed.
+
+## D-283 · 2026-10-29 · The agent key lives in page state only; the dialog cannot be dismissed by accident
+
+**Decision:** `POST /v1/agents` runs with `gcTime: 0`, and `CreateAgentForm` calls `mutation.reset()` right after handing the created agent to the page, so no query or mutation cache entry holds the key. The key dialog is controlled with no `onOpenChange`, ignores Escape and outside clicks, and closes only with "Done, I have copied it", which drops the object from state.
+**Why:** the key is shown once (SEC-32); TanStack keeps mutation results in its cache and devtools. A tested guard (`agents.test.tsx`) serializes both caches and checks for the key. `navigator.clipboard` is used only in `components/agents/copy-field.tsx` (source rule); if the clipboard is unavailable (non-secure context) a toast says to select the text.
+**How to apply:** any future one-time secret goes through the same pattern.
+
+## D-284 · 2026-10-29 · Users and Agents pages gate by role in the browser only to save a request
+
+**Decision:** a member opening `/dashboard/settings/users` sees "Users is for admins." and no `/v1/users` request is sent (`useUsers(enabled)`); admins also see every agent's owner on the Agents page. Rules (`/v1/policies`) are read-only for everyone and not polled. Lists stop at 100 with a note; no pagination UI. Client-side validation copies the backend bounds (agent name 1 to 100, email shape, password 12 to 256 untrimmed); backend 409 and 422 messages are still shown.
+**Why:** the backend enforces every permission (403/404); the UI only avoids a pointless call (same pattern as D-279). The copied bounds can drift, as with F10's file-name rule.
+
+## D-285 · 2026-10-29 · Known issue: the shown `claude mcp add` line puts the key in shell history
+
+**Decision:** F11 shows the backend's `claude_mcp_add` and `agent_key_env` lines verbatim. The `--header "Authorization: Bearer <key>"` form puts the key in shell history and `~/.claude.json` (local scope). The dialog also says the hook is installed by `workspace.py create`, which the dashboard cannot do.
+**Why:** the plan says to show the lines exactly as returned. A later backend change could return a `.mcp.json` snippet using `${BLASTPROOF_AGENT_KEY}` (what `workspace.py` already does). Not done here.
