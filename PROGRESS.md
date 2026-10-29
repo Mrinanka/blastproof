@@ -806,7 +806,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] F6. Review queue
 - [~] F7. Change request page (built, DW-F07 by hand pending)
 - [~] F8. History (built, DW-F08 by hand pending)
-- [ ] F9. Overview
+- [x] F9. Overview
 - [ ] GATE AUDIT: Gate 2, evals green and backend deployed
 
 ## Stage 5: complete and ship
