@@ -174,10 +174,23 @@ def summarize(outcomes: Sequence[Outcome]) -> Metrics:
     )
 
 
-def gate_failures(metrics: Metrics, outcomes: Sequence[Outcome] = ()) -> list[str]:
+def gate_failures(
+    metrics: Metrics, outcomes: Sequence[Outcome] = (), *, require_model: bool = False
+) -> list[str]:
     """Why the run fails (D-045): a missed incident replay, or a scenario that could not be
-    measured. False block rate has no threshold. Read errors fail the run too."""
+    measured. False block rate has no threshold. Read errors fail the run too. A live run
+    (`require_model`) also fails when no model summary came back, or the judge was down on every
+    previewed scenario: with no working model every
+    write fails closed to review, so "100% caught" would say nothing about the models."""
     problems = [f"incident replay not caught: {i}" for i in metrics.incident_misses]
+    if require_model and metrics.summaries_passed == 0:
+        problems.append(
+            "no model answered: 0 summaries came back "
+            f"(judge unavailable on {metrics.ai_unavailable} of {metrics.measured} scenarios)"
+        )
+    previewed = [o for o in outcomes if o.path == "previewed" and not o.failed]
+    if require_model and previewed and all(o.ai_unavailable for o in previewed):
+        problems.append(f"the judge was unavailable on all {len(previewed)} previewed scenarios")
     errors = {o.id: o.error for o in outcomes if o.error}
     problems += [
         f"scenario could not be measured: {i}" + (f" ({errors[i]})" if i in errors else "")

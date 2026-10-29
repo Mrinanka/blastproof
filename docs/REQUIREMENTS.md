@@ -311,11 +311,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | EVAL-03 | Each scenario has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`; the scenario files carry `anchor_date: 2026-10-01` at the top, which backend tests and evals read. | BE B3; D-052 | B3 | DW-B03; CI test: `anchor_date` equals `seed_info.anchor_date` on local `company_main` |
 | [x] | EVAL-04 | Scenario files load and validate against a Pydantic schema. | BE B3 | B3 | DW-B03 |
 | [x] | EVAL-05 | Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them. | BE B3 | B8-B13 | DW-B08, DW-B09, DW-B10 |
-| [ ] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
+| [x] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
 | [ ] | EVAL-07 | Metrics: catch rate, false block rate, explanation accuracy (numbers checked by code; the LLM-as-judge score is deferred, D-036) and added latency (p50/p95 of `total_ms` per path: read, fast lane, previewed; read overhead = Blastproof time minus the same query run directly). | SPEC §14; BE §14; D-034, D-036 | Evals | MVP-B10; eval runner output |
 | [x] | EVAL-08 | `uv run python -m evals.run` prints a results table and saves it as JSON. | CL; BE §14 | Evals | *run it* |
 | [ ] | EVAL-09 | The labeled set is uploaded as a LangSmith dataset to compare variants as experiments (MVP: rules only vs rules plus judge, with vs without RAG context). | SPEC §14; BE §14 | Evals | *LangSmith experiment exists* |
-| [ ] | EVAL-10 | Incident replays and rule-only evals run on every pull request (no LLM cost); the full LLM eval runs nightly, on manual trigger and before any change to `SUMMARY_MODEL` or `JUDGE_MODEL`. Both the PR run and the nightly run fail if any incident replay is not caught; false block rate is recorded with no threshold yet. | SPEC §14; BE §14, §15; D-045 | B2, Evals | CI |
+| [x] | EVAL-10 | Incident replays and rule-only evals run on every pull request (no LLM cost); the full LLM eval runs nightly, on manual trigger and before any change to `SUMMARY_MODEL` or `JUDGE_MODEL`. Both the PR run and the nightly run fail if any incident replay is not caught; false block rate is recorded with no threshold yet. | SPEC §14; BE §14, §15; D-045 | B2, Evals | CI |
 | [x] | EVAL-11 | Catch rate and false block rate on the labeled set are recorded. | BE §17 | Evals | MVP-B10 |
 
 ## OBS: observability
@@ -335,7 +335,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
+| [x] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
 | [ ] | OPS-02 | A second workflow runs the LLM evals nightly with the `GOOGLE_API_KEY` repository secret. | BE §14, §15 | Evals | *workflow run* |
 | [ ] | OPS-03 | Frontend CI job on every PR: `npm ci` (cached), lint, typecheck, test (Vitest), build. | FE §13 | F1 onward | MVP-F08 |
 | [x] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
@@ -364,7 +364,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [x] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
+| [ ] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
 | [ ] | NFR-02 | Fast-lane writes complete in under 300 ms of Blastproof time. | SPEC §10; BE §17; D-007 | B14-B17 | MVP-B02 |
 | [x] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (spike measured p50 5.0 s to a usable branch and about 14 s for a whole preview; about 14 s for a small preview; target: under 20 s for a typical write (a few thousand rows); under 60 s for a write that touches most of a table, such as the 246k-row Replit delete, measured at 44 s on Neon, D-143). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
 | [x] | NFR-04 | Pending approvals survive restarts; no action is lost or applied twice. | SPEC §10; BE §17 | B14-B16 | DW-B15, DW-B16; MVP-B07, MVP-B08 |
