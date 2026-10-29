@@ -142,7 +142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(note)
     write_json(metrics, outcomes, out, meta=meta)
     print(f"\nResults: {out}")
-    failures = gate_failures(metrics, outcomes)
+    failures = gate_failures(metrics, outcomes, require_model=args.mode == "live")
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
     return 1 if failures else 0

@@ -194,6 +194,40 @@ def test_the_gate_fails_on_a_failed_read() -> None:
     ]
 
 
+def test_a_live_gate_fails_when_no_model_summary_came_back() -> None:
+    outcomes = [
+        o("a", "block", "block", incident=True),
+        o("b", "review", "review", ai_unavailable=True, summary_source="template"),
+    ]
+    assert gate_failures(summarize(outcomes), outcomes, require_model=True) == [
+        "no model answered: 0 summaries came back (judge unavailable on 1 of 2 scenarios)"
+    ]
+    assert gate_failures(summarize(outcomes), outcomes) == []
+
+
+def test_a_live_gate_fails_when_the_judge_was_down_on_every_previewed_scenario() -> None:
+    outcomes = [
+        o("a", "review", "review", summary_source="llm", path="previewed", ai_unavailable=True),
+        o("b", "review", "review", summary_source="llm", path="previewed", ai_unavailable=True),
+    ]
+    assert gate_failures(summarize(outcomes), outcomes, require_model=True) == [
+        "the judge was unavailable on all 2 previewed scenarios"
+    ]
+
+
+def test_a_live_gate_passes_when_the_judge_answered_on_some_previewed_scenarios() -> None:
+    outcomes = [
+        o("a", "review", "review", summary_source="llm", path="previewed", ai_unavailable=True),
+        o("b", "review", "review", summary_source="llm", path="previewed"),
+    ]
+    assert gate_failures(summarize(outcomes), outcomes, require_model=True) == []
+
+
+def test_a_live_gate_passes_when_one_model_summary_came_back() -> None:
+    outcomes = [o("a", "review", "review", summary_source="llm")]
+    assert gate_failures(summarize(outcomes), outcomes, require_model=True) == []
+
+
 def test_the_gate_passes_when_all_is_caught_even_with_false_blocks() -> None:
     outcomes = [o("a", "block", "block", incident=True), o("b", "allow", "review")]
     assert gate_failures(summarize(outcomes), outcomes) == []

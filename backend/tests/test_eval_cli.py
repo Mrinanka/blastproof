@@ -119,6 +119,28 @@ def test_live_settings_refusals(settings: Settings, message: str) -> None:
         assert "postgresql" not in str(exc)
 
 
+def test_a_live_run_with_no_model_answer_exits_1(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    no_connection: None,
+) -> None:
+    from evals.metrics import Outcome
+
+    async def fake_live(*args: Any, **kwargs: Any) -> list[Outcome]:
+        return [Outcome("x", "labeled.yaml", "sql", "review", "review", reason="r")]
+
+    async def no_reads(*args: Any, **kwargs: Any) -> list[Outcome]:
+        return []
+
+    monkeypatch.setattr(run, "Settings", local_settings)
+    monkeypatch.setattr(live_mode, "run_live", fake_live)
+    monkeypatch.setattr(live_mode, "measure_reads", no_reads)
+    code = run.main(["--mode", "live", "--out", str(tmp_path / "o.json")])
+    assert code == 1
+    assert "FAIL: no model answered" in capsys.readouterr().err
+
+
 def test_langsmith_runs_the_experiments_after_the_live_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -132,7 +154,11 @@ def test_langsmith_runs_the_experiments_after_the_live_run(
     seen: dict[str, Any] = {}
 
     async def fake_live(*args: Any, **kwargs: Any) -> list[Outcome]:
-        return [Outcome("x", "labeled.yaml", "sql", "review", "review", reason="r")]
+        return [
+            Outcome(
+                "x", "labeled.yaml", "sql", "review", "review", reason="r", summary_source="llm"
+            )
+        ]
 
     async def no_reads(*args: Any, **kwargs: Any) -> list[Outcome]:
         return []
