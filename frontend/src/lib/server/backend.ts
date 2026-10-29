@@ -3,6 +3,20 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 
 export const BACKEND_TIMEOUT_MS = 30_000;
+// An upload embeds up to 1 MB of text and a rescan reads the whole schema; both are slow (F10).
+export const LONG_BACKEND_TIMEOUT_MS = 120_000;
+// Above the backend's 1 MB + 64 KB upload limit, so the backend's own 413 and 422 still decide.
+export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+const LONG_PATHS = [/^\/v1\/knowledge$/, /^\/v1\/systems\/[^/]+\/scan$/];
+
+// `target` is the backend path, query allowed.
+export function timeoutFor(method: string, target: string): number {
+  const path = target.split("?")[0];
+  return method === "POST" && LONG_PATHS.some((re) => re.test(path))
+    ? LONG_BACKEND_TIMEOUT_MS
+    : BACKEND_TIMEOUT_MS;
+}
 
 // Thrown when a required environment variable is missing or malformed. The message names the
 // variable, never its value.
@@ -47,7 +61,7 @@ export async function fetchBackend(path: string, init: RequestInit): Promise<Bac
       ...init,
       redirect: "manual",
       cache: "no-store",
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutFor(init.method ?? "GET", path)),
     });
     return { response };
   } catch (error) {

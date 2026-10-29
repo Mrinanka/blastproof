@@ -1376,3 +1376,48 @@ refresh stats by name (couples two features and is easy to forget).
 agree in practice. If the first stats load fails, all five cards give way to one error with Retry,
 even though the pending count might have loaded. If a later poll fails, the last numbers stay on
 screen with a "Couldn't refresh" warning.
+
+## F10: Knowledge (D-276, D-277)
+
+### 1. Members get a read-only view, and the proxy stops big bodies before the backend sees them
+
+**What I did.** The Knowledge page first asks "who am I?" and then loads the source list for anyone
+signed in. An admin also gets the upload form, the Delete buttons and the Rescan buttons; a member
+gets the list alone, and the browser never asks for the systems. Separately, the dashboard's proxy now refuses any request body over 2 MB with a 413
+(it checks `Content-Length`, then counts bytes while reading, so a missing or false length does
+not help), and gives only upload and rescan a 120 s timeout instead of 30 s.
+
+**Why.** The AI's explanation of a member's change is written from these documents, so that member
+should be able to see what it read. The backend already shares the list on purpose (BE-114), and
+the first version of this page hid it from members, which disagreed with the backend. Showing the
+list read-only makes the two agree; the write controls are hidden only for tidiness, and the
+backend still refuses member writes with 403. Before this, the proxy copied whole bodies into memory with no
+limit, which was a known F3 issue. 2 MB is above the backend's 1 MB + 64 KB, so the backend's own
+error messages still decide the real limit; the proxy only guards memory. Embedding 1 MB of text is
+slow, so a 30 s timeout would cut off uploads that were still working.
+
+**What I rejected.** Making the list admin-only in the backend (the owner chose a read-only member
+view instead, D-278). Setting
+the cap equal to the backend's limit (it would hide the backend's clearer messages). A long timeout
+for every route (a hung read would hold a connection for two minutes).
+
+**Trade-off and limits.** Members see file and table names (never the text). The hidden write
+controls are a courtesy, not security: the backend does the refusing. A 504 on upload cannot tell whether the backend finished, so the form says it
+"may still be finishing" and asks the admin to refresh. Vercel's own function limit is not set yet.
+
+### 2. Tags can only be picked from tables the schema scan knows
+
+**What I did.** The upload form shows a checkbox for each table in the schema scan, not a free-text
+box. With no scan it says "Rescan the schema to tag tables" and an untagged upload still works.
+Tags are sent in the schema's order, one `tables` entry each.
+
+**Why.** A table tag is how a document reaches an action: the backend returns every chunk tagged
+with the tables an action touches. A misspelt tag (`user` for `users`) would upload fine, show up
+in the list, and never be used, with no error anywhere. Checkboxes make that mistake impossible.
+
+**What I rejected.** A free-text field with validation after the fact (the typo would still look
+valid). Reading table names from the company database directly (the scan source already holds them,
+and the dashboard never talks to that database).
+
+**Trade-off and limits.** You cannot tag a table the scan has not seen, so a new table needs a
+rescan first. Documents already tagged with a table that later disappears keep the old tag.

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DELETE, GET, POST } from "../src/app/api/blastproof/[...path]/route";
+import { MAX_BODY_BYTES, timeoutFor } from "../src/lib/server/backend";
 import { BACKEND, lastCall, makeRequest, ORIGIN, setEnv, stubFetch } from "./helpers";
 
 const ctx = (...path: string[]) => ({ params: Promise.resolve({ path }) });
@@ -213,5 +214,64 @@ describe("failures", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).toContain("config_error");
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe("body cap and long timeouts (F10)", () => {
+  const post = (body: BodyInit, headers: Record<string, string> = {}) =>
+    makeRequest("/api/blastproof/v1/knowledge", {
+      method: "POST",
+      headers: { origin: ORIGIN, ...headers },
+      body,
+    });
+
+  it("refuses a Content-Length over the cap with 413 and no fetch", async () => {
+    const spy = stubFetch(() => json({}));
+    const request = post("x", { "content-length": String(MAX_BODY_BYTES + 1) });
+    const response = await POST(request, ctx("v1", "knowledge"));
+    expect(response.status).toBe(413);
+    expect(await response.text()).toContain("too_large");
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a streamed body over the cap that has no Content-Length", async () => {
+    const spy = stubFetch(() => json({}));
+    const chunk = new Uint8Array(512 * 1024);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 5) controller.enqueue(chunk);
+        else controller.close();
+      },
+    });
+    const request = new Request(`${ORIGIN}/api/blastproof/v1/knowledge`, {
+      method: "POST",
+      headers: { origin: ORIGIN },
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    const { NextRequest } = await import("next/server");
+    const response = await POST(new NextRequest(request), ctx("v1", "knowledge"));
+    expect(response.status).toBe(413);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("forwards a body exactly at the cap unchanged", async () => {
+    const spy = stubFetch(() => json({ ok: true }));
+    const bytes = new Uint8Array(MAX_BODY_BYTES).fill(7);
+    const response = await POST(post(bytes), ctx("v1", "knowledge"));
+    expect(response.status).toBe(200);
+    const sent = new Uint8Array(lastCall(spy).init.body as ArrayBuffer);
+    expect(sent.byteLength).toBe(MAX_BODY_BYTES);
+    expect(sent[0]).toBe(7);
+  });
+
+  it("gives upload and scan 120 s and everything else 30 s", () => {
+    expect(timeoutFor("POST", "/v1/knowledge")).toBe(120_000);
+    expect(timeoutFor("POST", "/v1/systems/abc/scan")).toBe(120_000);
+    expect(timeoutFor("GET", "/v1/knowledge?limit=100")).toBe(30_000);
+    expect(timeoutFor("DELETE", "/v1/knowledge/x")).toBe(30_000);
+    expect(timeoutFor("POST", "/v1/actions/abc/approve")).toBe(30_000);
+    expect(timeoutFor("POST", "/v1/systems/abc/scan/x")).toBe(30_000);
   });
 });

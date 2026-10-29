@@ -1,11 +1,45 @@
 import type { NextRequest } from "next/server";
 
-import { errorResponse, fetchBackend, relay, sameOrigin } from "@/lib/server/backend";
+import {
+  MAX_BODY_BYTES,
+  errorResponse,
+  fetchBackend,
+  relay,
+  sameOrigin,
+} from "@/lib/server/backend";
 import { clearSessionCookie, readSessionToken } from "@/lib/server/session";
 
 type Context = { params: Promise<{ path: string[] }> };
 
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept"];
+
+// The body, or undefined when it is over MAX_BODY_BYTES. Counts while reading, so a body with no
+// (or a false) Content-Length is stopped too.
+async function readCapped(request: NextRequest): Promise<ArrayBuffer | undefined> {
+  const length = Number(request.headers.get("content-length"));
+  if (Number.isFinite(length) && length > MAX_BODY_BYTES) return undefined;
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return undefined;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out.buffer;
+}
 
 // The backend proxy (FE-06): adds the Bearer token from the httpOnly cookie and returns the
 // backend's answer unchanged. Only /v1/* is reachable through it.
@@ -33,7 +67,11 @@ async function handle(request: NextRequest, { params }: Context) {
   }
   if (token) headers.set("authorization", `Bearer ${token}`);
 
-  const body = writes ? await request.arrayBuffer() : undefined;
+  let body: ArrayBuffer | undefined;
+  if (writes) {
+    body = await readCapped(request);
+    if (!body) return errorResponse(413, "too_large", "The request is too large.");
+  }
   const target = `/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
   const result = await fetchBackend(target, {
     method: request.method,
