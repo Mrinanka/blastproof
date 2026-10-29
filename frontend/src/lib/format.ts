@@ -63,6 +63,20 @@ export function formatDateTime(
     .replace(/ /g, " ");
 }
 
+const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+// A calendar day such as the backend's UTC "today" (D-051). Formatted in UTC: in the viewer's zone
+// "2026-10-29" would read as Oct 28 west of Greenwich.
+export function formatDay(isoDate: string): string {
+  const match = typeof isoDate === "string" ? DAY.exec(isoDate) : null;
+  if (!match) return DASH;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date.UTC rolls 02-30 over to March; a day that did not survive the round trip is invalid.
+  if (date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return DASH;
+  return new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium", timeZone: "UTC" }).format(date);
+}
+
 const RELATIVE = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
 
 export function formatRelative(iso: string, now: Date): string {
