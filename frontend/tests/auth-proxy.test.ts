@@ -9,10 +9,13 @@ beforeEach(() => setEnv());
 afterEach(() => vi.unstubAllEnvs());
 
 describe("matcher", () => {
-  it.each(["/dashboard", "/dashboard/review", "/login", "/api/blastproof/v1/actions"])(
-    "matches %s",
-    (url) => expect(unstable_doesMiddlewareMatch({ config, url })).toBe(true),
-  );
+  it.each([
+    "/dashboard",
+    "/dashboard/review",
+    "/dashboard/nope",
+    "/login",
+    "/api/blastproof/v1/actions",
+  ])("matches %s", (url) => expect(unstable_doesMiddlewareMatch({ config, url })).toBe(true));
   it.each(["/", "/_next/static/x.js"])("does not match %s", (url) =>
     expect(unstable_doesMiddlewareMatch({ config, url })).toBe(false),
   );

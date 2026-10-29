@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
+import { ThemeMenu } from "@/components/theme/theme-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +56,7 @@ export function UserMenu() {
                 <DropdownMenuSeparator />
               </>
             ) : null}
+            <ThemeMenu />
             <DropdownMenuItem onSelect={() => void onLogout()}>
               <LogOut />
               Log out

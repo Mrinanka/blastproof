@@ -85,7 +85,8 @@ export function DataTable<T>({
             <TableRow>
               {columns.map((c) => (
                 <TableHead key={c.header} className={c.className}>
-                  {c.header}
+                  {/* An empty header (the row-action column) still needs a name for screen readers. */}
+                  {c.header || <span className="sr-only">Actions</span>}
                 </TableHead>
               ))}
             </TableRow>

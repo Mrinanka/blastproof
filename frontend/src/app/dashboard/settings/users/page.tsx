@@ -1,5 +1,7 @@
 import { Users } from "@/components/users/users";
 
+export const metadata = { title: "Users" };
+
 export default function Page() {
   return (
     <div className="space-y-4 p-6">

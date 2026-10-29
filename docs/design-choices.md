@@ -1497,3 +1497,44 @@ waiting for a 403. Dropping client checks entirely (every typo would cost a roun
 
 **Trade-off and limits.** The copied bounds can drift from the backend; the backend's message still wins
 when they do. Lists stop at 100 with a note, no pagination.
+
+## F12: Polish (D-286 to D-289)
+
+### 1. The dark-mode script gets the CSP nonce only on pages that are already built per request
+
+**What I did.** Dark mode needs a tiny inline script that runs before the page paints, so the page does not
+flash white. Our content security policy only allows scripts that carry a one-time random value (a nonce)
+made by the proxy. So the theme provider lives in the dashboard layout and the login page, which are
+already built per request and can read that nonce. It is not in the root layout. The 404 page for
+addresses outside the proxy (which have no policy at all) uses the provider without a nonce.
+
+**Why.** Reading the nonce means reading request headers, and a page that reads headers can no longer be
+built once in advance. The landing page (F13) must stay static, so putting the provider in the root layout
+would have quietly made it dynamic. I saw this happen in the build: my first root 404 did exactly that
+and `/` flipped from static to dynamic, so I changed it.
+
+**What I rejected.** Loosening the policy with `'unsafe-inline'` for scripts (it removes the main
+protection against injected scripts). Putting the provider in the root layout (breaks the static landing
+page). Skipping dark mode on the login page (it would flash).
+
+**Trade-off and limits.** Each per-request page that wants a theme must add the provider itself. The theme
+choice is kept in the browser's localStorage by the library; it is a display preference, not a token.
+The nonce test runs in a server-like environment because the library hides the nonce in a browser.
+
+### 2. Contrast is computed from the design tokens, because the test browser cannot see colour
+
+**What I did.** The accessibility tool (axe) runs in jsdom, which has no layout or real colours, so it
+cannot check contrast. I wrote a small test that reads the colour values from the stylesheet, converts
+them to the WCAG formula and checks every text/background pair, in light and dark, plus every badge tone.
+A real Lighthouse run by hand is still the final check.
+
+**Why.** Contrast is the accessibility problem most likely to regress silently, and a manual check
+only happens once. The test found a real failure at once: the grey "muted" badge was 4.3:1 against a
+4.5:1 minimum, so the badge became an outline with no fill.
+
+**What I rejected.** Changing shadcn's shared colour token (it would change every muted text in the
+app). Relying on Lighthouse alone (one-off, and I cannot run Chrome here).
+
+**Trade-off and limits.** The test checks the pairs I listed, not every place a colour is used, and it
+ignores transparent colours such as the dark border. One pair (muted text on a solid muted fill) is left
+out on purpose because nothing renders it.
