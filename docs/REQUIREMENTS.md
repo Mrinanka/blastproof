@@ -293,7 +293,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-19 | Reject opens a dialog requiring a reason of at least 10 characters (zod). | FE F7 | F7 | TEST-10; MVP-F04 |
 | [ ] | FE-20 | A 409 on approve or reject shows a toast naming who already decided. | FE §7, F7 | F7 | DW-F07; MVP-F04 |
 | [ ] | FE-21 | History lists the user's actions with filters for status, agent, table and date range stored in the URL, with server-side pagination of 25 rows. | FE §7, F8 | F8 | DW-F08; MVP-F05 |
-| [ ] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
+| [x] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
 | [ ] | FE-23 | Knowledge page (admin only) lists sources with chunk counts, uploads a .md or .txt file up to 1 MB with optional tables (multipart through the BFF), deletes with a confirm dialog, and has a "Rescan schema" button. | FE §7, F10 | F10 | DW-F10 |
 | [ ] | FE-24 | Agents page lists the user's agents (key prefix, active state); create shows the key once with a copy button and the setup lines exactly as returned by `POST /v1/agents`, plus a link to the README's hook steps; deactivate asks for confirmation. | FE §7, F11 | F11 | DW-F11; MVP-F07 |
 | [ ] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
@@ -410,7 +410,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
 | [ ] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |
 | [ ] | DW-F08 | Changing filters updates the URL and the back button restores the previous view. | FE F8 | F8 | Manual |
-| [ ] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
+| [x] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
 | [ ] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
 | [ ] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
 | [ ] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
