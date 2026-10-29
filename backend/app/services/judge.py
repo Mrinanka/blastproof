@@ -52,6 +52,7 @@ from app.services.llm import (
     build_chat_model,
     cost_usd,
     price_for,
+    text_ok,
     usage_tokens,
 )
 from app.services.masking import mask_text
@@ -126,13 +127,13 @@ class JudgeVerdict(BaseModel):
 
 
 def verdict_ok(verdict: object) -> bool:
-    """A verdict inside its bounds: confidence in [0, 1], a non-blank reason of at most 500."""
+    """A verdict inside its bounds: confidence in [0, 1], a `text_ok` reason of at most 500."""
     if not isinstance(verdict, JudgeVerdict):
         return False
     return (
         math.isfinite(verdict.confidence)
         and 0 <= verdict.confidence <= 1
-        and bool(verdict.reason.strip())
+        and text_ok(verdict.reason)
         and len(verdict.reason) <= MAX_REASON_CHARS
     )
 
