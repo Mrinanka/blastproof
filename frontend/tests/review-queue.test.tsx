@@ -134,6 +134,18 @@ describe("ReviewQueue", () => {
     );
   });
 
+  it("lets long intents and headlines wrap instead of scrolling the table sideways", async () => {
+    serve(() => page([{ id: "w", intent: "x ".repeat(200), headline: "y ".repeat(100) }]));
+    mount();
+    await settle();
+    for (const name of ["Intent", "Headline"]) {
+      const th = screen.getByRole("columnheader", { name });
+      expect(th.className).toContain("whitespace-normal");
+    }
+    const td = screen.getAllByRole("cell")[1];
+    expect(td.className).toContain("whitespace-normal");
+  });
+
   it("falls back for null headline, intent and risk", async () => {
     serve(() => page([{ id: "n", intent: null, headline: null, risk: null }]));
     mount();

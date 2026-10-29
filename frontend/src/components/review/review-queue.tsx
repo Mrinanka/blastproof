@@ -16,9 +16,15 @@ export const REVIEW_PAGE_SIZE = 25;
 
 const COLUMNS: Column<ActionSummary>[] = [
   { header: "Agent", cell: (a) => a.agent.name },
-  { header: "Intent", cell: (a) => a.intent ?? "—" },
+  // Table cells do not wrap by default; a long intent would make the table scroll sideways.
+  {
+    header: "Intent",
+    className: "min-w-64 max-w-md whitespace-normal",
+    cell: (a) => a.intent ?? "—",
+  },
   {
     header: "Headline",
+    className: "min-w-64 whitespace-normal",
     cell: (a) => (
       <Link href={`/dashboard/actions/${a.id}`} className="font-medium hover:underline">
         {a.headline ?? "Summary not ready"}

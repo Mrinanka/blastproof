@@ -1848,3 +1848,8 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** The Overview's Pending card uses `usePendingCount()` (the sidebar badge's query), not `stats.pending_reviews`. "Decisions today" is `today.reviewed`, labelled "Reviewed today (UTC)": decisions a person made today, including on older actions. It is not `sum(today.by_decision)`, which counts automatic decisions on actions created today. The cost card says "Known costs only" (unknown costs are left out, D-153). The stats query key is `["actions", "stats"]`, so approve and reject refresh the cards. `formatDay` formats the backend's `today.day` in UTC.
 **Why:** the shared query means the card and the badge cannot disagree (stats polls every 15 s, the badge every 5 s) and costs no extra request. `reviewed` matches what "decisions" means to the owner; the by-decision sum answers a different question. Formatting the day in the viewer's zone would show Oct 28 west of Greenwich. **Rejected:** `stats.pending_reviews` (can lag the badge); the by-decision sum.
+
+## D-275 · 2026-10-29 · The review queue's Intent and Headline columns wrap
+
+**Decision:** `review-queue.tsx` gives Intent (`min-w-64 max-w-md`) and Headline (`min-w-64`) `whitespace-normal`, as History's Summary column already does (D-273).
+**Why:** shadcn table cells never wrap, so a real intent of two sentences made the queue scroll sideways and hid Risk and Waiting (owner's deployed-backend screenshots, 2026-10-29). **Rejected:** truncating with an ellipsis (hides what the reviewer needs to read before approving); an `overflow-x-hidden` wrapper (hides the problem). Covered by a new test that fails without the class.
