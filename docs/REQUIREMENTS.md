@@ -261,7 +261,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-26 | The proxy rejects any POST or DELETE whose `Origin` is not the dashboard's own address. | FE F3, §11, §12; D-050 | F3 | TEST-10 |
 | [ ] | SEC-27 | Agent-provided and uploaded text (SQL, intents, documents, sample rows) is rendered as plain text; no `dangerouslySetInnerHTML`, no Markdown from uploads rendered as HTML. | CL; FE §11 | F5-F11 | *lint rule or grep; code review* |
 | [ ] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
-| [ ] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
+| [x] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
 | [x] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
 | [x] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
 | [ ] | SEC-32 | Hiding controls by role in the UI is convenience only; every role check is enforced by the backend. | FE §11; CL | F4, B19 | TEST-03; MVP-F06 |
@@ -299,8 +299,8 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
 | [x] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
 | [ ] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
-| [ ] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, FAQ, footer. | FE F13 | F13 | DW-F13 |
-| [ ] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
+| [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, FAQ, footer. | FE F13 | F13 | DW-F13 |
+| [x] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
 
 ## EVAL: evals
 

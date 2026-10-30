@@ -69,16 +69,15 @@ describe("source rules", () => {
   });
 
   // F12: a raw palette color (text-red-600) has no dark-mode pair unless it is written with one.
-  // tone.ts pairs each with a dark: class and is checked by contrast.test.ts. app/page.tsx is the
-  // create-next-app starter page, which F13 replaces.
-  it("uses raw Tailwind palette colors only in tone.ts and the starter page", () => {
+  // tone.ts pairs each with a dark: class and is checked by contrast.test.ts. The landing page uses
+  // its own tokens (F13).
+  it("uses raw Tailwind palette colors only in tone.ts", () => {
     const palette =
       /\b(?:text|bg|border|ring|fill|stroke|from|to|via)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone)-\d{2,3}\b/;
     const found = files.filter(
       (f) =>
         palette.test(f.text) &&
         f.name !== "components/actions/tone.ts" &&
-        f.name !== "app/page.tsx" &&
         !f.name.startsWith("components/ui/"),
     );
     expect(found.map((f) => f.name)).toEqual([]);
@@ -89,5 +88,23 @@ describe("source rules", () => {
     for (const line of lightFills) {
       expect(line, "every light palette class has a dark: pair").toMatch(/dark:bg-/);
     }
+  });
+
+  // F13 (D-290): Motion and the landing components are for the public page only.
+  it("imports motion and the landing components only from the landing page", () => {
+    const users = files
+      .filter((f) =>
+        /(?:from|import)\s*\(?["'](?:motion(?:\/[\w-]+)?|framer-motion|@\/components\/landing\/[^"']+)["']/.test(
+          f.text,
+        ),
+      )
+      .map((f) => f.name)
+      .filter((name) => !name.startsWith("components/landing/") && name !== "app/page.tsx");
+    expect(users).toEqual([]);
+  });
+
+  it("uses only the lazy `m` components from Motion (LazyMotion strict)", () => {
+    const full = files.filter((f) => /\bmotion\.[a-z]+\b|<motion\./.test(f.text));
+    expect(full.map((f) => f.name)).toEqual([]);
   });
 });

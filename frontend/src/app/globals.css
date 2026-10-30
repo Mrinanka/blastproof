@@ -39,6 +39,10 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-safe: var(--safe);
+  --color-safe-foreground: var(--safe-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -115,6 +119,149 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* F13: the public landing page is dark only and static (no theme provider on `/`, D-287), so it
+   sets its own tokens on its wrapper (`<div class="landing dark">`). One warning accent (signal,
+   amber) and one calm accent (safe, green); nothing else is saturated. contrast.test.ts checks
+   every text pair. */
+.landing {
+  --background: oklch(0.13 0.004 265);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.17 0.004 265);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.17 0.004 265);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.97 0 0);
+  --primary-foreground: oklch(0.17 0.004 265);
+  --secondary: oklch(0.22 0.004 265);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.22 0.004 265);
+  --muted-foreground: oklch(0.72 0.005 265);
+  --accent: oklch(0.22 0.004 265);
+  --accent-foreground: oklch(0.97 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.8 0.15 70);
+  --signal: oklch(0.8 0.15 70);
+  --signal-foreground: oklch(0.2 0.04 70);
+  --safe: oklch(0.8 0.15 155);
+  --safe-foreground: oklch(0.2 0.04 155);
+  --grid: oklch(1 0 0 / 8%);
+  color-scheme: dark;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+/* Overscroll and the area outside the wrapper match the landing background. */
+html:has(.landing) {
+  background-color: oklch(0.13 0.004 265);
+}
+
+/* A dot grid that fades out from the top, with a soft light behind the hero. */
+.landing-grid {
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+.landing-spotlight {
+  background: radial-gradient(ellipse 50% 40% at 50% 0%, oklch(1 0 0 / 7%), transparent 70%);
+}
+.landing-noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.035;
+}
+
+/* A thin card edge with a faint highlight along the top. */
+.landing-edge {
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 0 oklch(1 0 0 / 6%);
+}
+
+/* The moving light on a card's border (adapted from Magic UI's Border Beam, in CSS only). */
+.landing-beam {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  mask:
+    linear-gradient(transparent, transparent) padding-box,
+    linear-gradient(#000, #000) border-box;
+  mask-composite: intersect;
+}
+.landing-beam::after {
+  content: "";
+  position: absolute;
+  width: 140px;
+  aspect-ratio: 1;
+  background: linear-gradient(to left, var(--signal), transparent);
+  offset-path: rect(0 auto auto 0 round 140px);
+  animation: landing-beam 9s linear infinite;
+}
+@keyframes landing-beam {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
+/* A request pulse along an SVG path drawn with pathLength="1": first along the write path to the
+   owner, then from the owner's approval on to the commit. */
+.landing-pulse {
+  stroke-dasharray: 0.05 1;
+  stroke-dashoffset: 0.05;
+  animation-duration: 7s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.landing-pulse-write {
+  animation-name: landing-pulse-write;
+}
+.landing-pulse-commit {
+  animation-name: landing-pulse-commit;
+}
+@keyframes landing-pulse-write {
+  0% {
+    stroke-dashoffset: 0.05;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes landing-pulse-commit {
+  0%,
+  58% {
+    stroke-dashoffset: 0.05;
+  }
+  85%,
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+
+/* The terminal's block cursor. */
+.landing-caret {
+  animation: landing-caret 1.1s steps(1) infinite;
+}
+@keyframes landing-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    animation: none !important;
+  }
+  .landing-pulse {
+    display: none;
+  }
 }
 
 @layer base {
