@@ -348,7 +348,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | OPS-11 | Every secret in BE §11 is set with `fly secrets set`; the owner loads the seed into `blastproof-company` (D-054); bootstrap is run once via `fly ssh console`; `rebase-dates` is run (by the owner) against `blastproof-company` before recording the demo. | BE §15 | Deploy | *manual checklist* |
 | [x] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
 | [x] | OPS-13 | Claude Code is pointed at the deployed MCP URL and the hook's `BLASTPROOF_AGENT_KEY` is updated. | BE §15 | Deploy | MVP-B01 |
-| [ ] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `release` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
+| [x] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `release` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
 | [ ] | OPS-15 | The first admin is created with the backend's bootstrap command and the demo is run end to end on the deployed stack. | FE §13 | Deploy (Stage 5) | MVP-F checks |
 
 ## SPIKE: questions spikes must answer
@@ -414,7 +414,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
 | [x] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
 | [ ] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
-| [ ] | DW-F13 | A logged-out visitor sees the landing page, "Log in" leads to `/login`, Lighthouse scores 90+ for performance, accessibility and SEO, and the LinkedIn link preview looks right. | FE F13 | F13 | Lighthouse + manual |
+| [x] | DW-F13 | A logged-out visitor sees the landing page, "Log in" leads to `/login`, Lighthouse scores 90+ for performance, accessibility and SEO, and the LinkedIn link preview looks right. | FE F13 | F13 | Lighthouse + manual |
 
 ### Stage gates
 

@@ -105,9 +105,10 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 ### Dashboard deploy to Vercel, built 2026-10-31, D-300 to D-303
 - New: `frontend/vercel.json`, `backend/app/services/dashboard_check.py`, `docs/deploy-dashboard.md` (your Vercel checklist), `frontend/tests/vercel-config.test.ts`, `backend/tests/test_dashboard_check.py`, `backend/tests/test_deploy_dashboard_docs.py`. Changed: the proxy route (`maxDuration = 150`), `app/cli.py` (`dashboard-check`), CLAUDE.md, `docs/deploy.md`, OPS-14 and frontend plan §13 (`release`, not `main`). No dependency, setting or migration.
 - Tests: 38 new backend tests (no Docker) and 3 Vitest; ruff clean. Mutation checks: 11 guards removed in the probe; 9 turned a test red at once and the other 2 (the 307 status, the own-Origin 403 detail) got their own tests.
-- **Not done yet (yours, by hand, in `docs/deploy-dashboard.md`):** merge `develop` into `release` (also redeploys the backend), import the project in Vercel, set the production branch, env vars, Deployment Protection, Toolbar off, the domain; then `dashboard-check` against `https://blastproof.in` and the `*.vercel.app` URL, a login by hand, one large upload, and the LinkedIn Post Inspector. OPS-14, SEC-28 and DW-F13 stay open until then; the "Dashboard deployed to Vercel" tick waits for it.
+- **Done by the owner (2026-10-31), originally listed as owed:** merge `develop` into `release` (also redeploys the backend), import the project in Vercel, set the production branch, env vars, Deployment Protection, Toolbar off, the domain; then `dashboard-check` against `https://blastproof.in` and the `*.vercel.app` URL, a login by hand, one large upload, and the LinkedIn Post Inspector. All confirmed below.
 - Live results (2026-10-31): `dashboard-check` against `https://blastproof.vercel.app` passes all 11 checks (exit 0), which proves F3's Origin check on Vercel, the proxy-to-Fly wiring, the headers (SEC-28), the cookie flags and no leaks. `deploy-check` on Fly passes 9 of 9 after the `release` merge; `v0.2.0` is tagged on `0aef726`.
-- Still open: production branch set to `release` and the redeploy from it (owner, Vercel Settings); `blastproof.in` domain and its `dashboard-check` (also checks `og:image`); login by hand; one large upload; LinkedIn Post Inspector. OPS-14 and DW-F13 wait for these; the "Dashboard deployed" tick too.
+- Confirmed 2026-10-31: production branch is `release` (owner); `blastproof.in` serves the site and `www` redirects to it with a 308, and `dashboard-check --url https://blastproof.in` passes 11 of 11 (me); login works and a large upload works (owner); the LinkedIn preview shows the right title, logo and card (owner, screenshot). OPS-14 and DW-F13 are ticked.
+- Not confirmed by me: Deployment Protection on and Toolbar off (the owner's settings; `docs/deploy-dashboard.md` steps 5 and 6).
 - Closed by the live run: F3's Origin check on Vercel, the missing `maxDuration` (D-278), `SITE_URL` (already `https://blastproof.in`).
 - Known issues: all dashboard logins share one rate-limit bucket (D-303); the `*.vercel.app` URL stays public (duplicate content); Fly's proxy may still cut a long upload near 60 s.
 
@@ -128,8 +129,8 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Logo and icons (owner, D-299): the owner's Canva logo (a shield with a B and an orange bracket) replaces the diamond in the nav and footer wordmark and in the share card. `app/icon.png` and `app/apple-icon.png` are new and `app/favicon.ico` is replaced. Lint, Prettier, typecheck, 660 Vitest and `npm run build` pass; the share card was re-rendered from the build (1200 × 630).
 - Lighthouse on `/` (owner, 2026-10-30): 85 performance on the dev server (TBT 330 ms is the only lost metric); **100 performance, 100 accessibility, 100 best practices, 100 SEO on the production build.** The `Providers` move was not needed. Re-run it once after the logo change if you want it on record.
 - **Still owed (DW-F13):**
-  - The LinkedIn Post Inspector check on `https://blastproof.in` after the Vercel deploy. LinkedIn, X and Slack cache previews, so re-scrape after any later change.
-  - `SITE_URL` in `lib/landing/site.ts` must be the production domain at deploy.
+  - Done 2026-10-31: the LinkedIn preview on `https://blastproof.in` looks right. LinkedIn, X and Slack cache previews, so re-scrape after any later change.
+  - Done: `SITE_URL` is `https://blastproof.in`, and the probe confirms `og:image` points at it.
 - Left over in local dev data:
   - The local `company_main` dates were rebased to 2026-10-29.
   - One new pending action `2ff1f40f` (Replit delete, demo user 1, agent `demo-agent`) stays in the local `blastproof` database; it is the one in the screenshot.
@@ -887,8 +888,8 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] F10. Knowledge
 - [x] F11. Agents, users and rules
 - [~] F12. Polish (built; dark-mode Lighthouse 100; light mode, 700 px, CSP console and 404-with-cookie checks parked by the owner)
-- [~] F13. Landing page (built; Lighthouse 100/100/100/100 on the production build; the LinkedIn preview after deploy is pending)
-- [ ] Dashboard deployed to Vercel
+- [x] F13. Landing page (Lighthouse 100/100/100/100 on the production build; LinkedIn preview checked on `https://blastproof.in`, owner, 2026-10-31)
+- [x] Dashboard deployed to Vercel (`https://blastproof.in`, production branch `release`, D-300 to D-303)
 - [ ] FINAL AUDIT against both MVP done checklists
 - [ ] Demo video recorded
   - Parked for the demo: with the Groq judge the live eval turned the Replit mass delete from review into block (2026-10-28), so the owner could not approve it. Decide the judge prompt or threshold, or a rule that keeps a judge block on a mass delete as review, before recording.
