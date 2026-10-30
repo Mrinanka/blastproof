@@ -107,7 +107,8 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Tests: `analytics.test.ts`, `vercel-analytics.test.tsx`, 2 new source rules (the packages are imported only in the analytics component; the layout gates it). 676 Vitest pass; lint, typecheck and Prettier (`--end-of-line auto`) clean. `npm run build`: `/` is still static, also with `VERCEL_ENV=production`.
 - Mutation checks: 8 guards removed (UUID replacement, query strip, hash strip, fail-closed parse, production gate, `beforeSend` on each package, the layout gate), each turned a test red.
 - By hand (me): `next start` + `curl -I`: the landing and login CSPs are unchanged; the local page holds no `_vercel` reference.
-- **Still owed (owner, `docs/deploy-dashboard.md` §7):** enable Analytics and Speed Insights in the Vercel project, deploy, then check in DevTools: script 200, no CSP error, and no UUID or query string in the page view payload or in Vercel's Pages list.
+- Released 2026-10-31 as `v0.3.0` (PR #67, `acad3d3` on `release`): Deploy workflow and Vercel production deploy green; `deploy-check` on Fly passes 9 of 9 and `dashboard-check` on `https://blastproof.in` passes 11 of 11.
+- **Still owed (owner, `docs/deploy-dashboard.md` §7):** check in DevTools on `https://blastproof.in`: script 200, no CSP error, and no UUID or query string in the page view payload or in Vercel's Pages list.
 - Known issues: Hobby has no custom events and no UTM; the analytics script also gets Next's raw path, which `beforeSend` cannot touch (the payload check above settles it); the package code ships in the layout chunk on non-production builds too (never runs there).
 
 ### Dashboard deploy to Vercel, built 2026-10-31, D-300 to D-303
