@@ -1978,3 +1978,27 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 **Decision:** the logo (a shield with a B and an orange bracket, exported by the owner from Canva) replaces the placeholder amber diamond in the nav and footer wordmark and in the share card. `frontend/src/app/{icon.png,apple-icon.png,favicon.ico}` carry it on a solid near-black square, so it stays visible on a light browser tab. The wordmark imports `app/icon.png` through `next/image`; `opengraph-image.tsx` reads the same file at build time and inlines it as a data URI. One source file feeds the tab icon, the page and the preview.
 **Why:** a transparent export made the white shield vanish on light tabs, and one file keeps the three uses from drifting apart. Next.js detects icons by filename only inside `src/app`.
 **Rejected:** keeping the diamond; icons in `public/` with an `icons` entry in the root layout's metadata (extra code for no gain); an SVG redrawn by hand (the owner's design is the brand, and Canva's SVG export wrapped a 205 px bitmap).
+
+## D-300 · 2026-10-31 · The dashboard's production branch is `release`
+
+**Decision:** Vercel tracks `release` for production, as the backend does (D-261); `develop` and every other branch get previews. OPS-14 and frontend plan §13 say `release`, not `main`. The production domain is `blastproof.in`, with `www` redirecting to it.
+**Why:** there is no `main` branch, so Vercel would have picked `develop`. One promotion step (`develop` -> `release`) then ships both apps.
+**Rejected:** creating a `main` branch only for Vercel.
+
+## D-301 · 2026-10-31 · `maxDuration = 150` on the proxy route; one region in `vercel.json`
+
+**Decision:** `route.ts` of the backend proxy exports `maxDuration = 150`, above the 120 s upload and scan timeout and under Hobby's 300 s. `frontend/vercel.json` holds only `$schema` and `"regions": ["iad1"]`, next to Fly's `iad`. No `ignoreCommand`.
+**Why:** closes the missing limit from D-278. `git diff HEAD^` misses multi-commit pushes and could leave production stale; Hobby's build minutes are enough.
+**Rejected:** a lower limit (would cut the 120 s calls); `ignoreCommand`.
+
+## D-302 · 2026-10-31 · `dashboard-check` is a read-only probe, like `deploy-check`
+
+**Decision:** `python -m app.cli dashboard-check --url ...` (`app/services/dashboard_check.py`) checks the landing and login headers, the https and login redirects, that the proxy reaches the backend (the backend's `x-request-id`), `/v1`-only forwarding, foreign and own Origin on POSTs, cookie flags, the share card and SEO files, and that no body or header holds a credential, a JWT or the Fly host. The own-Origin check posts `{}` to login, which the backend's body model rejects (422) before any attempt is recorded.
+**Why:** the Vercel settings check becomes a command, not a memory; it also proves F3's Origin assumption on Vercel.
+**Rejected:** a manual checklist only.
+
+## D-303 · 2026-10-31 · Vercel Toolbar off; login IP forwarding left as is
+
+**Decision:** the Toolbar is turned off for Preview and Production, and the CSP is not loosened for it. The dashboard still forwards no client IP, so all dashboard logins share one rate-limit bucket.
+**Why:** the Toolbar needs `https://vercel.live` in the CSP. Forwarding the IP safely needs a shared secret (a fourth env var, against SEC-31) or Vercel Static IPs (paid); the shared bucket is stricter, so safe.
+**Rejected:** trusting `X-Forwarded-For` from the browser path.

@@ -1538,3 +1538,37 @@ app). Relying on Lighthouse alone (one-off, and I cannot run Chrome here).
 **Trade-off and limits.** The test checks the pairs I listed, not every place a colour is used, and it
 ignores transparent colours such as the dark border. One pair (muted text on a solid muted fill) is left
 out on purpose because nothing renders it.
+
+## Dashboard deploy to Vercel (D-300 to D-303)
+
+### 1. The deployed site is proved by a read-only probe command, not by a checklist
+
+**What I did.** I wrote `dashboard-check`, a command that sends only harmless requests to the live
+dashboard and prints one ok/FAIL line per check: security headers, the login redirect, whether the proxy
+really reaches the backend, whether a foreign Origin is refused and our own is accepted, cookie flags,
+and a scan for leaked secrets or the backend's address. A failed line names the problem, never the value.
+
+**Why.** Most of what can go wrong on Vercel is a setting (a missing env var, a wrong backend address, the
+wrong public origin), and settings are invisible to unit tests. The Origin check in particular compares
+against the address the function sees; if Vercel hands it a different one, every real POST would be
+refused. One command turns "did I click everything right?" into a result I can re-run after every change.
+
+**What I rejected.** A manual checklist alone (it relies on memory). Logging in from the probe (it would
+need a real password and would write login records).
+
+**Trade-off and limits.** It cannot prove a logged-in page works, so a login by hand is still required.
+A probe that sees nothing must not look healthy: I found, running it against a domain with no site yet,
+that the leak check passed with zero responses, and made it fail instead.
+
+### 2. Production tracks `release`, the same branch as the backend
+
+**What I did.** Vercel builds production from `release`, not `develop` or a new `main`. Promoting
+`develop` into `release` ships the backend and the dashboard together; other branches get private previews.
+
+**Why.** There is no `main`, so Vercel would have quietly chosen `develop`, shipping unreviewed work.
+One promotion step also keeps the two apps on matching versions.
+
+**What I rejected.** Making a `main` just for Vercel (a second branch to keep in sync).
+
+**Trade-off and limits.** The first merge also redeploys the backend. Previews use the production backend,
+so Deployment Protection must stay on to keep preview URLs private.

@@ -37,6 +37,7 @@ Backend (run from `backend/`):
 - `uv run python -m evals.run` - eval suite
 - `docker build -f backend/Dockerfile -t blastproof-backend:local .` (repo root), then `bash docker/image-smoke.sh blastproof-backend:local` - build and smoke-test the deploy image (CI: `image.yml`)
 - `uv run python -m app.cli deploy-check --url https://blastproof.fly.dev` - read-only probe of the deployed backend; the owner's deploy checklist is `docs/deploy.md`
+- `uv run python -m app.cli dashboard-check --url https://blastproof.in` - read-only probe of the deployed dashboard; the Vercel checklist is `docs/deploy-dashboard.md`
 
 Frontend (run from `frontend/`):
 - `npm run dev` - dashboard on :3000
