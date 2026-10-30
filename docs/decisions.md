@@ -2002,3 +2002,9 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 **Decision:** the Toolbar is turned off for Preview and Production, and the CSP is not loosened for it. The dashboard still forwards no client IP, so all dashboard logins share one rate-limit bucket.
 **Why:** the Toolbar needs `https://vercel.live` in the CSP. Forwarding the IP safely needs a shared secret (a fourth env var, against SEC-31) or Vercel Static IPs (paid); the shared bucket is stricter, so safe.
 **Rejected:** trusting `X-Forwarded-For` from the browser path.
+
+## D-304 · 2026-10-31 · The Neon seed only resets the password of an existing reader or writer role
+
+**Decision:** `ensure_role` in `demo_company/seed.py` creates a missing role with `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE`, but for an existing role it runs `ALTER ROLE ... LOGIN PASSWORD ...` only, then refuses the run if the role has SUPERUSER, CREATEDB or CREATEROLE (or is in `neon_superuser`, as before).
+**Why:** the re-seed of `blastproof-company` (2026-10-31) failed with "permission denied to alter role": Neon's owner role is not a superuser, and Postgres refuses it any `ALTER ROLE` that names the SUPERUSER attribute, even `NOSUPERUSER`. It failed before the transaction, so no data changed. The first seed worked because it only used `CREATE ROLE`. Local runs use a real superuser, so the integration tests never saw it.
+**Rejected:** making the owner a superuser (against D-077); skipping the role step on a re-run (the passwords in the environment must still be applied).

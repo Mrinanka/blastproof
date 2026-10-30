@@ -143,16 +143,29 @@ async def ensure_role(conn: asyncpg.Connection, role: str, url: str, variable: s
     if not password:
         raise TargetError(f"{variable} has no password.")
     exists = await conn.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", role)
+    # A new role is made with least privilege. An existing one only gets its password reset: the
+    # Neon owner is not a superuser, and Postgres refuses it any ALTER ROLE that names SUPERUSER,
+    # even NOSUPERUSER. Its attributes are checked below instead.
+    attributes = (
+        "LOGIN PASSWORD %L" if exists else "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %L"
+    )
     verb = "ALTER" if exists else "CREATE"
     # format() quotes the password as a literal; DDL cannot take bind parameters.
     statement = await conn.fetchval(
-        "SELECT format('%s ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD %L',"
-        " $1::text, $2::text, $3::text)",
+        f"SELECT format('%s ROLE %I {attributes}', $1::text, $2::text, $3::text)",
         verb,
         role,
         password,
     )
     await conn.execute(statement)
+    privileged = await conn.fetchval(
+        "SELECT rolsuper OR rolcreatedb OR rolcreaterole FROM pg_roles WHERE rolname = $1", role
+    )
+    if privileged:
+        raise TargetError(
+            f"{role} has SUPERUSER, CREATEDB or CREATEROLE. Delete it in the Neon Console and "
+            "re-run, so the seed creates it with SQL and least privilege (D-077)."
+        )
     # A role made in the Neon Console is a member of neon_superuser; ALTER ROLE cannot undo that.
     groups = await conn.fetch(
         "SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid"
