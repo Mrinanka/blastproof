@@ -9,6 +9,9 @@ import {
 } from "@/lib/server/backend";
 import { clearSessionCookie, readSessionToken } from "@/lib/server/session";
 
+// Above the 120 s upload and scan timeout (LONG_BACKEND_TIMEOUT_MS), at or under Hobby's 300 s.
+export const maxDuration = 150;
+
 type Context = { params: Promise<{ path: string[] }> };
 
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept"];

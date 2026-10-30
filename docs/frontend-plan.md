@@ -280,8 +280,10 @@ The dashboard deploys to Vercel straight from GitHub; CI makes sure only green c
 1. In Vercel, import the `blastproof` repo and set the **root directory** to `frontend/`. Vercel detects Next.js automatically.
 2. Add the three environment variables from section 10, with `BLASTPROOF_API_URL` pointing at the Fly.io backend.
 3. Set the functions region to match your Fly.io and Neon region, so the proxy's hop to the backend is short.
-4. Deploy. Every merge to `main` then deploys automatically, and every pull request gets a preview URL.
+4. Set the production branch to `release` (the backend's, D-261). Deploy. Every merge to `release` then deploys automatically, and every pull request gets a preview URL.
 5. Create your first admin with the backend's bootstrap command, log in, and run the demo end to end.
+
+*As built:* `frontend/vercel.json` (region `iad1`), `maxDuration = 150` on the proxy route, `dashboard-check` and the owner's checklist `docs/deploy-dashboard.md` (D-300 to D-303).
 
 Preview deployments use the same backend as production. That is acceptable for a one-person portfolio project because login is still required; add a staging backend in phase 2.
 

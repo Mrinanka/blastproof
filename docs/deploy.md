@@ -161,6 +161,7 @@ agent's 50 s `get_action_status` long poll survives Fly's proxy (D-101). Write d
    environment `production`, limited to the `release` branch.
 2. Merge `develop` into `release` through a pull request. The **Deploy** workflow redeploys; when
    it goes green, OPS-12 is done.
+3. The dashboard is a separate deploy on Vercel: see `docs/deploy-dashboard.md`.
 
 ## Tag each production deploy
 
