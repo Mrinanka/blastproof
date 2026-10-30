@@ -161,6 +161,25 @@ agent's 50 s `get_action_status` long poll survives Fly's proxy (D-101). Write d
    environment `production`, limited to the `release` branch.
 2. Merge `develop` into `release` through a pull request. The **Deploy** workflow redeploys; when
    it goes green, OPS-12 is done.
+3. The dashboard is a separate deploy on Vercel: see `docs/deploy-dashboard.md`.
+
+## Tag each production deploy
+
+After a Deploy run goes green and `deploy-check` passes, tag the commit that is live, so a version name
+always points at the exact code in production (and you can roll back to it):
+
+```text
+git fetch origin
+git tag -a v0.2.0 origin/release -m "v0.2.0: what changed in this deploy"
+git push origin v0.2.0
+```
+
+- Use the next number each time: `v0.1.0` was the first deploy (commit `f488f9d`). A small fix is a
+  patch (`v0.1.1`), new features are a minor (`v0.2.0`).
+- Tag `origin/release`, never a local branch, and tag only after the checks pass.
+- A tag deploys nothing: only a push to `release` runs the Deploy workflow.
+- List them with `git tag -n1`. To go back, check out the tag, or open a pull request into `release`
+  that reverts the change.
 
 ## Before a demo
 

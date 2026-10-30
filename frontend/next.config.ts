@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+import { buildLandingCsp } from "./src/lib/csp";
+
 const nextConfig: NextConfig = {
   turbopack: {
     rules: {
@@ -9,7 +11,8 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // The CSP itself comes in F3 and F13; these three do not depend on a nonce (SEC-28).
+  // These three do not depend on a nonce (SEC-28). The logged-in pages get their nonce CSP from
+  // src/proxy.ts; the static landing page gets its own CSP here (SEC-29, D-028).
   async headers() {
     return [
       {
@@ -18,6 +21,15 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+      {
+        source: "/",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: buildLandingCsp(process.env.NODE_ENV === "development"),
+          },
         ],
       },
     ];

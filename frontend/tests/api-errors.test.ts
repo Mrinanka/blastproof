@@ -23,6 +23,13 @@ describe("unwrap", () => {
     expect(caught).toMatchObject({ status: 502, code: "unknown_error" });
   });
 
+  it("names the status, never the body, when there is no envelope", async () => {
+    const failed = unwrap(result(undefined, "<html>Bad gateway</html>", 502));
+    const caught = (await failed.catch((e: unknown) => e)) as ApiError;
+    expect(caught.message).toBe("The server returned an error (HTTP 502).");
+    expect(caught.message).not.toContain("html");
+  });
+
   it("turns a network failure into status 0", async () => {
     const caught = await unwrap(Promise.reject(new TypeError("fetch failed"))).catch((e) => e);
     expect(caught).toMatchObject({ status: 0, code: "network_error" });

@@ -1816,3 +1816,189 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 **Decision:** nothing new in code; this records the first live run (2026-10-28 to 29) so the checklist stays honest. Deployed to `blastproof` in `iad`, one machine, 1 GB. `deploy-check` passes 9 of 9 (`/ready` 1.4 to 1.8 s, all five components). From Claude Code: a read works; the hook blocks editing its own settings; the Replit-style delete (48,336 users, 48 paying) was **blocked** by the judge, not held, which is the parked Groq-judge issue; a narrowed delete (48,288 rows, 245,657 changed rows over 8 tables, preview 12.6 s) was held for review, rejected through `/docs`, and Claude read the rejection. A `get_action_status` call ran 48.4 s through Fly's proxy and returned 200, so a poll of about 50 s survives (D-101). The impact summary fell back to the template once, because its numbers failed the number check (by design).
 **Problems met and fixed:** `blastproof_app` could not log in because the SQL Editor ran as a role that cannot change another role's password (the fix was run as `neondb_owner`); the free trial stops machines after 5 minutes; 512 MB is too small (D-267); bootstrap over `fly ssh` mis-stored the typed password. The deploy guide now says how to avoid each.
 **Not checked yet:** `psql` through the hook itself (Claude refused first, from the workspace `CLAUDE.md`); the first green Deploy workflow run (OPS-12).
+
+## D-269 · 2026-10-29 · SEC-19 and ARCH-16 ticked with the passwords folder renamed, not removed
+
+**Decision:** SEC-19 and ARCH-16 are ticked after the owner renamed the folder with the production passwords to `blastproof-private-ai-do-not-read` and told Claude not to read it. Claude's file tools are not technically blocked from that path.
+**Why:** the owner decided the risk is acceptable for the demo. **Honest limit:** the files are still on the machine that runs Claude Code, which SEC-19 says must hold no production company credentials. The final audit (MVP-B01) should check that they were moved off the machine or deleted. **Rejected:** leaving the boxes unticked (the owner chose to tick); a deny rule for that path (not set up yet; it would make the rename real protection).
+
+## D-270 · 2026-10-29 · F6 review queue: order, page size, local offset, placeholder route, query key
+
+**Decision:** the queue asks `GET /v1/actions` with `status=awaiting_review&order=oldest&limit=25`, polls every 5 s, and holds the page offset in local state (not the URL; the queue has no filters, F8 builds URL state). The shared `useActions` hook uses the key `["actions", "list", query]` with `keepPreviousData`, so F7's invalidation of `["actions"]` refreshes it and paging never shows a skeleton. A past-the-end offset (decisions shrank the queue) is clamped to the last page at render. `/dashboard/actions/[id]` is a placeholder (as in D-228) so row links do not 404 before F7.
+**Why:** the backend already filters by owner and orders (D-168), so the page sends no user parameter and does not re-sort. **Known limits:** "Waiting" counts from `created_at` (no review-requested time exists), an admin's queue shows no owner column (`ActionSummary` has none), and an expired action can show for up to one sweep interval; F7's `can_decide` stops a wrong approval.
+
+## D-271 · 2026-10-29 · F7 change request page: poll until final, 409 text verbatim, 500 cap, timeline labels
+
+**Decision:** `/dashboard/actions/[id]` polls every 5 s until the status is final (rejected, expired, blocked, committed, executed, failed) or a 404, so a reviewer sees an approved write commit. A 409 toast shows the backend message verbatim (it already names the decider and covers expiry); the frontend does not build it from `decided_by`. Reject reason is trimmed and capped at 500 characters to match the backend. The audit timeline labels status-named events (`awaiting_review`) with the status label. A 409 on reject also toasts (the refresh removes the dialog that would show it). Approve has a synchronous in-flight guard because the mutation's pending flag lands a tick late.
+**Why:** polling only while pending would hide the commit landing; composing the 409 text would duplicate backend wording (ARCH-22).
+**Verified:** Vitest (329 pass), lint, typecheck, build; ten mutation checks each turned a test red. **Not done:** DW-F07 by hand (approve, reject, two windows). FE-15, FE-18 and FE-20 stay open until then and the final audit; FE-16, FE-17, FE-19 and TEST-10 ticked on component tests.
+
+## D-272 · 2026-10-29 · F8 history: URL names, local days, invalid params dropped, push per view
+
+**Decision:** `/dashboard/history` keeps its filters in the URL as `status` (repeatable, multi-select), `agent`, `table`, `from`, `to` (`YYYY-MM-DD`) and `page` (1-based), written in one fixed order with defaults left out (`lib/history-filters.ts`). Dates are the viewer's local days: `from` is local midnight, and `to` is sent as the next local midnight because the backend's `to` is exclusive, so a DST day is 23 or 25 hours. Invalid values in the URL (an unknown status, a non-UUID agent, an impossible date, a bad page) are dropped and never sent. A backwards range shows a message and sends no request. Every filter or page change is a `router.push` (one history entry per view); a bookmarked page past the end is fixed with `router.replace`, never against placeholder data. The table box commits on Enter or blur and dates once complete; the boxes' drafts reset whenever the URL changes. The agent picker is shadcn `native-select` (CLI copy-in, no npm change), filled from `GET /v1/agents?limit=100` (the backend's maximum); admins see the owner's name. No polling. The page wraps the client component in `<Suspense>` (the route renders dynamically today, but `useSearchParams` needs it if it is ever prerendered).
+**Why:** a shared or bookmarked link must show what was actually requested, never a 422; one view, one URL, one history entry is what makes Back and Forward restore it (DW-F08); local days match how times are shown (CONV-17). **Rejected:** `offset` in the URL (less readable), lowercasing the table (quoted mixed-case names are stored as written), a calendar date picker (needs `react-day-picker`), Radix `select` (harder to use and test than a real `<select>`). **Known limits:** a shared link covers a slightly different window in another time zone; only the first 100 agents are listed (an agent from the URL that is not in the list shows as "Unknown agent"); admins cannot filter by owner (`ActionSummary` has no owner).
+**Verified:** Vitest 377 pass (47 new), lint, typecheck, build; 16 mutation checks each turned a test red (two first survived and got tests: the placeholder guard on the page clamp, and the status menu staying open). **Not done:** DW-F08 by hand.
+
+## D-273 · 2026-10-29 · F8 fixes two F4 layout bugs instead of leaving them to F12
+
+**Decision:** F8 changes two F4 files. `app/dashboard/layout.tsx` gives `SidebarInset` `min-w-0`, so a wide table scrolls inside its own container instead of widening the whole page. `components/layout/app-sidebar.tsx` hides the product name when the sidebar is collapsed to icons, because it ran under the sidebar trigger. History's Summary column wraps (shadcn table cells are `whitespace-nowrap`), and every filter control uses the default 32 px height so the labels line up. The page-clamp effect uses React 19.3's `useEffectEvent` instead of an `exhaustive-deps` suppression.
+**Why:** the owner's first browser screenshot showed History unusable at a narrow width: Tables, Risk and Decided by were off screen and the page scrolled sideways. History is the first page with rows that wide, but the layout bug affects every page, and fixing it at its source is one class, not a per-page workaround. **Rejected:** deferring to F12's narrow-width pass (History would ship broken in the meantime); an `overflow-x-hidden` wrapper on each page (hides the bug instead of fixing it). **Left for F12:** the collapsed sidebar's user menu shows clipped letters of the name (it needs an avatar or initial).
+
+## D-274 · 2026-10-29 · F9 Overview: what each card shows
+
+**Decision:** The Overview's Pending card uses `usePendingCount()` (the sidebar badge's query), not `stats.pending_reviews`. "Decisions today" is `today.reviewed`, labelled "Reviewed today (UTC)": decisions a person made today, including on older actions. It is not `sum(today.by_decision)`, which counts automatic decisions on actions created today. The cost card says "Known costs only" (unknown costs are left out, D-153). The stats query key is `["actions", "stats"]`, so approve and reject refresh the cards. `formatDay` formats the backend's `today.day` in UTC.
+**Why:** the shared query means the card and the badge cannot disagree (stats polls every 15 s, the badge every 5 s) and costs no extra request. `reviewed` matches what "decisions" means to the owner; the by-decision sum answers a different question. Formatting the day in the viewer's zone would show Oct 28 west of Greenwich. **Rejected:** `stats.pending_reviews` (can lag the badge); the by-decision sum.
+
+## D-275 · 2026-10-29 · The review queue's Intent and Headline columns wrap
+
+**Decision:** `review-queue.tsx` gives Intent (`min-w-64 max-w-md`) and Headline (`min-w-64`) `whitespace-normal`, as History's Summary column already does (D-273).
+**Why:** shadcn table cells never wrap, so a real intent of two sentences made the queue scroll sideways and hid Risk and Waiting (owner's deployed-backend screenshots, 2026-10-29). **Rejected:** truncating with an ellipsis (hides what the reviewer needs to read before approving); an `overflow-x-hidden` wrapper (hides the problem). Covered by a new test that fails without the class.
+
+## D-276 · 2026-10-29 · The live eval fails when no model answered (Gate 2 fix 13)
+
+**Decision:** `gate_failures(..., require_model=True)`, set for `--mode live` only, adds two failures: no model summary came back at all, and the judge was unavailable on every previewed scenario. Rules mode is unchanged.
+**Why:** a failed model call fails closed to review, so with no working model every write is held and "100% caught" says nothing about the models. The nightly of 2026-10-29 reported success with 0 summaries and the judge unavailable 30 of 30. The judge check covers a working summary model with a dead judge. A single judge failure still passes (a provider hiccup should not fail the night). **Rejected:** failing on any unavailable judge; changing only the workflow file (the CLI would still pass by hand). Covered by metrics tests and `test_a_live_run_with_no_model_answer_exits_1`; each guard removed turned a test red. Real-model proof waits for the owner's secrets (Gate 2 fix 14).
+
+## D-277 · 2026-10-29 · Model text with a NUL, a control character or nothing visible is a bad reply
+
+**Decision:** `text_ok` (`app/services/llm.py`) returns False for any control character but line breaks (`\n`, `\r`) and tab, any lone surrogate, and text made only of whitespace, separators and format characters (NBSP, zero-width space). The impact summary's `shape_ok` and the judge's `verdict_ok` use it in place of `.strip()`, so such a reply is `bad_shape`: the template summary, or a judge failure that goes to review.
+**Why:** the first live eval (run 40895279559) failed `delete-cancelled-orders` with `workflow_error`: the summary model replied with NBSP, zero-width spaces and a NUL (U+0000), `.strip()` did not see it as blank, and Postgres refused the `impact_report` UPDATE (U+0000 cannot be converted to text). Fail closed held, but a broken reply should take the fallback, not end the workflow. **Rejected:** stripping the bad characters and keeping the rest (keeps a reply the model got wrong, and a reply of only invisible characters would still need the blank check); a new fallback reason (`bad_shape` already means "the reply does not fit", and a new code would change the API enum). Covered by the CI reply and NUL, zero-width and surrogate cases in `test_impact_engine.py` and `test_judge_llm.py`, and `text_ok` tests in `test_llm_factory.py`.
+
+## D-278 · 2026-10-29 · F10: the BFF caps bodies at 2 MB and gives upload and scan 120 s
+
+**Decision:** the proxy refuses a request body over 2 MB with 413 `too_large` before forwarding (it checks `Content-Length`, then counts bytes while reading). `timeoutFor` gives `POST /v1/knowledge` and `POST /v1/systems/{id}/scan` 120 s; everything else keeps 30 s. A 504 on upload tells the admin it may still be finishing. No `maxDuration` on the route yet.
+**Why:** this closes the F3 known issues (uncapped buffering, 30 s too short for embedding up to 1 MB). 2 MB sits above the backend's 1 MB + 64 KB, so the backend's own 413 and 422 text still decides the real limit. Vercel's function limit depends on plan, so the Vercel deploy step must check it. **Rejected:** a cap equal to the backend's (would hide its messages); async ingest (a backend change).
+
+## D-279 · 2026-10-29 · F10: the Knowledge page fetches nothing for a member; the table picker offers scanned tables only
+
+**Decision:** `Knowledge` calls `GET /v1/knowledge` and `/v1/systems` only once `me.role` is `admin`; a member sees "Knowledge is for admins". Table tags come from the schema scan's tables (checkboxes), not free text. The `schema_scan` row has no Delete (Rescan replaces it). A rescan toast says "N chunks" (the API returns chunks, not tables). Upload and delete guard double clicks with a ref, because `isPending` lags a click by a render.
+**Why:** the backend lets any signed-in user read the list (BE-114); (the member gate in this entry was replaced by D-280); a typo'd tag would never match an action's tables and DW-F10 would fail silently. **Open:** whether `GET /v1/knowledge` should become admin-only (owner's call; not changed).
+
+## D-280 · 2026-10-29 · F10: members get a read-only Knowledge page (changes the plan's "admin-only")
+
+**Decision:** the Knowledge page and its sidebar link are shown to every signed-in user. A member sees the source list (name, kind, chunks, tables, updated) and nothing else: no upload form, Delete buttons, Rescan buttons or `/v1/systems` request. Admins see everything, as before. `GET /v1/knowledge` stays open to signed-in users; upload, delete and rescan stay admin-only (403). FE-23 and the F10 plan text are reworded.
+**Why:** the AI's explanation of a member's change is built from these documents, so the owner of that change should be able to see what it read; the backend already shared the list on purpose (BE-114), and hiding it only in the UI was inconsistent (owner's call, 2026-10-29). The list holds names and counts, never document text. **Rejected:** making `GET /v1/knowledge` admin-only.
+
+## D-281 · 2026-10-29 · F10 hand test: an error page shows its HTTP status; file-name messages name the cause
+
+**Decision:** when an error response has no `{"error": ...}` envelope, `unwrap` now says "The server returned an error (HTTP 502)." instead of "Something went wrong." (the body is still never shown). `checkUploadFile` explains a refused name by cause: the extension, the first character, the first character outside letters, digits, space, `.`, `_`, `-` (for example a comma), or the length. Same rule as the backend's `SOURCE_NAME`; the backend rule is unchanged. The Source column wraps at word edges (`min-w-40`, `overflow-wrap:anywhere`), and the upload form says "Large documents can take a minute to index." while it runs.
+**Why:** the owner's hand test against the deployed backend. `PROGRESS.md` (130 KB, 89 chunks) failed with a bare "Something went wrong.": the Fly machine (1 GB) was **OOM-killed** while embedding (`anon-rss` 876 MB, Fly logs 16:23:29 UTC) and Fly's proxy answered 502 with its own body. A file name with a comma was refused with "has no slashes". **Not changed here:** the planned backend catch-all (`RequestIdMiddleware` already returns a 500 envelope; a killed process cannot answer at all). The memory fix is D-282.
+
+## D-282 · 2026-10-29 · Embed 8 chunks per model call, not 64
+
+**Decision:** `EMBED_BATCH_SIZE` in `app/services/knowledge.py` goes from 64 to 8 (used by ingest, upload, rescan and reindex). Owner's choice over a 2 GB Fly machine.
+**Why:** the deployed 1 GB machine was OOM-killed embedding a 130 KB upload (89 chunks, D-281). Measured locally on that file with the real `bge-small` model, peak working set: batch 64 = 1,471 MB (24.2 s), batch 8 = 495 MB (23.2 s); the time did not get worse. **Rejected:** `fly scale memory 2048` (more cost, and the batch would still grow with the document); a smaller upload limit (hides the problem). **Covered by** `test_embeddings.py::test_ingest_embeds_in_small_batches_and_keeps_order` (fails at 64). It reaches Fly only when `release` is pushed.
+
+## D-283 · 2026-10-29 · The agent key lives in page state only; the dialog cannot be dismissed by accident
+
+**Decision:** `POST /v1/agents` runs with `gcTime: 0`, and `CreateAgentForm` calls `mutation.reset()` right after handing the created agent to the page, so no query or mutation cache entry holds the key. The key dialog is controlled with no `onOpenChange`, ignores Escape and outside clicks, and closes only with "Done, I have copied it", which drops the object from state.
+**Why:** the key is shown once (SEC-32); TanStack keeps mutation results in its cache and devtools. A tested guard (`agents.test.tsx`) serializes both caches and checks for the key. `navigator.clipboard` is used only in `components/agents/copy-field.tsx` (source rule); if the clipboard is unavailable (non-secure context) a toast says to select the text.
+**How to apply:** any future one-time secret goes through the same pattern.
+
+## D-284 · 2026-10-29 · Users and Agents pages gate by role in the browser only to save a request
+
+**Decision:** a member opening `/dashboard/settings/users` sees "Users is for admins." and no `/v1/users` request is sent (`useUsers(enabled)`); admins also see every agent's owner on the Agents page. Rules (`/v1/policies`) are read-only for everyone and not polled. Lists stop at 100 with a note; no pagination UI. Client-side validation copies the backend bounds (agent name 1 to 100, email shape, password 12 to 256 untrimmed); backend 409 and 422 messages are still shown.
+**Why:** the backend enforces every permission (403/404); the UI only avoids a pointless call (same pattern as D-279). The copied bounds can drift, as with F10's file-name rule.
+
+## D-285 · 2026-10-29 · Known issue: the shown `claude mcp add` line puts the key in shell history
+
+**Decision:** F11 shows the backend's `claude_mcp_add` and `agent_key_env` lines verbatim. The `--header "Authorization: Bearer <key>"` form puts the key in shell history and `~/.claude.json` (local scope). The dialog also says the hook is installed by `workspace.py create`, which the dashboard cannot do.
+**Why:** the plan says to show the lines exactly as returned. A later backend change could return a `.mcp.json` snippet using `${BLASTPROOF_AGENT_KEY}` (what `workspace.py` already does). Not done here.
+
+## D-286 · 2026-10-29 · The muted badge has no fill; shadcn's tokens stay as they are
+
+**Decision:** `TONE_CLASSES.muted` is `border-border text-muted-foreground` (an outline), not `bg-muted text-muted-foreground`. shadcn's `--muted-foreground` is not changed. `contrast.test.ts` checks every other text pair at 4.5:1 and leaves out muted-foreground on `bg-muted`, which no component renders.
+**Why:** muted-foreground on bg-muted is 4.3:1 in light mode, under the 4.5:1 minimum. Changing a token would change every muted text in the app.
+
+## D-287 · 2026-10-29 · Theme provider only where the page is per-request; the root 404 uses no nonce
+
+**Decision:** the theme provider is not in the root layout. The dashboard layout and the login page use `NoncedThemeProvider`, which reads the proxy's `x-nonce` for next-themes' inline script. The root 404 (`app/not-found.tsx`) uses the plain `ThemeProvider` with no nonce. The preference is kept by next-themes in localStorage (key `theme`), a UI setting and not a token.
+**Why:** the nonce-only CSP would block the script without the nonce, and reading headers in the root layout makes `/` dynamic (F13's landing page must stay static). The plan had the root 404 read the nonce too, but the build showed that also turned `/` dynamic; unmatched URLs are outside the proxy matcher and have no CSP, so no nonce is needed there. Unmatched `/dashboard/...` URLs use the dashboard 404 inside the shell.
+
+## D-288 · 2026-10-29 · Page titles are static; the template adds the product name
+
+**Decision:** each page exports a plain `metadata.title`; the root layout's template adds " · Blastproof". No title includes agent-provided text.
+**Why:** keeps agent text out of the tab title and avoids a server fetch. A test fails if a dashboard page has no `metadata`.
+
+## D-289 · 2026-10-29 · `noUncheckedIndexedAccess` stays off (D-221's F12 revisit)
+
+**Decision:** not turned on in F12.
+**Why:** it would touch shadcn's generated code and is not polish.
+
+## D-290 · 2026-10-30 · Landing page libraries: `motion` only, Magic UI ideas adapted, landing-only
+
+**Decision:** one new dependency, `motion` 14.8.0 (pinned exactly, imported from `motion/react`), used through `LazyMotion` with `domAnimation`, `strict` and the `m` components, with `MotionConfig reducedMotion="user"`. The shadcn Accordion was copied in with the shadcn CLI (it uses the `radix-ui` package we already had). From Magic UI, the Number Ticker and Border Beam were copied in with the shadcn CLI and rewritten: the ticker so its server HTML holds the final value, the beam as CSS only. The Terminal and Animated Beam copies were dropped (traffic lights, an empty server render, purple colours, layout measuring). A source-rule test keeps `motion` and `components/landing/` out of dashboard code, and keeps out the full `motion.*` components.
+**Why:** the brief asked for modern motion with a small bundle and Lighthouse 90+. Motion and the landing components add about 23 KB of compressed JS to `/` (235 KB against 211 KB for `/login`, measured with Playwright on the production build).
+**Rejected:** Lenis smooth scrolling (it takes over scrolling and adds JS); a display font (Geist and Geist Mono carry the brand); Aceternity components (they read as a template); WebGL or shader backgrounds (Lighthouse cost).
+
+## D-291 · 2026-10-30 · The landing page's CSP comes from `next.config.ts`, for `/` only (SEC-29)
+
+**Decision:** `buildLandingCsp(isDev)` in `src/lib/csp.ts`, served by a `{ source: "/" }` rule in `next.config.ts`. It allows `script-src 'self' 'unsafe-inline'` (plus `'unsafe-eval'` in dev only) and `style-src 'self' 'unsafe-inline'`, with no other origin anywhere; `frame-ancestors`, `object-src`, `base-uri` and `form-action` are locked down as in the nonce CSP. The proxy's nonce CSP for `/dashboard`, `/login` and `/api` is unchanged. Checked with `curl -I` on `next start`.
+**Why:** D-028 and D-219. A nonce would make `/` dynamic, and the inline flight scripts have no stable hash. The page renders no user or agent content and loads no third-party script.
+
+## D-292 · 2026-10-30 · Landing motion: the server HTML is the final state
+
+**Decision:** the h1 and the pitch are never animated. Scroll reveals and the number count-up only rewind what is below the fold when the page hydrates, so a visitor never sees content flash away. The screenshot tilt only starts after hydration. The hero terminal is the one exception: its lines are in the HTML at Motion's starting opacity. A `<noscript><style>` shows them without JavaScript, and with reduced motion every step appears at once. CSS animations (the border beam, the architecture pulses, the caret) stop under `prefers-reduced-motion`.
+**Why:** SEO, no-JS visitors, reduced motion and layout shift all want the same thing, the final content in the HTML. A test renders the page to a string and checks the eval numbers are there.
+
+## D-293 · 2026-10-30 · The landing page's eval numbers come from a committed snapshot
+
+**Decision:** `frontend/src/lib/landing/eval-results.json`, written by `npm run sync:evals` (`frontend/scripts/sync-eval-results.mjs`, plain Node) from `backend/evals/results/rules.json`. The script refuses a run that is not rules-only. A test compares the snapshot with `rules.json` when that file exists, and otherwise skips; other tests check the snapshot's own consistency and the derived percentages. The page publishes only the rules-only numbers: 12 of 12 incidents, 51 of 51 dangerous actions, and a false block rate of 8.3% (1 of 12).
+**Why:** `rules.json` is git-ignored (`.gitignore`), so Vercel and the CI frontend job cannot read it at build time. Live-model and latency numbers stay off the page until the live eval is green (Gate 2).
+**Rejected:** reading `rules.json` at build time (it breaks every build that lacks it); committing `rules.json` (it changes on every local run).
+
+## D-294 · 2026-10-30 · The landing page is dark only, with its own tokens
+
+**Decision:** `/` renders inside `<div class="landing dark">`. `.landing` in `globals.css` sets a near-black background and two accents, `--signal` (amber, danger) and `--safe` (green, approved), registered as `bg-signal`, `text-safe` and so on. `html:has(.landing)` colours the overscroll area. `contrast.test.ts` checks ten landing text pairs at 4.5:1 or more, and the palette rule no longer exempts `app/page.tsx`.
+**Why:** the brief is an incident control room. There is no theme provider on `/` (D-287), and a class wrapper keeps the page static with no script.
+
+## D-295 · 2026-10-30 · FAQ answers stay in the static HTML (`forceMount`)
+
+**Decision:** the FAQ passes `forceMount` to `AccordionContent`. The shadcn copy of `ui/accordion.tsx` then adds `data-[state=closed]:hidden`, because Radix with `forceMount` keeps closed content mounted and visible. The close animation is lost; the open animation stays.
+**Why:** without it, Radix unmounts closed answers, so crawlers and no-JS visitors would see only the questions.
+
+## D-296 · 2026-10-30 · Site URL `https://blastproof.in`; "Watch the demo" points at `#how-it-works`
+
+**Decision:** `SITE_URL`, `DEMO_HREF`, `GITHUB_URL` and `DOCS_URL` live in `src/lib/landing/site.ts`. `metadataBase` in the root layout, Open Graph, the sitemap and robots read from them. The OG image (`opengraph-image.tsx`, with `twitter-image.tsx` re-exporting it) is built at build time with `next/og` and its bundled Geist font.
+**Why:** the owner's answers in the F13 plan. The demo video does not exist yet; when it does, change `DEMO_HREF` only.
+
+## D-297 · 2026-10-30 · The architecture diagram is server-rendered SVG, not Magic UI's Animated Beam (plan change)
+
+**Decision:** the approved plan said the diagram would use Animated Beam in a client component. Instead, HTML nodes sit on a fixed percentage grid over one SVG with `preserveAspectRatio="none"` and `vector-effect: non-scaling-stroke`. Two CSS dash pulses run along the write path: amber up to the owner, then green on to the commit. It shows from `lg` up. Below that, and for screen readers, an ordered list gives the same flow. A test checks that every node of the README's Mermaid diagram appears in the section.
+**Why:** Animated Beam measures DOM positions in JavaScript and renders an empty SVG on the server. The fixed grid needs no JS, is in the static HTML and stays correct at every width from 1024 px up.
+
+## D-298 · 2026-10-30 · The change request screenshot comes from a real workflow run
+
+**Decision:** `frontend/public/change-request.png` (2880 × 2000, 1440 × 1000 at 2x, dark theme) shows a Replit-style delete run through the real LangGraph workflow on the local dev setup: local profile, `FakeNeonClient`, the real summary and judge models from `backend/.env`. A throwaway scratch script did this by reusing `seed_demo_actions` with the real model factory. Local company dates were rebased first, so the numbers are exact: 48,213 users and 12 paying. In that run the summary model's reply failed the shape check, so the page shows the code template headline ("Deletes 48,213 rows from users (96.4% of the table), including 12 in users.paying."); the judge's API call failed, so the write went to review. Both are real product behaviour.
+**Why:** the seeded demo action uses a scripted fixture headline with no numbers, and a scripted headline with digits would present our wording as the model's.
+**Rejected:** a CSS mock of the page (the brief forbids it); the scripted seed text.
+
+## D-299 · 2026-10-30 · The owner's Canva logo is the brand mark; icons live in `src/app`
+
+**Decision:** the logo (a shield with a B and an orange bracket, exported by the owner from Canva) replaces the placeholder amber diamond in the nav and footer wordmark and in the share card. `frontend/src/app/{icon.png,apple-icon.png,favicon.ico}` carry it on a solid near-black square, so it stays visible on a light browser tab. The wordmark imports `app/icon.png` through `next/image`; `opengraph-image.tsx` reads the same file at build time and inlines it as a data URI. One source file feeds the tab icon, the page and the preview.
+**Why:** a transparent export made the white shield vanish on light tabs, and one file keeps the three uses from drifting apart. Next.js detects icons by filename only inside `src/app`.
+**Rejected:** keeping the diamond; icons in `public/` with an `icons` entry in the root layout's metadata (extra code for no gain); an SVG redrawn by hand (the owner's design is the brand, and Canva's SVG export wrapped a 205 px bitmap).
+
+## D-300 · 2026-10-31 · The dashboard's production branch is `release`
+
+**Decision:** Vercel tracks `release` for production, as the backend does (D-261); `develop` and every other branch get previews. OPS-14 and frontend plan §13 say `release`, not `main`. The production domain is `blastproof.in`, with `www` redirecting to it.
+**Why:** there is no `main` branch, so Vercel would have picked `develop`. One promotion step (`develop` -> `release`) then ships both apps.
+**Rejected:** creating a `main` branch only for Vercel.
+
+## D-301 · 2026-10-31 · `maxDuration = 150` on the proxy route; one region in `vercel.json`
+
+**Decision:** `route.ts` of the backend proxy exports `maxDuration = 150`, above the 120 s upload and scan timeout and under Hobby's 300 s. `frontend/vercel.json` holds only `$schema` and `"regions": ["iad1"]`, next to Fly's `iad`. No `ignoreCommand`.
+**Why:** closes the missing limit from D-278. `git diff HEAD^` misses multi-commit pushes and could leave production stale; Hobby's build minutes are enough.
+**Rejected:** a lower limit (would cut the 120 s calls); `ignoreCommand`.
+
+## D-302 · 2026-10-31 · `dashboard-check` is a read-only probe, like `deploy-check`
+
+**Decision:** `python -m app.cli dashboard-check --url ...` (`app/services/dashboard_check.py`) checks the landing and login headers, the https and login redirects, that the proxy reaches the backend (the backend's `x-request-id`), `/v1`-only forwarding, foreign and own Origin on POSTs, cookie flags, the share card and SEO files, and that no body or header holds a credential, a JWT or the Fly host. The own-Origin check posts `{}` to login, which the backend's body model rejects (422) before any attempt is recorded.
+**Why:** the Vercel settings check becomes a command, not a memory; it also proves F3's Origin assumption on Vercel.
+**Rejected:** a manual checklist only.
+
+## D-303 · 2026-10-31 · Vercel Toolbar off; login IP forwarding left as is
+
+**Decision:** the Toolbar is turned off for Preview and Production, and the CSP is not loosened for it. The dashboard still forwards no client IP, so all dashboard logins share one rate-limit bucket.
+**Why:** the Toolbar needs `https://vercel.live` in the CSP. Forwarding the IP safely needs a shared secret (a fourth env var, against SEC-31) or Vercel Static IPs (paid); the shared bucket is stricter, so safe.
+**Rejected:** trusting `X-Forwarded-For` from the browser path.

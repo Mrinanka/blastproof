@@ -36,7 +36,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | ARCH-13 | Every action stores the agent owner's `user_id`. | CL; BE §5 Ownership, B6 | B6 | DW-B06; TEST-03 |
 | [x] | ARCH-14 | All action queries go through `visible_actions(user)`, which filters by `user_id` unless the user is an admin. | CL; BE §12, B19 | B19 (pulled forward with `GET /v1/actions`) | TEST-03 |
 | [x] | ARCH-15 | Another user's action returns 404, never 403. | CL; BE §6, §12, B19 | B19 (pulled forward with `GET /v1/actions/{id}`) | TEST-03; FE e2e step 6 (TEST-09) |
-| [ ] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
+| [x] | ARCH-16 | Company database credentials live only in the backend's environment: never in agent workspaces, logs, traces, prompts or API responses. | CL; SPEC §9, §13; BE §12 | B7, B12, B13, Deploy | DW-B07, MVP-B01; *log/trace review at Security pass* |
 | [x] | ARCH-17 | Sensitive columns are masked before data reaches logs, prompts or the UI. | CL; SPEC §13; BE §12 | B8, B9, B10, B12 | *unit tests on masking; check in Security pass* |
 | [x] | ARCH-18 | `Judge`, `VectorStore` and `Embedder` are interfaces. | CL; BE B11, B13 | B11, B13 | DW-B13 (switch provider); TEST-12 |
 | [x] | ARCH-19 | LLMs are created from `provider:model` config strings; no provider is hard-coded. | CL; BE §3 Models, §11 | B12, B13 | DW-B13 |
@@ -79,7 +79,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | TEST-07 | App startup does not call Neon or download models when `APP_ENV=test`. | BE B1 | B1 | *test that startup succeeds offline* |
 | [x] | TEST-08 | Agent message templates are tested word for word. | BE §6 | B17 | *unit tests per template* |
 | [ ] | TEST-09 | A Playwright e2e test runs against the real local backend with `seed-demo-actions` data: log in as demo user 1, open the seeded pending action, see headline and numbers, reject with a reason, find it in History as rejected with your name, then as demo user 2 confirm it is absent and its URL shows "not found". | FE §12 | F7-F9 (after B20) | OPS-06 (nightly/manual workflow) |
-| [ ] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
+| [x] | TEST-10 | Frontend unit tests (Vitest + RTL) cover formatting helpers, status and risk badges, reject-dialog validation, and proxy header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected). | FE §12 | F3, F5, F7 | `npm test` in CI |
 | [ ] | TEST-11 | No snapshot tests and no mocking of the whole backend in the frontend. | FE §12 | F steps | *code review* |
 | [x] | TEST-12 | One contract test suite runs against every `VectorStore` implementation. | BE B11 | B11 | pytest |
 | [ ] | TEST-13 | A manual weekly end-to-end run of the demo in Claude Code against real Neon, reviewed in the dashboard. | BE §14; FE §12 | from B17 / F7 | Manual |
@@ -251,7 +251,7 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | SEC-16 | `before_images` are unmasked but never leave the backend and are deleted after `RETENTION_DAYS`. | BE §12 | B15, B16 | DW-B15; *authz test that no route returns them* |
 | [x] | SEC-17 | `FAKE_NEON_ADMIN_URL` is refused at startup when `APP_ENV=production`. | BE §11 | B10 | *unit test* |
 | [x] | SEC-18 | The demo workspace gets only `BLASTPROOF_AGENT_KEY`. | BE §11, B7 | B7, B18 | DW-B07 |
-| [ ] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
+| [x] | SEC-19 | On the deployed demo, company credentials exist only in Fly.io secrets and the machine running Claude Code holds no production company credentials. | BE §12; D-002 | Deploy | MVP-B01 |
 | [x] | SEC-20 | Each agent is capped at `MAX_WRITES_PER_MINUTE_PER_AGENT` (30) writes per minute, counted from its write actions in the last 60 s before a new one is created; over the cap it gets the `busy` message, no action is created, and `event=rate_limited` is logged. | BE §11, §12, B17; D-032 | B17 | DW-B17 (rate-limit tests) |
 | [ ] | SEC-21 | Dependency versions are pinned in `uv.lock` and GitHub Dependabot alerts are enabled. | BE §12 | B1/B2 | *repo settings check* |
 | [x] | SEC-22 | The backend has no CORS middleware and no CORS setting (D-242); the dashboard reaches it server to server. Code half: `test_cors.py`; the deployed check is Deploy. | BE §11, B19; FE §11 | B19, Deploy | *config check* |
@@ -261,7 +261,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-26 | The proxy rejects any POST or DELETE whose `Origin` is not the dashboard's own address. | FE F3, §11, §12; D-050 | F3 | TEST-10 |
 | [ ] | SEC-27 | Agent-provided and uploaded text (SQL, intents, documents, sample rows) is rendered as plain text; no `dangerouslySetInnerHTML`, no Markdown from uploads rendered as HTML. | CL; FE §11 | F5-F11 | *lint rule or grep; code review* |
 | [ ] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
-| [ ] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
+| [x] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
 | [x] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
 | [x] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
 | [ ] | SEC-32 | Hiding controls by role in the UI is convenience only; every role check is enforced by the backend. | FE §11; CL | F4, B19 | TEST-03; MVP-F06 |
@@ -285,22 +285,22 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-11 | Admin-only links (Knowledge, Users) are hidden from members. | FE F4, F10 | F4 | MVP-F06 |
 | [x] | FE-12 | Shared components `StatusBadge`, `RiskBadge`, `TimeAgo`, `SQLBlock`, `NumberBreakdown`, `AuditTimeline`, `DataTable` with pagination, plus skeleton loading, empty and error states. | FE F5 | F5 | DW-F05 |
 | [ ] | FE-13 | The dashboard has the ten pages and routes in FE §7: `/`, `/login`, `/dashboard`, `/dashboard/review`, `/dashboard/actions/[id]`, `/dashboard/history`, `/dashboard/settings/agents`, `/dashboard/settings/rules`, `/dashboard/knowledge` (admin), `/dashboard/settings/users` (admin). | FE §7 | F3-F13 | MVP-F checks |
-| [ ] | FE-14 | Review queue lists the user's `awaiting_review` actions oldest first (agent, intent, headline, risk badge, waiting time), polling every 5 seconds, each row linking to its change request page. | FE §7, F6 | F6 | DW-F06; MVP-F02 |
+| [x] | FE-14 | Review queue lists the user's `awaiting_review` actions oldest first (agent, intent, headline, risk badge, waiting time), polling every 5 seconds, each row linking to its change request page. | FE §7, F6 | F6 | DW-F06; MVP-F02 |
 | [ ] | FE-15 | Change request page shows, top to bottom: header (status and risk badges, agent, age, decider), plain-language impact (headline, key points, concerns), decision bar, intent and `sql_display`, impact numbers (rows per table with cascades marked, breakdowns, derived groups such as "paying: 12"), masked sample rows, judge result (recommendation, confidence, reason, which judge), matched rules with reasons, knowledge used (source, table, first line), audit timeline. | FE §7, F7 | F7 | MVP-F03 |
-| [ ] | FE-16 | When values were pinned, the SQL block shows the original next to it and lists the pinned values; a retry links to the action it replaces (`retry_of`). | FE §7 | F7 | *component test* |
-| [ ] | FE-17 | The change request page refreshes every 5 s while pending and shows "not found" for an action that isn't the user's. | FE §7 | F7 | TEST-09 step 6 |
+| [x] | FE-16 | When values were pinned, the SQL block shows the original next to it and lists the pinned values; a retry links to the action it replaces (`retry_of`). | FE §7 | F7 | *component test* |
+| [x] | FE-17 | The change request page refreshes every 5 s while pending and shows "not found" for an action that isn't the user's. | FE §7 | F7 | TEST-09 step 6 |
 | [ ] | FE-18 | The decision bar shows only while the action is pending and `can_decide` is true; approve and reject are mutations that refresh the action, the queue and the badge on success. | FE §7, F7 | F7 | DW-F07 |
-| [ ] | FE-19 | Reject opens a dialog requiring a reason of at least 10 characters (zod). | FE F7 | F7 | TEST-10; MVP-F04 |
+| [x] | FE-19 | Reject opens a dialog requiring a reason of at least 10 characters (zod). | FE F7 | F7 | TEST-10; MVP-F04 |
 | [ ] | FE-20 | A 409 on approve or reject shows a toast naming who already decided. | FE §7, F7 | F7 | DW-F07; MVP-F04 |
 | [ ] | FE-21 | History lists the user's actions with filters for status, agent, table and date range stored in the URL, with server-side pagination of 25 rows. | FE §7, F8 | F8 | DW-F08; MVP-F05 |
-| [ ] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
-| [ ] | FE-23 | Knowledge page (admin only) lists sources with chunk counts, uploads a .md or .txt file up to 1 MB with optional tables (multipart through the BFF), deletes with a confirm dialog, and has a "Rescan schema" button. | FE §7, F10 | F10 | DW-F10 |
-| [ ] | FE-24 | Agents page lists the user's agents (key prefix, active state); create shows the key once with a copy button and the setup lines exactly as returned by `POST /v1/agents`, plus a link to the README's hook steps; deactivate asks for confirmation. | FE §7, F11 | F11 | DW-F11; MVP-F07 |
-| [ ] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
-| [ ] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
+| [x] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
+| [x] | FE-23 | Knowledge page: every signed-in user reads the source list (D-280); only admins see the controls that upload, delete and rescan. It lists sources with chunk counts, uploads a .md or .txt file up to 1 MB with optional tables (multipart through the BFF), deletes with a confirm dialog, and has a "Rescan schema" button. | FE §7, F10 | F10 | DW-F10 |
+| [x] | FE-24 | Agents page lists the user's agents (key prefix, active state); create shows the key once with a copy button and the setup lines exactly as returned by `POST /v1/agents`, plus a link to the README's hook steps; deactivate asks for confirmation. | FE §7, F11 | F11 | DW-F11; MVP-F07 |
+| [x] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
+| [x] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
 | [ ] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
-| [ ] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, FAQ, footer. | FE F13 | F13 | DW-F13 |
-| [ ] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
+| [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, FAQ, footer. | FE F13 | F13 | DW-F13 |
+| [x] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
 
 ## EVAL: evals
 
@@ -311,11 +311,11 @@ D-055). Tick a box only when its verification has passed.
 | [x] | EVAL-03 | Each scenario has `sql`, `intent`, the expected decision and, where known, expected row counts against the seed as of `ANCHOR_DATE`; the scenario files carry `anchor_date: 2026-10-01` at the top, which backend tests and evals read. | BE B3; D-052 | B3 | DW-B03; CI test: `anchor_date` equals `seed_info.anchor_date` on local `company_main` |
 | [x] | EVAL-04 | Scenario files load and validate against a Pydantic schema. | BE B3 | B3 | DW-B03 |
 | [x] | EVAL-05 | Steps 8, 9, 10, 12 and 13 each run the scenarios that apply to them. | BE B3 | B8-B13 | DW-B08, DW-B09, DW-B10 |
-| [ ] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
+| [x] | EVAL-06 | Incident replays stay at 100% caught. | CL; SPEC §14; BE §14 | Evals | MVP-B10; CI |
 | [ ] | EVAL-07 | Metrics: catch rate, false block rate, explanation accuracy (numbers checked by code; the LLM-as-judge score is deferred, D-036) and added latency (p50/p95 of `total_ms` per path: read, fast lane, previewed; read overhead = Blastproof time minus the same query run directly). | SPEC §14; BE §14; D-034, D-036 | Evals | MVP-B10; eval runner output |
 | [x] | EVAL-08 | `uv run python -m evals.run` prints a results table and saves it as JSON. | CL; BE §14 | Evals | *run it* |
 | [ ] | EVAL-09 | The labeled set is uploaded as a LangSmith dataset to compare variants as experiments (MVP: rules only vs rules plus judge, with vs without RAG context). | SPEC §14; BE §14 | Evals | *LangSmith experiment exists* |
-| [ ] | EVAL-10 | Incident replays and rule-only evals run on every pull request (no LLM cost); the full LLM eval runs nightly, on manual trigger and before any change to `SUMMARY_MODEL` or `JUDGE_MODEL`. Both the PR run and the nightly run fail if any incident replay is not caught; false block rate is recorded with no threshold yet. | SPEC §14; BE §14, §15; D-045 | B2, Evals | CI |
+| [x] | EVAL-10 | Incident replays and rule-only evals run on every pull request (no LLM cost); the full LLM eval runs nightly, on manual trigger and before any change to `SUMMARY_MODEL` or `JUDGE_MODEL`. Both the PR run and the nightly run fail if any incident replay is not caught; false block rate is recorded with no threshold yet. | SPEC §14; BE §14, §15; D-045 | B2, Evals | CI |
 | [x] | EVAL-11 | Catch rate and false block rate on the labeled set are recorded. | BE §17 | Evals | MVP-B10 |
 
 ## OBS: observability
@@ -335,10 +335,10 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
+| [x] | OPS-01 | Backend CI on every PR: install with uv, `ruff check`, `ruff format --check`, two Postgres service containers with the role init scripts, `seed.py --target local`, Alembic migrations, tests and rule-only evals with `NEON_CLIENT=fake`; CI never talks to Neon. | BE B2, §15 | B2 (extended later) | DW-B02 |
 | [ ] | OPS-02 | A second workflow runs the LLM evals nightly with the `GOOGLE_API_KEY` repository secret. | BE §14, §15 | Evals | *workflow run* |
 | [ ] | OPS-03 | Frontend CI job on every PR: `npm ci` (cached), lint, typecheck, test (Vitest), build. | FE §13 | F1 onward | MVP-F08 |
-| [ ] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
+| [x] | OPS-04 | `release` is protected so merging requires the backend, frontend and image jobs to pass (D-261). | FE §13 | Deploy | *repo settings check* |
 | [x] | OPS-05 | Contract check: the backend's `export-openapi` output regenerates `schema.d.ts`, and the job fails if the file changed. | FE §13, §16 | F2 + B20 | MVP-F08 |
 | [ ] | OPS-06 | A nightly or manual workflow starts Postgres and the backend, runs `seed-demo-actions`, starts the dashboard and runs Playwright. | FE §13 | F7+ | MVP-F08 |
 | [x] | OPS-07 | Three company databases are never mixed: test/CI uses `company-db`, local dev uses Neon `blastproof-company-dev`, the deployed demo uses Neon `blastproof-company` (touched only by the deployed backend). | BE §15; D-003 | B3, B10, Deploy | *config review* |
@@ -346,9 +346,9 @@ D-055). Tick a box only when its verification has passed.
 | [x] | OPS-09 | The Neon `blastproof-app` project holds Blastproof's production database with `CREATE EXTENSION vector`. | BE §2, §15 | Deploy | *manual check* |
 | [x] | OPS-10 | `fly.toml` sets `release_command = "alembic upgrade head"` (migrator URL), an HTTP health check on `/health`, `auto_stop_machines = "off"`, `min_machines_running = 1`, `kill_timeout = 60`, and the app runs on exactly one machine. | BE §15 | Deploy | *config review* |
 | [ ] | OPS-11 | Every secret in BE §11 is set with `fly secrets set`; the owner loads the seed into `blastproof-company` (D-054); bootstrap is run once via `fly ssh console`; `rebase-dates` is run (by the owner) against `blastproof-company` before recording the demo. | BE §15 | Deploy | *manual checklist* |
-| [ ] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
+| [x] | OPS-12 | A GitHub Actions deploy job runs `flyctl deploy --remote-only --ha=false` on every push to `release` using `FLY_API_TOKEN` (D-261). | BE §15; SPEC §16 | Deploy | MVP-B11 |
 | [x] | OPS-13 | Claude Code is pointed at the deployed MCP URL and the hook's `BLASTPROOF_AGENT_KEY` is updated. | BE §15 | Deploy | MVP-B01 |
-| [ ] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `main` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
+| [ ] | OPS-14 | Vercel imports the repo with root directory `frontend/`, the three env vars (with `BLASTPROOF_API_URL` pointing at Fly.io), a functions region matching Fly.io and Neon, auto-deploy on `release` and preview URLs per PR. | FE §13 | Deploy (Stage 5) | *Vercel settings check* |
 | [ ] | OPS-15 | The first admin is created with the backend's bootstrap command and the demo is run end to end on the deployed stack. | FE §13 | Deploy (Stage 5) | MVP-F checks |
 
 ## SPIKE: questions spikes must answer
@@ -364,7 +364,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [x] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
+| [ ] | NFR-01 | Read pass-through overhead stays under 50 ms at p95. | SPEC §10; BE §14; D-034 | Evals | Eval runner latency report (EVAL-07) |
 | [ ] | NFR-02 | Fast-lane writes complete in under 300 ms of Blastproof time. | SPEC §10; BE §17; D-007 | B14-B17 | MVP-B02 |
 | [x] | NFR-03 | Previewed writes meet a target set from the Neon spike's measured p50/p95 (spike measured p50 5.0 s to a usable branch and about 14 s for a whole preview; about 14 s for a small preview; target: under 20 s for a typical write (a few thousand rows); under 60 s for a write that touches most of a table, such as the 246k-row Replit delete, measured at 44 s on Neon, D-143). | SPEC §10; BE B10 | B10 | SPIKE-03, then *eval latency metric* |
 | [x] | NFR-04 | Pending approvals survive restarts; no action is lost or applied twice. | SPEC §10; BE §17 | B14-B16 | DW-B15, DW-B16; MVP-B07, MVP-B08 |
@@ -407,12 +407,12 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F03 | You can log in, the token never appears in browser JavaScript or local storage, and deleting the cookie sends you back to `/login`. | FE F3 | F3 | Manual |
 | [x] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
 | [x] | DW-F05 | Vitest tests pass for the badges and formatting helpers. | FE F5 | F5 | `npm test` |
-| [ ] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
+| [x] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
 | [ ] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |
 | [ ] | DW-F08 | Changing filters updates the URL and the back button restores the previous view. | FE F8 | F8 | Manual |
-| [ ] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
-| [ ] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
-| [ ] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
+| [x] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
+| [x] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
+| [x] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
 | [ ] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
 | [ ] | DW-F13 | A logged-out visitor sees the landing page, "Log in" leads to `/login`, Lighthouse scores 90+ for performance, accessibility and SEO, and the LinkedIn link preview looks right. | FE F13 | F13 | Lighthouse + manual |
 

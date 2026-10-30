@@ -1194,3 +1194,381 @@ health check at `/ready`.
 **Trade-off and limits.** One machine means a short gap during each deploy and no failover. That is
 fine for a demo, and the first live run showed the cost of a mistake here: on 512 MB the server was
 killed for lack of memory, so the machine stays at 1 GB.
+
+## F6: Review queue (D-270)
+
+### 1. The page polls every 5 seconds, and all filtering and ordering stays in the backend
+
+**What I did.** The queue asks `GET /v1/actions?status=awaiting_review&order=oldest&limit=25` and
+repeats the request every 5 seconds with TanStack Query's `refetchInterval`. When the answer changes,
+React redraws the table. The page sends no user or owner parameter, does not re-sort and does not
+filter the rows.
+
+**Why.** A held write has to show up without anyone pressing refresh, and polling is the simplest way
+that needs no new backend work. Keeping the filtering in the backend follows the rule that the
+dashboard holds no business logic: `visible_actions(user)` already decides whose actions a person
+sees, so the page cannot show something it should not, even if the front-end code has a bug.
+
+**What I rejected.** Server-sent events or WebSockets (instant, but they need a new backend channel
+and more moving parts for a demo), and filtering by owner in the browser (a second place to get
+permissions wrong).
+
+**Trade-off and limits.** A new row can be up to 5 seconds late, and every open page makes a small
+request every 5 seconds. An admin sees everyone's actions with no owner column, because the API does
+not return one.
+
+### 2. One shared list hook under the `["actions"]` key, with the old page kept while the next loads
+
+**What I did.** `useActions` is a shared hook whose query key is `["actions", "list", query]` and
+which uses `keepPreviousData`. F7 will invalidate `["actions"]` after an approve or reject, which
+refreshes the queue and the sidebar badge together. If the owner clicks Next, the current rows stay
+on screen until the next page arrives. If decisions shrink the queue below the page being viewed, the
+page steps back to the last page that exists.
+
+**Why.** One key prefix means one invalidation updates every list, so the badge and the queue cannot
+disagree for long. Keeping the old rows avoids a flash of skeleton lines on each click and each poll.
+The hook is reused by History (F8) and Overview (F9) rather than copied.
+
+**What I rejected.** A separate request key per page, with no shared prefix (each decision would
+need to know about every list), and putting the offset in the URL (the queue has no filters, so F8
+builds URL state once, where it is needed).
+
+**Trade-off and limits.** The offset is local state, so reloading the page returns to page 1.
+"Waiting" counts from `created_at` because the API has no review-requested time.
+
+## F7: Change request page (D-271)
+
+### 1. The page keeps polling until the action is final, not just while it is pending
+
+**What I did.** The page asks `GET /v1/actions/{id}` every 5 seconds, and stops only when the
+status has no way forward (rejected, expired, blocked, committed, executed, failed) or the answer is
+a 404. A table in the code lists every status as final or not, typed so that a status the backend
+adds later breaks the build instead of silently polling forever. Approve and Reject both invalidate
+the whole `["actions"]` key, on success and on error, so the page, the queue and the sidebar badge
+refresh together.
+
+**Why.** The reviewer's real question after clicking Approve is "did it land?". Stopping at
+"not pending" would freeze the page on "Approved" and hide the commit. Refreshing on error too
+matters: a 409 or 404 means the page is out of date, so it should fix itself.
+
+**What I rejected.** Polling only while awaiting review (hides the commit), and a manual refresh
+button (the reviewer would be looking at stale facts while deciding).
+
+**Trade-off and limits.** Up to 5 seconds of staleness, and a click just after expiry gets a 409
+and a refresh instead of a prevented click. A `drifted` write goes back to previewing in the
+backend, so it counts as not final.
+
+### 2. The backend decides and words everything; the page only shows it
+
+**What I did.** The decision bar appears only when the backend says `can_decide` is true and the
+status is awaiting review. When two people decide at once, the loser's toast shows the backend's
+409 message word for word ("Already approved by Demo User 2."). I do not build that sentence from
+`decided_by`. A 409 on reject also toasts, because the refresh that follows removes the dialog.
+
+**Why.** CLAUDE.md says the dashboard holds no business logic. Permission and "who won" are
+database facts; if the page re-derived them it could disagree with the server. The backend
+re-checks on every POST anyway, so hiding the button is a courtesy, not the security boundary.
+
+**What I rejected.** Computing "can I decide" from role and owner in the browser, and composing
+the 409 text from the action's decider (it would also miss the expiry wording).
+
+**Trade-off and limits.** `can_decide` is computed when the page loads, so it can be up to 5
+seconds old; the 409 path covers that. A fast double click is stopped by a flag set at once,
+because the mutation's own pending state arrives one tick late.
+
+## F8: History (D-272)
+
+### 1. The URL is the page's state: one parser, one writer, one history entry per view
+
+**What I did.** History has no filter state of its own. Every render reads the address bar
+through one pure function, `parseHistoryParams`, which turns `?status=rejected&agent=…&page=2` into
+a typed filters object and silently drops anything invalid (an unknown status, an agent that is
+not a UUID, an impossible date like 30 February, a page of 0). Every change goes back out through
+one writer, `toSearchString`, which always puts the keys in the same order and leaves defaults out.
+So one view has exactly one URL. A filter or page change is a `router.push`, which means one
+browser history entry per view. That is what makes Back and Forward restore the earlier view:
+the browser moves the URL, the page re-reads it, and TanStack Query serves the rows it already
+cached for that query. Three details keep the history clean. The table box only commits on Enter or
+blur, not on each keystroke. A date is only sent once it is complete. And fixing a bookmarked page
+that is past the end uses `replace`, so it adds no extra entry.
+
+**Why.** The plan's check is literally "the back button restores the previous view", and
+CLAUDE.md says filters live in the URL. If filters lived in React state and were copied into the
+URL, there would be two sources of truth, and Back would change one without the other. Reading
+from the URL on every render removes that whole class of bug. Dropping bad values matters too: a
+shared or hand-edited link should show what was actually asked for, never a 422 error page. A
+backwards date range is the one case I cannot quietly fix, so it shows a message and sends nothing.
+
+**What I rejected.** Local state synced to the URL in an effect (two sources of truth). Writing
+`offset` instead of `page` (worse in a shared link). Pushing on every keystroke (Back would replay
+the user's typing). Showing a 422 for a bad bookmark.
+
+**Trade-off and limits.** Text boxes keep a small draft while you type, which is reset whenever the
+URL changes, so a half-typed value is thrown away on Back. The automated Back/Forward test runs on an
+in-memory stand-in for Next's router, so a real browser check (DW-F08) is still needed. Admins have
+no owner filter because the list response carries no owner.
+
+### 2. A date range is the viewer's local days, sent as a half-open UTC interval
+
+**What I did.** The From and To boxes are calendar days in the viewer's own time zone, the same
+zone every timestamp on the dashboard is shown in. The page turns them into exact instants before
+calling the backend: `from` becomes local midnight at the start of the From day, and `to` becomes
+local midnight at the start of the day *after* the To day. The backend treats `from` as inclusive
+and `to` as exclusive, so "1 Oct to 1 Oct" means every action on 1 October, and nothing at
+midnight is counted twice or missed. The arithmetic uses the Date object's own day counting, so the
+day daylight saving ends is 25 hours long, and a test pins that in New York time.
+
+**Why.** People think in days on a calendar, but the database stores UTC instants. A half-open
+interval `[start, next start)` is the standard way to cut time into days without gaps or overlaps.
+Sending "To at 23:59:59" would miss the last second, and adding 24 hours would be wrong twice a
+year. Using the viewer's local day matches what they see in the table. A row shown as
+"Oct 1, 11:30 PM" must appear when they filter on 1 October.
+
+**What I rejected.** UTC days (simpler, but a user in India would see evening actions land on the
+"wrong" day). A calendar picker component (it needs a new dependency, `react-day-picker`, while the
+browser's own date input is free and accessible). Putting ISO instants in the URL (unreadable, and
+tied to one zone).
+
+**Trade-off and limits.** The URL holds plain days, so a link shared with someone in another time
+zone covers their local day, a few hours off from the sender's. The Overview's "today" counts stay
+on the UTC day (D-051), so the two pages can disagree near midnight. That difference is documented,
+not hidden.
+
+## F9: Overview (D-274)
+
+### 1. The cards show one backend field each, and the page does no arithmetic
+
+**What I did.** Every card on the Overview is a single field from `GET /v1/stats`, passed through a
+formatter. "Reviewed today" is `today.reviewed`, "Blocked today" is `today.blocked`, and so on. The
+page never adds, divides or counts. The "Today (UTC): Oct 29, 2026" line above the cards also comes
+from the backend's `today.day`, so the label and the numbers always describe the same day.
+
+**Why.** The project rule is "code counts, the LLM explains, the dashboard holds no business logic".
+If the browser summed things up, the Overview could disagree with the database, and with the
+History page. The tempting shortcut was to add up `today.by_decision` for "decisions today". That
+number means something different (automatic decisions on actions created today), so the card would
+have looked right and been wrong. Using `reviewed` (what a person approved or rejected today) says
+exactly what the label says.
+
+**What I rejected.** Summing `by_decision` in the browser. Counting rows from the latest-actions
+list (it only holds 10).
+
+**Trade-off and limits.** "Today" is the UTC day, not the viewer's, so near local midnight the
+Overview and History can disagree. The cards say "(UTC)" so that is visible, not hidden (D-051).
+
+### 2. The Pending card shares the sidebar badge's query, and stats sit under the `actions` key
+
+**What I did.** The Pending card reads `usePendingCount()`, the same query the sidebar badge uses,
+instead of `stats.pending_reviews`. The stats query itself is stored under the key
+`["actions", "stats"]`, so when someone approves or rejects an action, the existing "refresh
+everything under `actions`" call refreshes the cards as well, with no change to the decision code.
+
+**Why.** TanStack Query sends one request for two components that ask the same question, so there
+is no extra traffic, and the card and the badge can never show different numbers. Stats refresh
+every 15 s and the badge every 5 s, so using `pending_reviews` would let the two disagree for up to
+ten seconds. Putting the key under `actions` reuses a rule the app already has instead of adding a
+second way to keep things fresh.
+
+**What I rejected.** `stats.pending_reviews` (can lag the badge). Wiring the approve button to
+refresh stats by name (couples two features and is easy to forget).
+
+**Trade-off and limits.** The two numbers come from two endpoints that are both SQL counts, so they
+agree in practice. If the first stats load fails, all five cards give way to one error with Retry,
+even though the pending count might have loaded. If a later poll fails, the last numbers stay on
+screen with a "Couldn't refresh" warning.
+
+## Gate 2 fix 13: the live eval fails when no model answered
+
+### 1. The live gate requires at least one real model summary
+
+**What I did.** `gate_failures` has a `require_model` switch. The live run turns it on, and the run
+fails if zero model summaries came back ("no model answered: 0 summaries came back (judge
+unavailable on N of M scenarios)"). The rules-only run leaves it off.
+
+**Why.** Blastproof fails closed: when a model call breaks, the write goes to review. So with a
+broken key every scenario is "held", and "100% of incidents caught" is true for the wrong reason.
+The nightly run on 2026-10-29 showed this: 0 summaries, judge unavailable 30 of 30, and it still
+said "success". The check has to be about whether a model actually answered, not only about what the
+decision was.
+
+**What I rejected.** Failing on any unavailable judge (one provider hiccup would fail the night).
+Changing the exit code only in the workflow file (the CLI would still lie when run by hand).
+
+**Trade-off and limits.** It only checks that at least one summary came back, so a run where the
+model answered 1 of 30 still passes. A second rule covers the judge: the run also fails if the judge
+was unavailable on every previewed scenario, so a working summary model cannot hide a dead judge.
+One judge failure still passes.
+
+### 2. A switch on the existing gate, not a new check
+
+**What I did.** The new rule lives in the one function that already decides pass or fail
+(`gate_failures`), with a default that keeps the old behaviour.
+
+**Why.** Every caller (CI rules eval, live run, tests) goes through the same function, so there is
+one place that says what "green" means, and existing callers did not change.
+
+**What I rejected.** A separate post-run check in `run.py`, which would split the pass/fail logic
+in two places.
+
+**Trade-off and limits.** The caller must remember to pass `require_model`; the CLI test
+`test_a_live_run_with_no_model_answer_exits_1` guards that the live path does.
+
+## F10: Knowledge (D-278, D-279)
+
+### 1. Members get a read-only view, and the proxy stops big bodies before the backend sees them
+
+**What I did.** The Knowledge page first asks "who am I?" and then loads the source list for anyone
+signed in. An admin also gets the upload form, the Delete buttons and the Rescan buttons; a member
+gets the list alone, and the browser never asks for the systems. Separately, the dashboard's proxy now refuses any request body over 2 MB with a 413
+(it checks `Content-Length`, then counts bytes while reading, so a missing or false length does
+not help), and gives only upload and rescan a 120 s timeout instead of 30 s.
+
+**Why.** The AI's explanation of a member's change is written from these documents, so that member
+should be able to see what it read. The backend already shares the list on purpose (BE-114), and
+the first version of this page hid it from members, which disagreed with the backend. Showing the
+list read-only makes the two agree; the write controls are hidden only for tidiness, and the
+backend still refuses member writes with 403. Before this, the proxy copied whole bodies into memory with no
+limit, which was a known F3 issue. 2 MB is above the backend's 1 MB + 64 KB, so the backend's own
+error messages still decide the real limit; the proxy only guards memory. Embedding 1 MB of text is
+slow, so a 30 s timeout would cut off uploads that were still working.
+
+**What I rejected.** Making the list admin-only in the backend (the owner chose a read-only member
+view instead, D-280). Setting
+the cap equal to the backend's limit (it would hide the backend's clearer messages). A long timeout
+for every route (a hung read would hold a connection for two minutes).
+
+**Trade-off and limits.** Members see file and table names (never the text). The hidden write
+controls are a courtesy, not security: the backend does the refusing. A 504 on upload cannot tell whether the backend finished, so the form says it
+"may still be finishing" and asks the admin to refresh. Vercel's own function limit is not set yet.
+
+### 2. Tags can only be picked from tables the schema scan knows
+
+**What I did.** The upload form shows a checkbox for each table in the schema scan, not a free-text
+box. With no scan it says "Rescan the schema to tag tables" and an untagged upload still works.
+Tags are sent in the schema's order, one `tables` entry each.
+
+**Why.** A table tag is how a document reaches an action: the backend returns every chunk tagged
+with the tables an action touches. A misspelt tag (`user` for `users`) would upload fine, show up
+in the list, and never be used, with no error anywhere. Checkboxes make that mistake impossible.
+
+**What I rejected.** A free-text field with validation after the fact (the typo would still look
+valid). Reading table names from the company database directly (the scan source already holds them,
+and the dashboard never talks to that database).
+
+**Trade-off and limits.** You cannot tag a table the scan has not seen, so a new table needs a
+rescan first. Documents already tagged with a table that later disappears keep the old tag.
+
+
+## F11: Agents, users and rules (D-283 to D-285)
+
+### 1. The agent key is shown once and never kept by the app
+
+**What I did.** When you create an agent the backend returns the full key a single time. The page holds
+it in one piece of component state and shows it in a dialog with Copy buttons. The request that created
+it is set to be forgotten at once (`gcTime: 0`) and is reset right after the page takes the key, so
+neither of TanStack Query's caches (queries and mutations) ever holds it. The dialog cannot be dismissed
+by Escape or an outside click; only "Done, I have copied it" closes it, and that drops the key.
+
+**Why.** After this moment the backend cannot show the key again, so losing it by a stray click means
+making a new agent, and keeping it somewhere longer than needed means a secret sits in memory and in
+developer tools. The test serializes both caches and the page text and checks the key is gone after Done.
+
+**What I rejected.** Letting a normal dialog close on outside click (one mis-click loses the key). Keeping
+the mutation result and just hiding it (it would still be in the cache). Saving it in the browser's
+storage (CLAUDE.md forbids tokens there).
+
+**Trade-off and limits.** Close the tab before pressing Done and the key is gone for good; the fix is to
+create another agent. The `claude mcp add` line the backend gives still puts the key in shell history
+(D-285); that is the backend's format, not changed here.
+
+### 2. The page only saves a request; the backend decides who may do what
+
+**What I did.** A member who opens the Users page sees "Users is for admins." and the page sends no
+`/v1/users` request. Admins see an Owner column on Agents. The sign-up checks (name length, email shape,
+12-character password that is not trimmed) are copied from the backend so mistakes show at once, but a
+409 or 422 from the backend is always shown as it comes.
+
+**Why.** The dashboard holds no business logic (CLAUDE.md). Hiding things is a courtesy that avoids a
+pointless call and a 403; the real refusal is in the backend. Copying the checks gives fast feedback
+without becoming the authority.
+
+**What I rejected.** Trusting the hidden controls as security. Showing the Users form to everyone and
+waiting for a 403. Dropping client checks entirely (every typo would cost a round trip).
+
+**Trade-off and limits.** The copied bounds can drift from the backend; the backend's message still wins
+when they do. Lists stop at 100 with a note, no pagination.
+
+## F12: Polish (D-286 to D-289)
+
+### 1. The dark-mode script gets the CSP nonce only on pages that are already built per request
+
+**What I did.** Dark mode needs a tiny inline script that runs before the page paints, so the page does not
+flash white. Our content security policy only allows scripts that carry a one-time random value (a nonce)
+made by the proxy. So the theme provider lives in the dashboard layout and the login page, which are
+already built per request and can read that nonce. It is not in the root layout. The 404 page for
+addresses outside the proxy (which have no policy at all) uses the provider without a nonce.
+
+**Why.** Reading the nonce means reading request headers, and a page that reads headers can no longer be
+built once in advance. The landing page (F13) must stay static, so putting the provider in the root layout
+would have quietly made it dynamic. I saw this happen in the build: my first root 404 did exactly that
+and `/` flipped from static to dynamic, so I changed it.
+
+**What I rejected.** Loosening the policy with `'unsafe-inline'` for scripts (it removes the main
+protection against injected scripts). Putting the provider in the root layout (breaks the static landing
+page). Skipping dark mode on the login page (it would flash).
+
+**Trade-off and limits.** Each per-request page that wants a theme must add the provider itself. The theme
+choice is kept in the browser's localStorage by the library; it is a display preference, not a token.
+The nonce test runs in a server-like environment because the library hides the nonce in a browser.
+
+### 2. Contrast is computed from the design tokens, because the test browser cannot see colour
+
+**What I did.** The accessibility tool (axe) runs in jsdom, which has no layout or real colours, so it
+cannot check contrast. I wrote a small test that reads the colour values from the stylesheet, converts
+them to the WCAG formula and checks every text/background pair, in light and dark, plus every badge tone.
+A real Lighthouse run by hand is still the final check.
+
+**Why.** Contrast is the accessibility problem most likely to regress silently, and a manual check
+only happens once. The test found a real failure at once: the grey "muted" badge was 4.3:1 against a
+4.5:1 minimum, so the badge became an outline with no fill.
+
+**What I rejected.** Changing shadcn's shared colour token (it would change every muted text in the
+app). Relying on Lighthouse alone (one-off, and I cannot run Chrome here).
+
+**Trade-off and limits.** The test checks the pairs I listed, not every place a colour is used, and it
+ignores transparent colours such as the dark border. One pair (muted text on a solid muted fill) is left
+out on purpose because nothing renders it.
+
+## Dashboard deploy to Vercel (D-300 to D-303)
+
+### 1. The deployed site is proved by a read-only probe command, not by a checklist
+
+**What I did.** I wrote `dashboard-check`, a command that sends only harmless requests to the live
+dashboard and prints one ok/FAIL line per check: security headers, the login redirect, whether the proxy
+really reaches the backend, whether a foreign Origin is refused and our own is accepted, cookie flags,
+and a scan for leaked secrets or the backend's address. A failed line names the problem, never the value.
+
+**Why.** Most of what can go wrong on Vercel is a setting (a missing env var, a wrong backend address, the
+wrong public origin), and settings are invisible to unit tests. The Origin check in particular compares
+against the address the function sees; if Vercel hands it a different one, every real POST would be
+refused. One command turns "did I click everything right?" into a result I can re-run after every change.
+
+**What I rejected.** A manual checklist alone (it relies on memory). Logging in from the probe (it would
+need a real password and would write login records).
+
+**Trade-off and limits.** It cannot prove a logged-in page works, so a login by hand is still required.
+A probe that sees nothing must not look healthy: I found, running it against a domain with no site yet,
+that the leak check passed with zero responses, and made it fail instead.
+
+### 2. Production tracks `release`, the same branch as the backend
+
+**What I did.** Vercel builds production from `release`, not `develop` or a new `main`. Promoting
+`develop` into `release` ships the backend and the dashboard together; other branches get private previews.
+
+**Why.** There is no `main`, so Vercel would have quietly chosen `develop`, shipping unreviewed work.
+One promotion step also keeps the two apps on matching versions.
+
+**What I rejected.** Making a `main` just for Vercel (a second branch to keep in sync).
+
+**Trade-off and limits.** The first merge also redeploys the backend. Previews use the production backend,
+so Deployment Protection must stay on to keep preview URLs private.

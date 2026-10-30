@@ -7,6 +7,9 @@ export function installDomStubs() {
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
+    // next-themes still subscribes with the legacy pair.
+    addListener: () => {},
+    removeListener: () => {},
   }));
   vi.stubGlobal(
     "ResizeObserver",

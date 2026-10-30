@@ -10,6 +10,14 @@ import { SQLBlock } from "../src/components/actions/sql-block";
 afterEach(cleanup);
 
 describe("SQLBlock", () => {
+  // F12: axe flags a scroll area that keyboard users cannot focus.
+  it("is focusable and named, so its overflow can be scrolled by keyboard", () => {
+    const { container } = render(<SQLBlock sql="SELECT 1" />);
+    const pre = container.querySelector("pre")!;
+    expect(pre.getAttribute("tabindex")).toBe("0");
+    expect(pre.getAttribute("aria-label")).toBe("SQL");
+  });
+
   it("renders markup as text and creates no element", () => {
     const { container } = render(<SQLBlock sql={"SELECT '<img src=x onerror=alert(1)>'"} />);
     expect(container.querySelector("img")).toBeNull();
@@ -71,6 +79,11 @@ describe("AuditTimeline", () => {
     for (const text of ["Preview done", "Failed closed", "Decided", "brand_new_event"]) {
       expect(screen.getByText(text)).toBeTruthy();
     }
+  });
+
+  it("labels a status-named event with the status label", () => {
+    render(<AuditTimeline events={[ev("awaiting_review", "2026-10-27T10:00:00Z")]} />);
+    expect(screen.getByText("Awaiting review")).toBeTruthy();
   });
 
   it("keeps the backend order", () => {

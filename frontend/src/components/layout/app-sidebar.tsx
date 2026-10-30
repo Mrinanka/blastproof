@@ -29,7 +29,10 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-4 py-3 text-base font-semibold">Blastproof</SidebarHeader>
+      <SidebarHeader className="px-4 py-3 text-base font-semibold">
+        {/* Collapsed to icons, the sidebar is too narrow for the name, which ran under the trigger. */}
+        <span className="truncate group-data-[collapsible=icon]:hidden">Blastproof</span>
+      </SidebarHeader>
       <SidebarContent>
         {navFor(me?.role).map((group, index) => (
           <SidebarGroup key={group.label ?? index}>

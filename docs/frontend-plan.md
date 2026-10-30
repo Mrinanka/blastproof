@@ -90,7 +90,7 @@ The backend's OpenAPI schema is the single contract between the two apps. TypeSc
 | Stats | GET `/stats` | your own only (admin: all) |
 | Rules | GET `/policies` (read-only) | signed in |
 | My agents | GET `/agents`, POST `/agents`, POST `/agents/{id}/deactivate` | your own (admin: all) |
-| Knowledge | GET `/knowledge`, POST `/knowledge` (multipart file upload), DELETE `/knowledge/{id}` | read: signed in; write: admin |
+| Knowledge | GET `/knowledge`, POST `/knowledge` (multipart file upload), DELETE `/knowledge/{source}` (the file name, D-241) | read: signed in; write: admin |
 | Systems | GET `/systems`, POST `/systems/{id}/scan` | admin |
 | Users | GET `/users`, POST `/users` | admin |
 
@@ -222,7 +222,7 @@ Steps F6 to F12 build the pages in order of importance, so the demo-critical flo
    *Done when:* changing filters updates the URL and the back button restores the previous view.
 9. **F9. Overview.** Count cards from `/v1/stats` and the latest 10 actions, refreshing every 15 seconds.
    *Done when:* numbers match a manual SQL count on Blastproof's database.
-10. **F10. Knowledge.** Source list; upload a `.md` or `.txt` file (multipart through the BFF route) with a size limit of 1 MB and an optional list of tables it applies to; delete with a confirm dialog; "Rescan schema" button. The page is admin-only; members never see it.
+10. **F10. Knowledge.** Source list; upload a `.md` or `.txt` file (multipart through the BFF route) with a size limit of 1 MB and an optional list of tables it applies to; delete with a confirm dialog; "Rescan schema" button. Every signed-in user sees the read-only source list; upload, delete and rescan are admin-only (D-280, changed from "members never see it"; the backend `GET /v1/knowledge` was always open to signed-in users, BE-114).
     *Done when:* a document uploaded with the table `users` appears in the "Knowledge used" list of the next action that touches `users` (checked with `seed-demo-actions --add-pending`, so no Neon or real LLM is needed).
 11. **F11. Agents and rules.** Create agent: show the key once with a copy button and the pre-filled Claude Code setup lines; deactivate with confirmation. Users page (admin only) lists users and creates new ones with an initial password. Rules page renders `/v1/policies` as a read-only table.
     *Done when:* a newly created key works in Claude Code by copy-pasting the shown commands.
@@ -280,8 +280,10 @@ The dashboard deploys to Vercel straight from GitHub; CI makes sure only green c
 1. In Vercel, import the `blastproof` repo and set the **root directory** to `frontend/`. Vercel detects Next.js automatically.
 2. Add the three environment variables from section 10, with `BLASTPROOF_API_URL` pointing at the Fly.io backend.
 3. Set the functions region to match your Fly.io and Neon region, so the proxy's hop to the backend is short.
-4. Deploy. Every merge to `main` then deploys automatically, and every pull request gets a preview URL.
+4. Set the production branch to `release` (the backend's, D-261). Deploy. Every merge to `release` then deploys automatically, and every pull request gets a preview URL.
 5. Create your first admin with the backend's bootstrap command, log in, and run the demo end to end.
+
+*As built:* `frontend/vercel.json` (region `iad1`), `maxDuration = 150` on the proxy route, `dashboard-check` and the owner's checklist `docs/deploy-dashboard.md` (D-300 to D-303).
 
 Preview deployments use the same backend as production. That is acceptable for a one-person portfolio project because login is still required; add a staging backend in phase 2.
 

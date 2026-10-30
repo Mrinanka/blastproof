@@ -7,8 +7,8 @@ const hrefs = (role: "admin" | "member" | undefined) =>
   navFor(role).flatMap((g) => g.items.map((i) => i.href));
 
 describe("navFor", () => {
-  it("hides Knowledge and Users from members", () => {
-    expect(hrefs("member")).not.toContain("/dashboard/knowledge");
+  it("shows Knowledge to members (read-only) and hides Users", () => {
+    expect(hrefs("member")).toContain("/dashboard/knowledge");
     expect(hrefs("member")).not.toContain("/dashboard/settings/users");
   });
 
