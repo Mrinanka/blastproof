@@ -8,5 +8,6 @@ export const TONE_CLASSES: Record<Tone, string> = {
   success:
     "border-transparent bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
   danger: "border-transparent bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200",
-  muted: "border-transparent bg-muted text-muted-foreground",
+  // No fill: muted-foreground on bg-muted is 4.3:1 in light mode, under the 4.5:1 minimum (D-286).
+  muted: "border-border text-muted-foreground",
 };

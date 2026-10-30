@@ -1904,3 +1904,23 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** F11 shows the backend's `claude_mcp_add` and `agent_key_env` lines verbatim. The `--header "Authorization: Bearer <key>"` form puts the key in shell history and `~/.claude.json` (local scope). The dialog also says the hook is installed by `workspace.py create`, which the dashboard cannot do.
 **Why:** the plan says to show the lines exactly as returned. A later backend change could return a `.mcp.json` snippet using `${BLASTPROOF_AGENT_KEY}` (what `workspace.py` already does). Not done here.
+
+## D-286 · 2026-10-29 · The muted badge has no fill; shadcn's tokens stay as they are
+
+**Decision:** `TONE_CLASSES.muted` is `border-border text-muted-foreground` (an outline), not `bg-muted text-muted-foreground`. shadcn's `--muted-foreground` is not changed. `contrast.test.ts` checks every other text pair at 4.5:1 and leaves out muted-foreground on `bg-muted`, which no component renders.
+**Why:** muted-foreground on bg-muted is 4.3:1 in light mode, under the 4.5:1 minimum. Changing a token would change every muted text in the app.
+
+## D-287 · 2026-10-29 · Theme provider only where the page is per-request; the root 404 uses no nonce
+
+**Decision:** the theme provider is not in the root layout. The dashboard layout and the login page use `NoncedThemeProvider`, which reads the proxy's `x-nonce` for next-themes' inline script. The root 404 (`app/not-found.tsx`) uses the plain `ThemeProvider` with no nonce. The preference is kept by next-themes in localStorage (key `theme`), a UI setting and not a token.
+**Why:** the nonce-only CSP would block the script without the nonce, and reading headers in the root layout makes `/` dynamic (F13's landing page must stay static). The plan had the root 404 read the nonce too, but the build showed that also turned `/` dynamic; unmatched URLs are outside the proxy matcher and have no CSP, so no nonce is needed there. Unmatched `/dashboard/...` URLs use the dashboard 404 inside the shell.
+
+## D-288 · 2026-10-29 · Page titles are static; the template adds the product name
+
+**Decision:** each page exports a plain `metadata.title`; the root layout's template adds " · Blastproof". No title includes agent-provided text.
+**Why:** keeps agent text out of the tab title and avoids a server fetch. A test fails if a dashboard page has no `metadata`.
+
+## D-289 · 2026-10-29 · `noUncheckedIndexedAccess` stays off (D-221's F12 revisit)
+
+**Decision:** not turned on in F12.
+**Why:** it would touch shadcn's generated code and is not polish.

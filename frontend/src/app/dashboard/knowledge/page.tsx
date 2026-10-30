@@ -1,4 +1,6 @@
-﻿import { Knowledge } from "@/components/knowledge/knowledge";
+import { Knowledge } from "@/components/knowledge/knowledge";
+
+export const metadata = { title: "Knowledge" };
 
 export default function Page() {
   return (

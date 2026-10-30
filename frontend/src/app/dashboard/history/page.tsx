@@ -1,7 +1,9 @@
-﻿import { Suspense } from "react";
+import { Suspense } from "react";
 
 import { LoadingState } from "@/components/common/states";
 import { History } from "@/components/history/history";
+
+export const metadata = { title: "History" };
 
 export default function Page() {
   return (

@@ -67,4 +67,27 @@ describe("source rules", () => {
     const sidebar = files.find((f) => f.name === "components/layout/app-sidebar.tsx");
     expect(sidebar?.text).toMatch(/group-data-\[collapsible=icon\]:hidden">Blastproof</);
   });
+
+  // F12: a raw palette color (text-red-600) has no dark-mode pair unless it is written with one.
+  // tone.ts pairs each with a dark: class and is checked by contrast.test.ts. app/page.tsx is the
+  // create-next-app starter page, which F13 replaces.
+  it("uses raw Tailwind palette colors only in tone.ts and the starter page", () => {
+    const palette =
+      /\b(?:text|bg|border|ring|fill|stroke|from|to|via)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone)-\d{2,3}\b/;
+    const found = files.filter(
+      (f) =>
+        palette.test(f.text) &&
+        f.name !== "components/actions/tone.ts" &&
+        f.name !== "app/page.tsx" &&
+        !f.name.startsWith("components/ui/"),
+    );
+    expect(found.map((f) => f.name)).toEqual([]);
+    const tone = files.find((f) => f.name === "components/actions/tone.ts")!;
+    const lightFills = tone.text
+      .split(/\r?\n/)
+      .filter((l) => /\bbg-(?:blue|amber|emerald|red)-/.test(l));
+    for (const line of lightFills) {
+      expect(line, "every light palette class has a dark: pair").toMatch(/dark:bg-/);
+    }
+  });
 });

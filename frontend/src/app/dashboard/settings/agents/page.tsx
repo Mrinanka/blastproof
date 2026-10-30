@@ -1,5 +1,7 @@
 import { Agents } from "@/components/agents/agents";
 
+export const metadata = { title: "Agents" };
+
 export default function Page() {
   return (
     <div className="space-y-4 p-6">

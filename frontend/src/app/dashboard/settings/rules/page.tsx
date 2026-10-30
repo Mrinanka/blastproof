@@ -1,5 +1,7 @@
 import { RulesTable } from "@/components/rules/rules-table";
 
+export const metadata = { title: "Rules" };
+
 export default function Page() {
   return (
     <div className="space-y-4 p-6">
