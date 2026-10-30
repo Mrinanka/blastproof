@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+
+import { SITE_URL } from "@/lib/landing/site";
+
 import "./globals.css";
 import { Providers } from "./providers";
 
@@ -14,6 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: { template: "%s · Blastproof", default: "Blastproof" },
   description: "A safety gateway for AI agents: every write is previewed, explained and approved.",
 };

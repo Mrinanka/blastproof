@@ -1924,3 +1924,57 @@ A string that is entirely one decimal number (a logged `cost_usd` such as `0.002
 
 **Decision:** not turned on in F12.
 **Why:** it would touch shadcn's generated code and is not polish.
+
+## D-290 · 2026-10-30 · Landing page libraries: `motion` only, Magic UI ideas adapted, landing-only
+
+**Decision:** one new dependency, `motion` 14.8.0 (pinned exactly, imported from `motion/react`), used through `LazyMotion` with `domAnimation`, `strict` and the `m` components, with `MotionConfig reducedMotion="user"`. The shadcn Accordion was copied in with the shadcn CLI (it uses the `radix-ui` package we already had). From Magic UI, the Number Ticker and Border Beam were copied in with the shadcn CLI and rewritten: the ticker so its server HTML holds the final value, the beam as CSS only. The Terminal and Animated Beam copies were dropped (traffic lights, an empty server render, purple colours, layout measuring). A source-rule test keeps `motion` and `components/landing/` out of dashboard code, and keeps out the full `motion.*` components.
+**Why:** the brief asked for modern motion with a small bundle and Lighthouse 90+. Motion and the landing components add about 23 KB of compressed JS to `/` (235 KB against 211 KB for `/login`, measured with Playwright on the production build).
+**Rejected:** Lenis smooth scrolling (it takes over scrolling and adds JS); a display font (Geist and Geist Mono carry the brand); Aceternity components (they read as a template); WebGL or shader backgrounds (Lighthouse cost).
+
+## D-291 · 2026-10-30 · The landing page's CSP comes from `next.config.ts`, for `/` only (SEC-29)
+
+**Decision:** `buildLandingCsp(isDev)` in `src/lib/csp.ts`, served by a `{ source: "/" }` rule in `next.config.ts`. It allows `script-src 'self' 'unsafe-inline'` (plus `'unsafe-eval'` in dev only) and `style-src 'self' 'unsafe-inline'`, with no other origin anywhere; `frame-ancestors`, `object-src`, `base-uri` and `form-action` are locked down as in the nonce CSP. The proxy's nonce CSP for `/dashboard`, `/login` and `/api` is unchanged. Checked with `curl -I` on `next start`.
+**Why:** D-028 and D-219. A nonce would make `/` dynamic, and the inline flight scripts have no stable hash. The page renders no user or agent content and loads no third-party script.
+
+## D-292 · 2026-10-30 · Landing motion: the server HTML is the final state
+
+**Decision:** the h1 and the pitch are never animated. Scroll reveals and the number count-up only rewind what is below the fold when the page hydrates, so a visitor never sees content flash away. The screenshot tilt only starts after hydration. The hero terminal is the one exception: its lines are in the HTML at Motion's starting opacity. A `<noscript><style>` shows them without JavaScript, and with reduced motion every step appears at once. CSS animations (the border beam, the architecture pulses, the caret) stop under `prefers-reduced-motion`.
+**Why:** SEO, no-JS visitors, reduced motion and layout shift all want the same thing, the final content in the HTML. A test renders the page to a string and checks the eval numbers are there.
+
+## D-293 · 2026-10-30 · The landing page's eval numbers come from a committed snapshot
+
+**Decision:** `frontend/src/lib/landing/eval-results.json`, written by `npm run sync:evals` (`frontend/scripts/sync-eval-results.mjs`, plain Node) from `backend/evals/results/rules.json`. The script refuses a run that is not rules-only. A test compares the snapshot with `rules.json` when that file exists, and otherwise skips; other tests check the snapshot's own consistency and the derived percentages. The page publishes only the rules-only numbers: 12 of 12 incidents, 51 of 51 dangerous actions, and a false block rate of 8.3% (1 of 12).
+**Why:** `rules.json` is git-ignored (`.gitignore`), so Vercel and the CI frontend job cannot read it at build time. Live-model and latency numbers stay off the page until the live eval is green (Gate 2).
+**Rejected:** reading `rules.json` at build time (it breaks every build that lacks it); committing `rules.json` (it changes on every local run).
+
+## D-294 · 2026-10-30 · The landing page is dark only, with its own tokens
+
+**Decision:** `/` renders inside `<div class="landing dark">`. `.landing` in `globals.css` sets a near-black background and two accents, `--signal` (amber, danger) and `--safe` (green, approved), registered as `bg-signal`, `text-safe` and so on. `html:has(.landing)` colours the overscroll area. `contrast.test.ts` checks ten landing text pairs at 4.5:1 or more, and the palette rule no longer exempts `app/page.tsx`.
+**Why:** the brief is an incident control room. There is no theme provider on `/` (D-287), and a class wrapper keeps the page static with no script.
+
+## D-295 · 2026-10-30 · FAQ answers stay in the static HTML (`forceMount`)
+
+**Decision:** the FAQ passes `forceMount` to `AccordionContent`. The shadcn copy of `ui/accordion.tsx` then adds `data-[state=closed]:hidden`, because Radix with `forceMount` keeps closed content mounted and visible. The close animation is lost; the open animation stays.
+**Why:** without it, Radix unmounts closed answers, so crawlers and no-JS visitors would see only the questions.
+
+## D-296 · 2026-10-30 · Site URL `https://blastproof.in`; "Watch the demo" points at `#how-it-works`
+
+**Decision:** `SITE_URL`, `DEMO_HREF`, `GITHUB_URL` and `DOCS_URL` live in `src/lib/landing/site.ts`. `metadataBase` in the root layout, Open Graph, the sitemap and robots read from them. The OG image (`opengraph-image.tsx`, with `twitter-image.tsx` re-exporting it) is built at build time with `next/og` and its bundled Geist font.
+**Why:** the owner's answers in the F13 plan. The demo video does not exist yet; when it does, change `DEMO_HREF` only.
+
+## D-297 · 2026-10-30 · The architecture diagram is server-rendered SVG, not Magic UI's Animated Beam (plan change)
+
+**Decision:** the approved plan said the diagram would use Animated Beam in a client component. Instead, HTML nodes sit on a fixed percentage grid over one SVG with `preserveAspectRatio="none"` and `vector-effect: non-scaling-stroke`. Two CSS dash pulses run along the write path: amber up to the owner, then green on to the commit. It shows from `lg` up. Below that, and for screen readers, an ordered list gives the same flow. A test checks that every node of the README's Mermaid diagram appears in the section.
+**Why:** Animated Beam measures DOM positions in JavaScript and renders an empty SVG on the server. The fixed grid needs no JS, is in the static HTML and stays correct at every width from 1024 px up.
+
+## D-298 · 2026-10-30 · The change request screenshot comes from a real workflow run
+
+**Decision:** `frontend/public/change-request.png` (2880 × 2000, 1440 × 1000 at 2x, dark theme) shows a Replit-style delete run through the real LangGraph workflow on the local dev setup: local profile, `FakeNeonClient`, the real summary and judge models from `backend/.env`. A throwaway scratch script did this by reusing `seed_demo_actions` with the real model factory. Local company dates were rebased first, so the numbers are exact: 48,213 users and 12 paying. In that run the summary model's reply failed the shape check, so the page shows the code template headline ("Deletes 48,213 rows from users (96.4% of the table), including 12 in users.paying."); the judge's API call failed, so the write went to review. Both are real product behaviour.
+**Why:** the seeded demo action uses a scripted fixture headline with no numbers, and a scripted headline with digits would present our wording as the model's.
+**Rejected:** a CSS mock of the page (the brief forbids it); the scripted seed text.
+
+## D-299 · 2026-10-30 · The owner's Canva logo is the brand mark; icons live in `src/app`
+
+**Decision:** the logo (a shield with a B and an orange bracket, exported by the owner from Canva) replaces the placeholder amber diamond in the nav and footer wordmark and in the share card. `frontend/src/app/{icon.png,apple-icon.png,favicon.ico}` carry it on a solid near-black square, so it stays visible on a light browser tab. The wordmark imports `app/icon.png` through `next/image`; `opengraph-image.tsx` reads the same file at build time and inlines it as a data URI. One source file feeds the tab icon, the page and the preview.
+**Why:** a transparent export made the white shield vanish on light tabs, and one file keeps the three uses from drifting apart. Next.js detects icons by filename only inside `src/app`.
+**Rejected:** keeping the diamond; icons in `public/` with an `icons` entry in the root layout's metadata (extra code for no gain); an SVG redrawn by hand (the owner's design is the brand, and Canva's SVG export wrapped a 205 px bitmap).

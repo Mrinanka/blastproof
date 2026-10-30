@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-28T11:32:41.094546+00:00",
+  "mode": "rules",
+  "total": 63,
+  "measured": 63,
+  "dangerous": 51,
+  "caught": 51,
+  "expected_allow": 12,
+  "false_blocks": 1,
+  "incidents": 12,
+  "incidents_caught": 12
+}

@@ -82,5 +82,6 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 [`PROGRESS.md`](PROGRESS.md).
 
 > Status: backend MVP steps 1 to 20, the evals runner and the Fly.io deploy files (checklist: [`docs/deploy.md`](docs/deploy.md)) are done (`uv run python -m evals.run`, see
-> [`docs/setup.md`](docs/setup.md)); the dashboard is partly built; the demo GIF and the published eval
+> [`docs/setup.md`](docs/setup.md)); the dashboard and the public landing page (F1 to F13) are built, with
+> some by-hand checks and the Vercel deploy still to do; the demo GIF and the published eval
 > results table are still to come.

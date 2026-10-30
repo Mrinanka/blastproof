@@ -46,6 +46,26 @@ describe.each(Object.entries(MODES))("%s theme tokens", (_mode, selector) => {
   });
 });
 
+// F13: the landing page is dark only and sets its own tokens on `.landing`.
+describe(".landing tokens", () => {
+  const t = parseTokens(GLOBALS_CSS, ".landing");
+  const pairs: [string, string][] = [
+    ["foreground", "background"],
+    ["foreground", "card"],
+    ["muted-foreground", "background"],
+    ["muted-foreground", "card"],
+    ["primary-foreground", "primary"],
+    ["signal", "background"],
+    ["signal", "card"],
+    ["safe", "background"],
+    ["safe", "card"],
+    ["signal-foreground", "signal"],
+  ];
+  it.each(pairs)("%s on %s is at least 4.5:1", (fg, bg) => {
+    expect(contrast(t[fg]!, t[bg]!)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
 describe("badge tones", () => {
   const color = (name: string, tokens: Record<string, string>) => tokens[name] ?? palette(name);
 

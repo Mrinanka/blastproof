@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import nextConfig from "../next.config";
+import { buildLandingCsp } from "../src/lib/csp";
 import {
   envExampleProblems,
   forbiddenSource,
@@ -70,6 +71,18 @@ describe("security headers (SEC-28)", () => {
   it("covers every route with the three headers", async () => {
     const rules = (await nextConfig.headers?.()) as HeaderRule[];
     expect(headerProblems(rules)).toEqual([]);
+  });
+
+  // F13 (SEC-29): the static landing page gets its own CSP here; the proxy covers the rest.
+  it("gives / exactly the landing CSP, and no other route a CSP", async () => {
+    const rules = (await nextConfig.headers?.()) as HeaderRule[];
+    const withCsp = rules.filter((r) =>
+      r.headers.some((h) => h.key.toLowerCase() === "content-security-policy"),
+    );
+    expect(withCsp.map((r) => r.source)).toEqual(["/"]);
+    expect(withCsp[0]!.headers).toEqual([
+      { key: "Content-Security-Policy", value: buildLandingCsp(false) },
+    ]);
   });
 });
 
