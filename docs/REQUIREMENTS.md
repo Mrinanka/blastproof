@@ -260,7 +260,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | SEC-25 | The BFF route adds `Authorization` from the cookie and drops incoming cookies before calling the backend. | FE F3, §12 | F3 | TEST-10 |
 | [x] | SEC-26 | The proxy rejects any POST or DELETE whose `Origin` is not the dashboard's own address. | FE F3, §11, §12; D-050 | F3 | TEST-10 |
 | [ ] | SEC-27 | Agent-provided and uploaded text (SQL, intents, documents, sample rows) is rendered as plain text; no `dangerouslySetInnerHTML`, no Markdown from uploads rendered as HTML. | CL; FE §11 | F5-F11 | *lint rule or grep; code review* |
-| [ ] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
+| [x] | SEC-28 | `X-Frame-Options: DENY` and `Referrer-Policy` are set on every page in `next.config`. | FE §11 | F1/F12 | *header check* |
 | [x] | SEC-29 | A nonce-based CSP applies to `/dashboard/*`, `/login` and `/api/*`; the static landing page uses `script-src 'self' 'unsafe-inline'` (hash-based if practical). | FE §11; D-028 | F1 (verify), F3, F13 | *header check* |
 | [x] | SEC-30 | Logout clears the session cookie. | FE §11, F4 | F3, F4 | MVP-F01 |
 | [x] | SEC-31 | The dashboard needs only `BLASTPROOF_API_URL`, `SESSION_COOKIE_NAME` and `SESSION_MAX_AGE_SECONDS` (28800), all server-side; none start with `NEXT_PUBLIC_`; `frontend/.env.local` is git-ignored with a committed `.env.example`. | FE §10 | F1, F3 | *config check* |
