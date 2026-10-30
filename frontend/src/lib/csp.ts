@@ -24,7 +24,8 @@ export function newNonce(): string {
 
 // The public landing page is static, so it cannot carry a per-request nonce (D-028). Its inline
 // flight-data scripts have no stable hash (D-219), so scripts need 'unsafe-inline' here. That is
-// acceptable because the page renders no user or agent content and loads no third-party script.
+// acceptable because the page renders no user or agent content and loads no third-party script
+// (Vercel Analytics and Speed Insights load from the deployment's own origin, D-304).
 // Served from next.config.ts for `/` only; the proxy never runs there.
 export function buildLandingCsp(isDev: boolean): string {
   const directives = [

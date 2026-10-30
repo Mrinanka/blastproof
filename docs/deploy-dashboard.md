@@ -48,12 +48,31 @@ so this is what keeps preview URLs private. (It does not cover the production do
 Turn it **off** for Preview and Production. The nonce CSP would block it and log CSP errors, and we do
 not loosen the CSP for it.
 
-## 7. Domain
+## 7. Analytics
+
+Open the project's **Analytics** tab and click Enable, then the **Speed Insights** tab and click Enable
+(D-304). Do this before the production deploy, or redeploy afterwards: Vercel sets up the random
+script path at build time, and without it the script returns 404. The code turns both on only when
+`VERCEL_ENV` is `production`, so previews and local runs send nothing. Both load from the site's own
+origin, so the CSP needs no change.
+
+After the deploy, check with the browser's DevTools on `https://blastproof.in`:
+
+- the analytics `script.js` request returns 200 and the page view request returns 2xx;
+- the console shows no CSP error on `/`, `/login` or `/dashboard`;
+- open an action page and a filtered History page, then look at the payload of the page view
+  request: it must hold no action id (UUID) and no query string. Also look at the Pages list in
+  Vercel's Analytics tab: `/dashboard/actions/[id]`, never an id.
+
+A visitor shows up in the Analytics tab within about 30 seconds (an ad blocker can stop it). Speed
+Insights needs a few visits before it shows a score.
+
+## 8. Domain
 
 Add `blastproof.in` and `www.blastproof.in` (www redirects to the apex) and set the DNS records Vercel
 shows. `SITE_URL` in `frontend/src/lib/landing/site.ts` already says `https://blastproof.in`.
 
-## 8. Probe it
+## 9. Probe it
 
 Read-only, needs no key:
 
@@ -65,12 +84,12 @@ uv run python -m app.cli dashboard-check --url https://<project>.vercel.app
 The second skips the `og:image` host check. Every line must say `ok`. A failed line names what is
 wrong, never the value the server sent.
 
-## 9. Log in by hand
+## 10. Log in by hand
 
 Log in, open the Overview, log out. Then upload one large knowledge file and check it does not 502
 (Fly's proxy may cut idle requests near 60 s; D-268 measured 48 s).
 
-## 10. LinkedIn
+## 11. LinkedIn
 
 Run the LinkedIn Post Inspector on `https://blastproof.in` (DW-F13). LinkedIn, X and Slack cache
 previews, so re-scrape after any later change.
@@ -87,3 +106,8 @@ previews, so re-scrape after any later change.
 - There is no `ignoreCommand`: `git diff HEAD^` misses multi-commit pushes and could leave production
   stale.
 - Preview deployments share the production backend; a staging backend is phase 2.
+- Analytics on Hobby: Web Analytics has 50,000 events a month and a 1-month window; Speed Insights has
+  10,000 events over a rolling 30 days and shows only the Real Experience Score. Collection pauses
+  at the limit, nothing is billed. Custom events (`track()`) and UTM parameters need Pro.
+- The redaction (`beforeSend`) covers the URL Vercel documents. The analytics script also receives
+  the page path from Next.js; the payload check in section 7 is what proves no id leaves.

@@ -103,6 +103,19 @@ describe("source rules", () => {
     expect(users).toEqual([]);
   });
 
+  // D-304: one component loads Vercel Analytics, with the redactor; the layout gates it.
+  it("imports the Vercel analytics packages only in the analytics component", () => {
+    const users = files.filter((f) => /["']@vercel\/(?:analytics|speed-insights)/.test(f.text));
+    expect(users.map((f) => f.name)).toEqual(["components/analytics/vercel-analytics.tsx"]);
+  });
+
+  it("renders the analytics only behind the production check", () => {
+    const layout = files.find((f) => f.name === "app/layout.tsx");
+    expect(layout?.text).toMatch(
+      /collectsAnalytics\(process\.env\.VERCEL_ENV\) && <VercelAnalytics \/>/,
+    );
+  });
+
   it("uses only the lazy `m` components from Motion (LazyMotion strict)", () => {
     const full = files.filter((f) => /\bmotion\.[a-z]+\b|<motion\./.test(f.text));
     expect(full.map((f) => f.name)).toEqual([]);

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { VercelAnalytics } from "@/components/analytics/vercel-analytics";
+import { collectsAnalytics } from "@/lib/analytics";
 import { SITE_URL } from "@/lib/landing/site";
 
 import "./globals.css";
@@ -31,6 +33,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <Providers>{children}</Providers>
+        {/* VERCEL_ENV is a Vercel system variable, set at build time too, so the static `/` gets it. */}
+        {collectsAnalytics(process.env.VERCEL_ENV) && <VercelAnalytics />}
       </body>
     </html>
   );
