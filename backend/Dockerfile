@@ -4,9 +4,9 @@
 # Base images are pinned by digest (D-060); Dependabot's docker entry proposes the bumps (D-263).
 
 # The uv binary only. Its tag must equal [tool.uv] required-version in pyproject.toml.
-FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
-FROM python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5 AS build
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 # uv's Docker guide: bytecode for faster starts, copied (not linked) packages, the image's own
 # Python, and no dev group.
@@ -31,7 +31,7 @@ COPY backend/alembic.ini backend/log_config.json ./
 # the folder come from Settings, not a second copy here.
 RUN python -c "from app.config import Settings; from app.services.embeddings import build_embedder; build_embedder(Settings(_env_file=None)).load()"
 
-FROM python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5 AS runtime
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58 AS runtime
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 WORKDIR /app/backend
 COPY --from=build --chown=app:app /app/backend/.venv ./.venv
