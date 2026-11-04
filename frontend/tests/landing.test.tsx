@@ -10,7 +10,8 @@ import Home from "../src/app/page";
 import { NODES } from "../src/components/landing/architecture-geometry";
 import { plain } from "../src/components/landing/mono-text";
 import { COMPANION, FAQ, FLOW, INCIDENTS, REPLIT } from "../src/lib/landing/content";
-import { evalStats } from "../src/lib/landing/eval-stats";
+import { formatDay } from "../src/lib/format";
+import { evalStats, liveStats } from "../src/lib/landing/eval-stats";
 import { AEGIS_URL, DEMO_HREF, GITHUB_URL, HEADLINE } from "../src/lib/landing/site";
 import { expectNoAxeViolations } from "./a11y";
 import { installDomStubs } from "./dom-stubs";
@@ -176,7 +177,48 @@ describe("landing page content", () => {
     expect(results).toContain(`${s.caught}/${s.dangerous}`);
     expect(results).toContain(`${s.falseBlockPercent}%`);
     expect(results).toContain(`rules-only eval, ${s.total} scenarios`);
-    expect(results).not.toMatch(/\bms\b|latency of|p95/);
+  });
+
+  it("the server HTML shows the live run's numbers and names its models (D-309)", () => {
+    const html = renderToString(<Home />);
+    const results = text(
+      Object.assign(document.createElement("div"), { innerHTML: html }).querySelector(
+        "section#results",
+      )!,
+    );
+    const l = liveStats();
+    expect(results).toContain(`${l.factsEqual}/${l.factsChecked}`);
+    expect(results).toContain(`${l.readOverheadP95Ms.toFixed(1)} ms`);
+    expect(results).toContain(`${l.previewP50Seconds.toFixed(1)} s`);
+    expect(results).toContain(`${l.previewP95Seconds} s at p95`);
+    expect(results).toContain(`${l.summaryModel} summaries, ${l.judgeModel} judge`);
+    expect(results).toContain(`caught ${l.caught}/${l.dangerous}`);
+    expect(results).toContain(`held ${l.falseBlocks} of ${l.expectedAllow} safe ones`);
+  });
+
+  it("every number in the results section comes from one of the two snapshots (FE-29)", () => {
+    const html = renderToString(<Home />);
+    const results = text(
+      Object.assign(document.createElement("div"), { innerHTML: html }).querySelector(
+        "section#results",
+      )!,
+    );
+    const s = evalStats();
+    const l = liveStats();
+    const measured = [
+      ...[s.incidentsCaught, s.incidents, s.caught, s.dangerous, s.catchRatePercent, s.total],
+      ...[s.falseBlockPercent, s.falseBlocks, s.expectedAllow, l.factsEqual, l.factsChecked],
+      ...[l.readOverheadP95Ms, l.readsMeasured, l.previewP50Seconds, l.previewP95Seconds],
+      ...[l.previewed, l.total, l.caught, l.dangerous, l.falseBlocks, l.expectedAllow],
+    ];
+    const allowed = new Set(measured.flatMap((n) => [String(n), n.toFixed(1)]));
+    const rest = [formatDay(s.day), formatDay(l.day), l.summaryModel, l.judgeModel, "p95"].reduce(
+      (acc, part) => acc.replaceAll(part, ""),
+      results,
+    );
+    const numbers = rest.match(/\d+(?:\.\d+)?/g) ?? [];
+    expect(numbers.length).toBeGreaterThan(10);
+    for (const n of numbers) expect(allowed, n).toContain(n);
   });
 
   it("the architecture has every node of the README diagram, and a text version", () => {
