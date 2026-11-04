@@ -53,6 +53,7 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 ### Fly on the OpenRouter models, DW-F07 and DW-F08 by hand, 2026-11-05
 - Fly: the five model secrets were replaced in one `fly secrets import` (owner) with the D-308 models and a prod-only OpenRouter key; `deploy-check` passes 9 of 9. A held write ("Downgrade customer 105 from pro to free") showed the model headline and a judge risk level ("Low risk"), so both models answer in production. `GROQ_API_KEY` is now unused on Fly (remove with `fly secrets unset`).
 - **DW-F07 passed (owner, deployed site):** reject worked; approve in one window, and the second window dropped its Approve button on the next poll, so the 409 toast was not seen by hand (the click never got through). FE-20 (the toast) stays covered by the automated tests only and is left open for the final audit. The approve really ran on the deployed demo database: re-seed it and run `rebase_dates` before the demo.
+- **F12 leftovers passed (owner, deployed site):** Lighthouse in light mode 100; every page at about 700 px; no CSP errors in the console in dark mode; `/nope` and `/dashboard/nope` (signed in) show the 404 page ("We could not find that page."). Ticked: FE-27, DW-F12; F12 is done.
 - **DW-F08 passed (owner, deployed site):** a filter change updates the URL and Back restores the view. Ticked: DW-F07, DW-F08, FE-21; F7 and F8 are done. CONV-12 stays open (code review, final audit).
 
 ### Live eval numbers published, 2026-11-04, D-309
@@ -925,7 +926,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 ## Stage 5: complete and ship
 - [x] F10. Knowledge
 - [x] F11. Agents, users and rules
-- [~] F12. Polish (built; dark-mode Lighthouse 100; light mode, 700 px, CSP console and 404-with-cookie checks parked by the owner)
+- [x] F12. Polish (DW-F12 passed by hand, owner, 2026-11-05: Lighthouse 100 in light and dark, 700 px, no CSP errors in dark mode, both 404s)
 - [x] F13. Landing page (Lighthouse 100/100/100/100 on the production build; LinkedIn preview checked on `https://blastproof.in`, owner, 2026-10-31)
 - [x] F13.1. AegisContext companion section (D-306): built and checked by me; checked by hand by the owner, 2026-11-04
 - [~] F13.2. Architecture diagram redesign (D-307): built and checked by me in headless Chrome; the owner's by-hand look is still owed

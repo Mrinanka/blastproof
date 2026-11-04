@@ -298,7 +298,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-24 | Agents page lists the user's agents (key prefix, active state); create shows the key once with a copy button and the setup lines exactly as returned by `POST /v1/agents`, plus a link to the README's hook steps; deactivate asks for confirmation. | FE §7, F11 | F11 | DW-F11; MVP-F07 |
 | [x] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
 | [x] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
-| [ ] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
+| [x] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
 | [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, an AegisContext companion mention (D-306), FAQ, footer. | FE F13 | F13 | DW-F13 |
 | [x] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
 
@@ -413,7 +413,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
 | [x] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
 | [x] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
-| [ ] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
+| [x] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
 | [x] | DW-F13 | A logged-out visitor sees the landing page, "Log in" leads to `/login`, Lighthouse scores 90+ for performance, accessibility and SEO, and the LinkedIn link preview looks right. | FE F13 | F13 | Lighthouse + manual |
 
 ### Stage gates
