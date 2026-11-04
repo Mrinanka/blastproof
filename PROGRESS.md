@@ -50,6 +50,11 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
 
+### Fly on the OpenRouter models, DW-F07 and DW-F08 by hand, 2026-11-05
+- Fly: the five model secrets were replaced in one `fly secrets import` (owner) with the D-308 models and a prod-only OpenRouter key; `deploy-check` passes 9 of 9. A held write ("Downgrade customer 105 from pro to free") showed the model headline and a judge risk level ("Low risk"), so both models answer in production. `GROQ_API_KEY` is now unused on Fly (remove with `fly secrets unset`).
+- **DW-F07 passed (owner, deployed site):** reject worked; approve in one window, and the second window dropped its Approve button on the next poll, so the 409 toast was not seen by hand (the click never got through). FE-20 (the toast) stays covered by the automated tests only and is left open for the final audit. The approve really ran on the deployed demo database: re-seed it and run `rebase_dates` before the demo.
+- **DW-F08 passed (owner, deployed site):** a filter change updates the URL and Back restores the view. Ticked: DW-F07, DW-F08, FE-21; F7 and F8 are done. CONV-12 stays open (code review, final audit).
+
 ### Live eval numbers published, 2026-11-04, D-309
 - Landing page: a "With real models" row in Results (37/37 exact previews, 9.4 ms read overhead at p95, 8.6 s median preview) from the new `live-eval-results.json`; the source line names both runs and the models. `sync-eval-results.mjs` gained `--live` (refuses a non-green run). The rules-only snapshot was refreshed (same numbers, 2026-11-04), so the local `equals rules.json` test passes again. README: an "Eval results" table and a current status line; `docs/setup.md` §10 says how to publish new numbers.
 - Tests: new cases in `landing-content.test.ts` (live snapshot, model name, the script's refusals) and `landing.test.tsx` (live numbers in the server HTML; every number in the section comes from a snapshot). 740 Vitest pass; lint, typecheck, Prettier and `npm run build` clean (`/` still static). Mutation checks: an unmeasured number on the page and a dropped missed-incident refusal each turned a test red.
@@ -912,8 +917,8 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Backend deployed to Fly.io (backend plan section 15)
   - Built 2026-10-28 (D-261 to D-264), not yet deployed: `backend/Dockerfile`, `.dockerignore`, `fly.toml`, `deploy.yml`, `image.yml`, `docker/image-smoke.sh`, `deploy/neon/blastproof-app.sql`, `deploy-check`, `docs/deploy.md`, a Dependabot `docker` entry. Fast tier green; `--integration` run for `test_neon_app_sql.py` only. The local `docker build` and `docker/image-smoke.sh` pass (7 checks, 2026-10-28). Deployed 2026-10-28: https://blastproof.fly.dev, one machine in `iad`, 1 GB (D-266, D-267); `deploy-check` 9 of 9; bootstrap run; Claude Code workspace `check` clean; read, hook block, held-and-rejected delete and a 48 s long poll all worked live (D-268). Still open: the `release` branch with protection, the `production` environment and `FLY_API_TOKEN` (OPS-12 closes when the first Deploy run is green), a direct `psql` hook check, and the old admin `blastproof@gmail.com` whose password is unknown (deactivate or ignore). OPS-12 stays open until the first push to `release` goes green.
 - [x] F6. Review queue
-- [~] F7. Change request page (built, DW-F07 by hand pending)
-- [~] F8. History (built, DW-F08 by hand pending)
+- [x] F7. Change request page (DW-F07 passed by hand on the deployed site, owner, 2026-11-05)
+- [x] F8. History (DW-F08 passed by hand on the deployed site, owner, 2026-11-05)
 - [x] F9. Overview
 - [~] GATE AUDIT: Gate 2, evals green and backend deployed ## eval is not green yet, we will come back to this
 
