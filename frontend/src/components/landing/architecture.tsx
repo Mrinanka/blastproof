@@ -1,67 +1,180 @@
+import {
+  Ban,
+  Bot,
+  Database,
+  GitBranch,
+  GitCommitHorizontal,
+  Lock,
+  Scale,
+  ScrollText,
+  ShieldCheck,
+  UserCheck,
+} from "lucide-react";
+
 import { FLOW } from "@/lib/landing/content";
 import { cn } from "@/lib/utils";
 
+import {
+  BOUNDARY,
+  CYCLE,
+  EDGES,
+  GLOWS,
+  JOURNEYS,
+  LABELS,
+  NODES,
+  NODE_BY_ID,
+  ROUTES,
+  VIEW,
+  box,
+  chevron,
+  fmtSeries,
+  glowRect,
+  type EdgeDef,
+  type EdgeTone,
+  type IconName,
+  type NodeDef,
+  type PacketColor,
+  type Series,
+  type Tone,
+} from "./architecture-geometry";
+import { BorderBeam } from "./effects/border-beam";
 import { Reveal } from "./reveal";
 import { Section } from "./section";
 
-// The README's Mermaid diagram, drawn on a fixed 100 x 100 grid: HTML nodes over one SVG with
-// `preserveAspectRatio="none"`, so the lines stretch with the box and need no measuring or JS.
-// Two CSS pulses travel the write path: to the owner (amber), then on to the commit (green).
-// Desktop only; the ordered list below is the text version and the mobile view (D-297).
-type Tone = "plain" | "signal" | "safe" | "core";
-const NODES: { id: string; x: number; y: number; title: string; sub?: string; tone: Tone }[] = [
-  { id: "agent", x: 9, y: 22, title: "AI agent", sub: "Claude Code", tone: "plain" },
-  { id: "gw", x: 30, y: 22, title: "Blastproof backend", sub: "FastAPI", tone: "core" },
-  { id: "preview", x: 51, y: 22, title: "Preview on a branch", tone: "plain" },
-  { id: "rules", x: 71, y: 22, title: "Rules, then LLM judge", tone: "plain" },
-  { id: "blocked", x: 92, y: 22, title: "Blocked", tone: "signal" },
-  {
-    id: "own",
-    x: 30,
-    y: 78,
-    title: "Blastproof database",
-    sub: "actions · audit · knowledge",
-    tone: "plain",
-  },
-  { id: "company", x: 51, y: 78, title: "Company database", tone: "plain" },
-  { id: "commit", x: 71, y: 78, title: "Commit what was previewed", tone: "safe" },
-  { id: "owner", x: 92, y: 78, title: "Owner approves", sub: "in the dashboard", tone: "plain" },
-];
+// The README's Mermaid diagram as one picture on a fixed 1104 x 500 canvas (F13.2, D-307, which
+// supersedes D-297). The SVG keeps its aspect ratio and the cards are placed in the same units,
+// so lines meet card edges at every width and round shapes stay round. Everything is computed
+// from constants in architecture-geometry.ts: nothing is measured in the browser, there is no
+// client component, and the whole picture is in the server HTML. The packets and node glows are
+// SVG animations on one shared clock inside `.landing-arch-motion`, which reduced motion hides,
+// leaving a complete static picture. Desktop only; the ordered list below is the text version
+// and the mobile view.
 
-const EDGES: { d: string; className?: string; dashed?: boolean }[] = [
-  { d: "M9 22 Q19.5 14 30 22" },
-  { d: "M9 22 Q19.5 30 30 22", dashed: true },
-  { d: "M30 22 L51 78" },
-  { d: "M30 22 L51 22" },
-  { d: "M51 22 L71 22" },
-  { d: "M71 22 L92 22", className: "stroke-signal/60" },
-  { d: "M71 22 L71 78", className: "stroke-safe/60" },
-  { d: "M71 22 L92 78" },
-  { d: "M92 78 L71 78", className: "stroke-safe/60" },
-  { d: "M71 78 L51 78", className: "stroke-safe/60" },
-  { d: "M30 22 L30 78", dashed: true },
-];
-
-// Edge labels: position on the grid, and which side of the line they sit.
-const LABELS: { text: string; x: number; y: number; place: "above" | "below" | "right" }[] = [
-  { text: "MCP", x: 19.5, y: 22, place: "above" },
-  { text: "hook", x: 19.5, y: 22, place: "below" },
-  { text: "write", x: 40.5, y: 22, place: "above" },
-  { text: "read", x: 40.5, y: 50, place: "right" },
-  { text: "block", x: 81.5, y: 22, place: "above" },
-  { text: "allow", x: 71, y: 50, place: "right" },
-  { text: "review", x: 81.5, y: 50, place: "right" },
-  { text: "approve", x: 81.5, y: 78, place: "above" },
-];
-
-const TONES: Record<Tone, string> = {
-  plain: "",
-  core: "border-signal/40",
-  signal: "border-signal/50 text-signal",
-  safe: "border-safe/50 text-safe",
+const ICONS: Record<IconName, typeof Bot> = {
+  Bot,
+  ShieldCheck,
+  ScrollText,
+  GitBranch,
+  Scale,
+  UserCheck,
+  GitCommitHorizontal,
+  Ban,
+  Database,
 };
 
+const NODE_TONE: Record<Tone, { card: string; icon: string }> = {
+  plain: { card: "", icon: "" },
+  core: {
+    card: "landing-node-core border-signal/40",
+    icon: "border-signal/30 bg-signal/12 text-signal",
+  },
+  signal: { card: "border-signal/35", icon: "text-signal" },
+  safe: { card: "border-safe/35", icon: "text-safe" },
+};
+
+const LABEL_TONE = {
+  muted: "text-muted-foreground",
+  signal: "text-signal",
+  safe: "text-safe",
+} as const;
+
+// Gradient stops along each edge, from its first point to its last.
+const STOPS: Record<EdgeTone, { at: number; color: string; alpha: number }[]> = {
+  neutral: [
+    { at: 0, color: "foreground", alpha: 0.16 },
+    { at: 1, color: "foreground", alpha: 0.26 },
+  ],
+  write: [
+    { at: 0, color: "foreground", alpha: 0.16 },
+    { at: 1, color: "signal", alpha: 0.45 },
+  ],
+  signal: [
+    { at: 0, color: "foreground", alpha: 0.22 },
+    { at: 0.35, color: "signal", alpha: 0.55 },
+    { at: 1, color: "signal", alpha: 0.55 },
+  ],
+  safe: [
+    { at: 0, color: "foreground", alpha: 0.22 },
+    { at: 0.35, color: "safe", alpha: 0.55 },
+    { at: 1, color: "safe", alpha: 0.55 },
+  ],
+  approve: [
+    { at: 0, color: "signal", alpha: 0.55 },
+    { at: 1, color: "safe", alpha: 0.55 },
+  ],
+};
+
+const CHEVRON_STROKE: Record<EdgeTone, string> = {
+  neutral: "stroke-foreground/40",
+  write: "stroke-signal/60",
+  signal: "stroke-signal/70",
+  safe: "stroke-safe/70",
+  approve: "stroke-safe/70",
+};
+
+const PACKET_FILL: Record<PacketColor, string> = {
+  neutral: "fill-foreground",
+  signal: "fill-signal",
+  safe: "fill-safe",
+};
+
+const GLOW_FILL: Record<PacketColor, string> = {
+  neutral: "fill-foreground/30",
+  signal: "fill-signal/60",
+  safe: "fill-safe/60",
+};
+
+const pctX = (x: number) => `${(x / VIEW.w) * 100}%`;
+const pctY = (y: number) => `${(y / VIEW.h) * 100}%`;
+const gradientId = (edge: EdgeDef) => `arch-line-${edge.id}`;
+const CLOCK = { dur: `${CYCLE}s`, repeatCount: "indefinite" } as const;
+
+// An SVG animation of one number over the shared clock; a flat series needs none.
+function Animate({
+  attr,
+  series,
+  type,
+}: {
+  attr: "opacity" | "transform";
+  series: Series;
+  type?: "scale";
+}) {
+  if (series.values.every((v) => v === series.values[0])) return null;
+  const common = {
+    attributeName: attr,
+    values: fmtSeries(series.values),
+    keyTimes: fmtSeries(series.keyTimes),
+    ...CLOCK,
+  };
+  return type ? <animateTransform {...common} type={type} /> : <animate {...common} />;
+}
+
+function NodeCard({ node }: { node: NodeDef }) {
+  const b = box(node);
+  const Icon = ICONS[node.icon];
+  const tone = NODE_TONE[node.tone];
+  return (
+    <div
+      style={{
+        left: pctX(b.left),
+        top: pctY(b.top),
+        width: pctX(node.w),
+        height: pctY(node.h),
+      }}
+      className={cn("landing-node", tone.card)}
+    >
+      <span className={cn("landing-node-icon", tone.icon)}>
+        <Icon className="size-[56%]" strokeWidth={1.75} />
+      </span>
+      <p className="landing-node-title">{node.title}</p>
+      {node.sub ? <p className="landing-node-sub">{node.sub}</p> : null}
+      {node.tone === "core" ? <BorderBeam /> : null}
+    </div>
+  );
+}
+
 export function Architecture() {
+  const core = NODE_BY_ID.gw;
   return (
     <Section
       id="architecture"
@@ -70,70 +183,148 @@ export function Architecture() {
       intro="Reads go straight through. Writes take the long way, and the owner has the last word on anything risky."
     >
       <Reveal>
-        <div aria-hidden="true" className="relative hidden h-[380px] lg:block">
+        <div aria-hidden="true" className="landing-arch relative mx-auto hidden w-full lg:block">
+          <div className="landing-arch-grid" />
+          <div className="landing-halo" style={{ left: pctX(core.cx), top: pctY(core.cy) }} />
           <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
+            viewBox={`0 0 ${VIEW.w} ${VIEW.h}`}
             className="absolute inset-0 size-full overflow-visible"
           >
-            {EDGES.map((edge) => (
-              <path
-                key={edge.d}
-                d={edge.d}
-                fill="none"
-                vectorEffect="non-scaling-stroke"
-                strokeWidth={1}
-                strokeDasharray={edge.dashed ? "4 4" : undefined}
-                className={edge.className ?? "stroke-muted-foreground/40"}
-              />
-            ))}
-            <path
-              d="M9 22 L30 22 L51 22 L71 22 L92 78"
-              pathLength={1}
+            <defs>
+              <filter id="arch-blur" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="9" />
+              </filter>
+              {EDGES.map((edge) => {
+                const first = edge.points[0]!;
+                const last = edge.points[edge.points.length - 1]!;
+                return (
+                  <linearGradient
+                    key={edge.id}
+                    id={gradientId(edge)}
+                    gradientUnits="userSpaceOnUse"
+                    x1={first[0]}
+                    y1={first[1]}
+                    x2={last[0]}
+                    y2={last[1]}
+                  >
+                    {STOPS[edge.tone].map((stop) => (
+                      <stop
+                        key={stop.at}
+                        offset={stop.at}
+                        style={{ stopColor: `var(--${stop.color})`, stopOpacity: stop.alpha }}
+                      />
+                    ))}
+                  </linearGradient>
+                );
+              })}
+            </defs>
+            <rect
+              x={BOUNDARY.x}
+              y={BOUNDARY.y}
+              width={BOUNDARY.w}
+              height={BOUNDARY.h}
+              rx={BOUNDARY.rx}
               fill="none"
-              vectorEffect="non-scaling-stroke"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="landing-pulse landing-pulse-write stroke-signal"
+              strokeDasharray="4 4"
+              className="stroke-foreground/22"
             />
-            <path
-              d="M92 78 L71 78 L51 78"
-              pathLength={1}
-              fill="none"
-              vectorEffect="non-scaling-stroke"
-              strokeWidth={2}
-              strokeLinecap="round"
-              className="landing-pulse landing-pulse-commit stroke-safe"
-            />
+            {EDGES.map((edge) => {
+              const d = ROUTES[edge.id].d;
+              return (
+                <g key={edge.id} fill="none" strokeLinecap="round" strokeLinejoin="round">
+                  {edge.glow ? (
+                    <path
+                      d={d}
+                      stroke={`url(#${gradientId(edge)})`}
+                      strokeWidth={6}
+                      opacity={0.1}
+                    />
+                  ) : null}
+                  <path
+                    d={d}
+                    stroke={`url(#${gradientId(edge)})`}
+                    strokeWidth={1.25}
+                    strokeDasharray={edge.dashed ? "5 5" : undefined}
+                  />
+                  {edge.arrow ? (
+                    <path
+                      d={chevron(edge.points)}
+                      strokeWidth={1.25}
+                      className={CHEVRON_STROKE[edge.tone]}
+                    />
+                  ) : null}
+                </g>
+              );
+            })}
+            <g className="landing-arch-motion">
+              {GLOWS.map((glow) => {
+                const r = glowRect(NODE_BY_ID[glow.node]);
+                return (
+                  <rect
+                    key={`${glow.node}-${glow.tone}`}
+                    x={r.x}
+                    y={r.y}
+                    width={r.w}
+                    height={r.h}
+                    rx={20}
+                    opacity={0}
+                    filter="url(#arch-blur)"
+                    className={GLOW_FILL[glow.tone]}
+                  >
+                    <Animate attr="opacity" series={glow.series} />
+                  </rect>
+                );
+              })}
+              {JOURNEYS.map((packet) => (
+                <g key={packet.id} opacity={0}>
+                  <Animate attr="opacity" series={packet.visible} />
+                  <animateMotion
+                    path={packet.d}
+                    keyPoints={fmtSeries(packet.motion.keyPoints)}
+                    keyTimes={fmtSeries(packet.motion.keyTimes)}
+                    calcMode="linear"
+                    {...CLOCK}
+                  />
+                  <g>
+                    {packet.shrink ? (
+                      <Animate attr="transform" type="scale" series={packet.shrink} />
+                    ) : null}
+                    {(["neutral", "signal", "safe"] as const).map((color) => (
+                      <g key={color} opacity={packet.colors[color].values[0]}>
+                        <Animate attr="opacity" series={packet.colors[color]} />
+                        <circle r={4} opacity={0.25} className={PACKET_FILL[color]} />
+                        <circle r={1.5} className={PACKET_FILL[color]} />
+                      </g>
+                    ))}
+                  </g>
+                </g>
+              ))}
+            </g>
           </svg>
+          <p
+            className="landing-arch-tab"
+            style={{ left: pctX(BOUNDARY.x + 12), top: pctY(BOUNDARY.y) }}
+          >
+            <Lock className="landing-arch-lock" strokeWidth={2} />
+            credential boundary
+          </p>
+          <p
+            className="landing-arch-caption"
+            style={{ left: pctX(BOUNDARY.x + 16), top: pctY(BOUNDARY.y + 134) }}
+          >
+            only the backend holds the keys
+          </p>
           {LABELS.map((label) => (
             <span
               key={label.text}
-              style={{ left: `${label.x}%`, top: `${label.y}%` }}
-              className={cn(
-                "absolute bg-background px-1 font-mono text-[10.5px] text-muted-foreground",
-                label.place === "above" && "-translate-x-1/2 -translate-y-[calc(100%+10px)]",
-                label.place === "below" && "-translate-x-1/2 translate-y-[10px]",
-                label.place === "right" && "translate-x-2 -translate-y-1/2",
-              )}
+              style={{ left: pctX(label.x), top: pctY(label.y) }}
+              className={cn("landing-arch-label", LABEL_TONE[label.tone])}
             >
               {label.text}
             </span>
           ))}
           {NODES.map((node) => (
-            <div
-              key={node.id}
-              style={{ left: `${node.x}%`, top: `${node.y}%` }}
-              className={cn(
-                "landing-edge absolute flex min-h-[4.5rem] w-36 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-lg bg-card px-3 py-2 text-center xl:w-40",
-                TONES[node.tone],
-              )}
-            >
-              <p className="text-[13px] leading-snug font-medium">{node.title}</p>
-              {node.sub ? (
-                <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">{node.sub}</p>
-              ) : null}
-            </div>
+            <NodeCard key={node.id} node={node} />
           ))}
         </div>
       </Reveal>

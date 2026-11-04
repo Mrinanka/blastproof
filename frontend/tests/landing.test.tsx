@@ -7,6 +7,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import Home from "../src/app/page";
+import { NODES } from "../src/components/landing/architecture-geometry";
 import { plain } from "../src/components/landing/mono-text";
 import { COMPANION, FAQ, FLOW, INCIDENTS, REPLIT } from "../src/lib/landing/content";
 import { evalStats } from "../src/lib/landing/eval-stats";
@@ -197,6 +198,46 @@ describe("landing page content", () => {
         list.some((l) => l.includes(line)),
         line,
       ).toBe(true);
+  });
+
+  it("draws the diagram in the server HTML: paths, animation, every card, no client code", () => {
+    const html = renderToString(<Home />);
+    const start = html.indexOf('id="architecture"');
+    const arch = html.slice(start, html.indexOf("</section>", start));
+    expect(arch).toContain("<path");
+    expect(arch).toContain("<animateMotion");
+    for (const node of NODES) expect(arch, node.title).toContain(node.title.replace("&", "&amp;"));
+    const source = readFileSync(
+      resolve(__dirname, "../src/components/landing/architecture.tsx"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/["']use client["']/);
+    expect(source).not.toMatch(/useEffect|getBoundingClientRect|offsetWidth/);
+  });
+
+  it("hides the diagram from assistive tech and groups the animation for reduced motion", () => {
+    const root = renderPage();
+    const arch = root.querySelector("section#architecture")!;
+    const diagram = arch.querySelector(".landing-arch")!;
+    expect(diagram.getAttribute("aria-hidden")).toBe("true");
+    const motion = diagram.querySelector("g.landing-arch-motion")!;
+    expect(motion).not.toBeNull();
+    // Every packet and glow lives in that one group, so a single rule can hide them.
+    expect(
+      diagram.querySelectorAll("animateMotion, animate, animateTransform").length,
+    ).toBeGreaterThan(0);
+    for (const el of diagram.querySelectorAll("animateMotion, animate, animateTransform")) {
+      expect(el.closest("g.landing-arch-motion"), el.outerHTML.slice(0, 60)).not.toBeNull();
+    }
+  });
+
+  it("hides the packets and glows under prefers-reduced-motion", () => {
+    const css = readFileSync(resolve(__dirname, "../src/app/globals.css"), "utf8");
+    const block = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(block.slice(0, block.indexOf("\n}\n"))).toMatch(
+      /\.landing-arch-motion\s*\{\s*display:\s*none/,
+    );
+    expect(css).not.toContain("landing-pulse");
   });
 
   it("renders backticked words in monospace without the backticks", () => {

@@ -208,38 +208,124 @@ html:has(.landing) {
   }
 }
 
-/* A request pulse along an SVG path drawn with pathLength="1": first along the write path to the
-   owner, then from the owner's approval on to the commit. */
-.landing-pulse {
-  stroke-dasharray: 0.05 1;
-  stroke-dashoffset: 0.05;
-  animation-duration: 7s;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
+/* The architecture diagram (F13.2, D-307): a 1104 x 500 canvas whose SVG and cards are placed in
+   the same units. `--u` is one unit in px; boxes use percentages of the frame, text and padding
+   use `--u`. */
+.landing-arch {
+  aspect-ratio: 1104 / 500;
+  max-width: 1104px;
+  container-type: inline-size;
+  --u: calc(100cqw / 1104);
 }
-.landing-pulse-write {
-  animation-name: landing-pulse-write;
+.landing-arch-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 75% at 35% 47%, #000 30%, transparent 100%);
 }
-.landing-pulse-commit {
-  animation-name: landing-pulse-commit;
+/* A frosted card. The border colour is left to the utilities so a tone class can set it. */
+.landing-node {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--u) * 6);
+  padding: calc(var(--u) * 10) calc(var(--u) * 12);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: calc(var(--u) * 14);
+  background: color-mix(in oklch, var(--card) 88%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 6%),
+    0 10px 30px -14px oklch(0 0 0 / 70%);
 }
-@keyframes landing-pulse-write {
-  0% {
-    stroke-dashoffset: 0.05;
+.landing-node-core {
+  justify-content: center;
+}
+.landing-node-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--u) * 24);
+  height: calc(var(--u) * 24);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--u) * 7);
+  background: oklch(1 0 0 / 4%);
+}
+.landing-node-title {
+  font-size: max(10px, calc(var(--u) * 13));
+  font-weight: 500;
+  line-height: 1.25;
+}
+.landing-node-sub {
+  margin-top: calc(var(--u) * -4);
+  font-family: var(--font-geist-mono);
+  font-size: max(10px, calc(var(--u) * 10.5));
+  line-height: 1.25;
+  color: var(--muted-foreground);
+}
+.landing-arch-label,
+.landing-arch-tab,
+.landing-arch-caption {
+  position: absolute;
+  z-index: 20;
+  font-family: var(--font-geist-mono);
+  font-size: max(10px, calc(var(--u) * 10));
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.landing-arch-label {
+  translate: -50% -50%;
+  padding: calc(var(--u) * 2) calc(var(--u) * 6);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+}
+.landing-arch-tab {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 4);
+  translate: 0 -50%;
+  padding: 0 calc(var(--u) * 6);
+  background: var(--background);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.landing-arch-lock {
+  width: calc(var(--u) * 11);
+  height: calc(var(--u) * 11);
+}
+.landing-arch-caption {
+  max-width: calc(var(--u) * 104);
+  color: var(--muted-foreground);
+  white-space: normal;
+}
+/* A soft amber light behind the backend that slowly breathes. */
+.landing-halo {
+  position: absolute;
+  width: calc(var(--u) * 280);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--signal) 14%, transparent),
+    transparent 68%
+  );
+  animation: landing-halo 7s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes landing-halo {
+  from {
+    opacity: 0.65;
+    scale: 0.97;
   }
-  50%,
-  100% {
-    stroke-dashoffset: -1;
-  }
-}
-@keyframes landing-pulse-commit {
-  0%,
-  58% {
-    stroke-dashoffset: 0.05;
-  }
-  85%,
-  100% {
-    stroke-dashoffset: -1;
+  to {
+    opacity: 1;
+    scale: 1.03;
   }
 }
 
@@ -259,7 +345,9 @@ html:has(.landing) {
   .landing *::after {
     animation: none !important;
   }
-  .landing-pulse {
+  /* SVG (SMIL) animations are not CSS animations, so hide the packets and glows outright; the
+     static picture underneath is complete (D-307). */
+  .landing-arch-motion {
     display: none;
   }
 }

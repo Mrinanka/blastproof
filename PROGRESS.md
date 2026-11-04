@@ -129,6 +129,11 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - By hand (me): `next start` and `curl -I /`: the landing CSP, `X-Frame-Options` and `Referrer-Policy` are present and `next.config.ts` and `lib/csp.ts` are unchanged. Playwright at 1440 and 390 px, with JS off, with reduced motion and with `colorScheme: light`: the section is visible, no horizontal scroll, no console or CSP errors, the page stays dark; Tab reaches the link with a 2 px outline. The install line wraps at 390 px.
 - **Checked by hand (owner, 2026-11-04):** the owner checked the section and the owed items by hand and confirmed all is good; no scores were given to me, so none are recorded here. Optional: re-scrape the LinkedIn and X previews (the share image did not change).
 
+### F13.2 Architecture diagram redesign, built 2026-11-04, D-307
+- New (`frontend/`): `components/landing/architecture-geometry.ts` (pure TS: nodes, edges, `route()`, journeys, packet and glow timing), `tests/architecture-geometry.test.ts`. Rewritten: `components/landing/architecture.tsx` (still a server component). Changed: `app/globals.css` (`.landing-arch*`, `.landing-node*`, `.landing-halo`; removed `.landing-pulse*`; reduced motion hides `.landing-arch-motion`), `lib/landing/content.ts` (one `FLOW` line about the credential boundary), `tests/landing.test.tsx`, `tests/contrast.test.ts` (text on the worst-case glass card). No new dependencies; README and the Mermaid diagram unchanged.
+- Tests: 37 geometry cases (route lengths, edges start and end on card borders, no crossings except the shared fork stem, key times and key points valid, constant 420 units/s, at most two packets at once), three landing cases (server HTML has the paths, `animateMotion` and every card title; no client code or measuring; `aria-hidden` and the motion group; the reduced-motion rule), and four contrast cases. Lint and typecheck are clean; my files pass Prettier (the rest of the working tree is CRLF, so `format:check` flags 185 old files here). Vitest: 729 of 730 pass; the one failure is `landing-content.test.ts > equals backend/evals/results/rules.json` (the git-ignored local file differs from the snapshot), as in F13.1.
+- Deviation from the plan: I skipped the standalone scratchpad mockup and built the real component, so the look was checked on the real page (`npm run dev`) in headless Chrome at 1280 and 1024 px windows (diagram at 1104 and 976 px) and at several points of the animation clock. Nothing is committed, so a change after your sign-off is as cheap as it would have been in a mockup.
+- **Still owed (owner):** look at `/#architecture` at 1024, 1280 and 1440 px; turn on reduced-motion emulation and confirm a complete static picture; confirm the list below `lg`; confirm the SVG is in the page source; paint and CPU check in DevTools (the SMIL group and one blur filter). I did not run `npm run build` or a Lighthouse pass.
 ### F13, built 2026-10-30, D-290 to D-299
 - New (`frontend/`):
   - `app/page.tsx` (replaces the starter), `app/{opengraph-image,twitter-image}.tsx`, `app/{sitemap,robots}.ts`.
@@ -908,6 +913,7 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [~] F12. Polish (built; dark-mode Lighthouse 100; light mode, 700 px, CSP console and 404-with-cookie checks parked by the owner)
 - [x] F13. Landing page (Lighthouse 100/100/100/100 on the production build; LinkedIn preview checked on `https://blastproof.in`, owner, 2026-10-31)
 - [x] F13.1. AegisContext companion section (D-306): built and checked by me; checked by hand by the owner, 2026-11-04
+- [~] F13.2. Architecture diagram redesign (D-307): built and checked by me in headless Chrome; the owner's by-hand look is still owed
 - [x] Dashboard deployed to Vercel (`https://blastproof.in`, production branch `release`, D-300 to D-303)
 - [ ] FINAL AUDIT against both MVP done checklists
 - [ ] Demo video recorded

@@ -147,6 +147,7 @@ export const FLOW = [
   "Allow commits exactly what was previewed. Block stops the write.",
   "Review waits for the owner to approve in the dashboard, then commits.",
   "Blastproof's own database holds the actions, the audit trail and the knowledge.",
+  "The company database's credentials live only in the backend; the agent never holds them.",
 ];
 
 // The AegisContext companion section (F13.1, D-306). Every fact below is from the AegisContext
