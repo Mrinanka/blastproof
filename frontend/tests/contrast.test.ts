@@ -93,3 +93,38 @@ describe("badge tones", () => {
     );
   });
 });
+
+// F13.2 (D-307): text on the frosted architecture cards. A card is the card colour at 88% over
+// whatever is behind it, and the brightest thing that can be behind it is the page background
+// plus the backend's halo (14% signal) or a node glow at its peak (60% fill x 0.8 opacity).
+describe("architecture glass cards", () => {
+  const t = parseTokens(GLOBALS_CSS, ".landing");
+  const toSrgb = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+  const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const rgb = (value: string) => oklchToLinearRgb(value).map(toSrgb);
+  const mix = (top: number[], bottom: number[], alpha: number) =>
+    top.map((c, i) => c * alpha + bottom[i]! * (1 - alpha));
+  const lum = (srgb: number[]) => luminance(srgb.map(toLinear) as [number, number, number]);
+  const ratio = (a: number[], b: number[]) => {
+    const [x, y] = [lum(a), lum(b)];
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+
+  const background = rgb(t["background"]!);
+  const backdrops = [
+    mix(rgb(t["signal"]!), background, 0.14),
+    mix(rgb(t["signal"]!), background, 0.6 * 0.8),
+    mix(rgb(t["safe"]!), background, 0.6 * 0.8),
+    mix(rgb(t["foreground"]!), background, 0.3 * 0.8),
+  ];
+
+  it.each(["foreground", "muted-foreground", "signal", "safe"])(
+    "%s is at least 4.5:1 on the card over its brightest backdrop",
+    (name) => {
+      for (const backdrop of backdrops) {
+        const fill = mix(rgb(t["card"]!), backdrop, 0.88);
+        expect(ratio(rgb(t[name]!), fill), name).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
+});

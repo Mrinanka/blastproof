@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Architecture } from "@/components/landing/architecture";
 import { ChangeRequestShot } from "@/components/landing/change-request-shot";
+import { Companion } from "@/components/landing/companion";
 import { Different } from "@/components/landing/different";
 import { Faq } from "@/components/landing/faq";
 import { Footer } from "@/components/landing/footer";
@@ -58,6 +59,7 @@ export default function Home() {
           <Results />
           <Architecture />
           <Security />
+          <Companion />
           <Faq />
         </main>
         <Footer />
