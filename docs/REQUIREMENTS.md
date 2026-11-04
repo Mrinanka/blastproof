@@ -299,7 +299,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
 | [x] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
 | [ ] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
-| [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, FAQ, footer. | FE F13 | F13 | DW-F13 |
+| [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, an AegisContext companion mention (D-306), FAQ, footer. | FE F13 | F13 | DW-F13 |
 | [x] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
 
 ## EVAL: evals
