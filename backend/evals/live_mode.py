@@ -82,7 +82,7 @@ class LiveModeError(EvalError):
 PROFILE_MISMATCH_TEXT = (
     "reads are measured through the main system, which this Blastproof database stores with another"
     " profile than COMPANY_CONNECTION_PROFILE=local; use a database where it is local (a fresh"
-    " Compose volume, as the nightly workflow does)"
+    " Compose volume, as the evals workflow does)"
 )
 
 

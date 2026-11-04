@@ -270,7 +270,7 @@ Evals prove Blastproof works: they measure how many dangerous actions it catches
 | Added latency        | Overhead on reads and writes                               | Load tests, p50 and p95                             |
 | Cost per action      | LLM spend per intercepted write                            | LangSmith token tracking                            |
 
-**Process:** incident replays and rule-only evals run in GitHub Actions on every pull request (no LLM cost); the full LLM eval runs nightly, on demand, and before any model change. A drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
+**Process:** incident replays and rule-only evals run in GitHub Actions on every pull request (no LLM cost); the full LLM eval runs on demand and before any model change (no schedule: it costs money, D-308). A drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
 
 ## 15. Observability
 
