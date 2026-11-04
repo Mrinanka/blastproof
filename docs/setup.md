@@ -158,6 +158,11 @@ rate, explanation accuracy and latency. Run it from `backend/`.
   `LANGSMITH_API_KEY`; and the variables `SUMMARY_MODEL`, `JUDGE_MODEL` and `LLM_PRICES`. Use an
   OpenRouter key with its own credit limit. Run the workflow before you change `SUMMARY_MODEL` or
   `JUDGE_MODEL`. The results JSON is attached to the run.
+- **Publishing the numbers:** the landing page and the README show committed snapshots, never a
+  live file. After a rules-only run: `npm run sync:evals` in `frontend/`. After a green GitHub run:
+  `gh run download <run id> -n eval-results`, then `npm run sync:evals -- --live <path>/live.json`
+  (it refuses a run with an error, a missed incident or no model answer), and update the README's
+  results table by hand (D-309).
 
 ## 11. Troubleshooting
 

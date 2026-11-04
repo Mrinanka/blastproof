@@ -50,6 +50,11 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
 
+### Live eval numbers published, 2026-11-04, D-309
+- Landing page: a "With real models" row in Results (37/37 exact previews, 9.4 ms read overhead at p95, 8.6 s median preview) from the new `live-eval-results.json`; the source line names both runs and the models. `sync-eval-results.mjs` gained `--live` (refuses a non-green run). The rules-only snapshot was refreshed (same numbers, 2026-11-04), so the local `equals rules.json` test passes again. README: an "Eval results" table and a current status line; `docs/setup.md` §10 says how to publish new numbers.
+- Tests: new cases in `landing-content.test.ts` (live snapshot, model name, the script's refusals) and `landing.test.tsx` (live numbers in the server HTML; every number in the section comes from a snapshot). 740 Vitest pass; lint, typecheck, Prettier and `npm run build` clean (`/` still static). Mutation checks: an unmeasured number on the page and a dropped missed-incident refusal each turned a test red.
+- DEL-01 stays open (the GIF).
+
 ### Live evals on paid OpenRouter models, 2026-11-04, D-308
 - Models (config only, no app code): summary `openai:openai/gpt-oss-120b`, judge `openai:anthropic/claude-sonnet-5.5`, both `reasoning_effort: low`, through OpenRouter (prepaid credits, a credit limit per key). A direct structured call to each model with the owner's local key passed: summary $0.00003, judge $0.0019.
 - `evals.yml`: `JUDGE_MODEL_OPTIONS` now comes from a secret in the eval step, and the nightly schedule is gone (it runs by hand only, about $1 a run). Guarded by `test_evals_workflow.py`; mutation checks (schedule back, variable back) each turned it red. Docs: `docs/setup.md` §10, spec, backend plan §14, `.env.example`.

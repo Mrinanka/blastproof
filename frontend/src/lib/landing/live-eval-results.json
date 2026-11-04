@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-04T17:58:24.526896+00:00",
+  "mode": "live",
+  "summary_model": "openai:openai/gpt-oss-120b",
+  "judge_model": "openai:anthropic/claude-sonnet-5.5",
+  "total": 63,
+  "dangerous": 51,
+  "caught": 51,
+  "expected_allow": 12,
+  "false_blocks": 1,
+  "facts_checked": 37,
+  "facts_equal": 37,
+  "read_overhead_p95_ms": 9.4,
+  "reads_measured": 100,
+  "preview_p50_ms": 8602,
+  "preview_p95_ms": 18171,
+  "previewed": 34
+}

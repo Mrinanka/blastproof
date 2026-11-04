@@ -1,12 +1,14 @@
-// F13 guards: FE-29 (only measured numbers), D-078 (exact demo counts), D-293 (eval snapshot).
+// F13 guards: FE-29 (only measured numbers), D-078 (exact demo counts), D-293 and D-309 (eval
+// snapshots).
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { snapshot } from "../scripts/sync-eval-results.mjs";
+import { liveSnapshot, snapshot } from "../scripts/sync-eval-results.mjs";
 import { COMPANION, REPLIT } from "../src/lib/landing/content";
 import committed from "../src/lib/landing/eval-results.json";
-import { evalStats } from "../src/lib/landing/eval-stats";
+import { evalStats, liveStats, modelName } from "../src/lib/landing/eval-stats";
+import live from "../src/lib/landing/live-eval-results.json";
 import { AEGIS_URL } from "../src/lib/landing/site";
 
 const INCIDENTS_YAML = resolve(__dirname, "../../backend/evals/scenarios/incidents.yaml");
@@ -78,6 +80,88 @@ describe("the eval snapshot", () => {
       ],
     };
     expect(snapshot(rules)).toMatchObject({ incidents: 2, incidents_caught: 1 });
+  });
+});
+
+describe("the live eval snapshot (D-309)", () => {
+  const green = () => ({
+    meta: {
+      at: "2026-11-04T00:00:00+00:00",
+      mode: "live",
+      summary_model: "a:x/s",
+      judge_model: "b:y/j",
+    },
+    metrics: {
+      total: 3,
+      measured: 3,
+      errors: [],
+      incident_misses: [],
+      summaries_passed: 1,
+      dangerous: 2,
+      caught: 2,
+      expected_allow: 1,
+      false_blocks: 0,
+      facts_checked: 2,
+      facts_equal: 2,
+      latency: {
+        previewed: { count: 2, p50: 8602.4, p95: 18171.2 },
+        read_overhead: { count: 100, p50: 7.4, p95: 9.441 },
+      },
+    },
+    outcomes: [],
+  });
+
+  it("is a green live run with real models", () => {
+    expect(live.mode).toBe("live");
+    expect(live.caught).toBe(live.dangerous);
+    expect(live.facts_equal).toBe(live.facts_checked);
+    expect(live.summary_model).toMatch(/^[a-z_]+:\S+$/);
+    expect(live.judge_model).toMatch(/^[a-z_]+:\S+$/);
+  });
+
+  it("the page's live numbers are derived from it", () => {
+    const l = liveStats();
+    expect(l.day).toBe(live.at.slice(0, 10));
+    expect(l.readOverheadP95Ms).toBe(live.read_overhead_p95_ms);
+    expect(l.previewP50Seconds).toBe(Math.round(live.preview_p50_ms / 100) / 10);
+    expect(l.judgeModel).toBe(live.judge_model.slice(live.judge_model.lastIndexOf("/") + 1));
+  });
+
+  it("the model name drops the provider and the route", () => {
+    expect(modelName("openai:anthropic/claude-sonnet-5.5")).toBe("claude-sonnet-5.5");
+    expect(modelName("google_genai:gemini-3.8-flash")).toBe("google_genai:gemini-3.8-flash");
+  });
+
+  it("the sync script takes a green live run and rounds the latencies", () => {
+    expect(liveSnapshot(green())).toMatchObject({
+      judge_model: "b:y/j",
+      read_overhead_p95_ms: 9.4,
+      preview_p50_ms: 8602,
+      preview_p95_ms: 18171,
+    });
+  });
+
+  it.each([
+    ["a rules-only run", (r: ReturnType<typeof green>) => (r.meta.mode = "rules"), /live run/],
+    [
+      "an errored scenario",
+      (r: ReturnType<typeof green>) => (r.metrics.measured = 2),
+      /unmeasured/,
+    ],
+    [
+      "a missed incident",
+      (r: ReturnType<typeof green>) => (r.metrics.incident_misses = ["x"] as never[]),
+      /missed an incident/,
+    ],
+    [
+      "no model summary",
+      (r: ReturnType<typeof green>) => (r.metrics.summaries_passed = 0),
+      /no model summary/,
+    ],
+  ])("the sync script refuses %s", (_name, spoil, message) => {
+    const run = green();
+    spoil(run);
+    expect(() => liveSnapshot(run)).toThrow(message);
   });
 });
 
