@@ -147,4 +147,32 @@ export const FLOW = [
   "Allow commits exactly what was previewed. Block stops the write.",
   "Review waits for the owner to approve in the dashboard, then commits.",
   "Blastproof's own database holds the actions, the audit trail and the knowledge.",
+  "The company database's credentials live only in the backend; the agent never holds them.",
 ];
+
+// The AegisContext companion section (F13.1, D-306). Every fact below is from the AegisContext
+// README (https://github.com/Mrinanka/aegiscontext, commit b5747ef). Its figure is "135 of 138",
+// so the page says that and never "135/135".
+export const COMPANION = {
+  eyebrow: "Companion tool",
+  title:
+    "AegisContext keeps secrets out of what the model reads. Blastproof keeps the agent's writes from hurting your data.",
+  name: "AegisContext",
+  tag: "Claude Code plugin",
+  pitch: [
+    "AegisContext protects what goes into the model: API keys, passwords and tokens never reach its context.",
+    "Blastproof controls what the agent does to your data: writes are previewed, judged and approved.",
+  ],
+  facts: [
+    "Swaps each secret for a placeholder before the model sees it. Claude knows a secret is there, but never sees the value.",
+    "The tool itself never touches the network: no network calls, no telemetry.",
+    "A leak test kit plants fake secrets at every door and fails if the model sees even one.",
+  ],
+  stat: "135 of 138 caught · 41 of 41 harmless samples left alone",
+  statNote:
+    "Every secret with a known shape or label is caught. The other 3 have neither; register them and they are found.",
+  installLabel: "Install in Claude Code",
+  install: "/plugin install aegiscontext --marketplace Mrinanka/aegiscontext",
+  linkLabel: "AegisContext on GitHub",
+  footerLabel: "AegisContext",
+};

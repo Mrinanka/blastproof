@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { snapshot } from "../scripts/sync-eval-results.mjs";
-import { REPLIT } from "../src/lib/landing/content";
+import { COMPANION, REPLIT } from "../src/lib/landing/content";
 import committed from "../src/lib/landing/eval-results.json";
 import { evalStats } from "../src/lib/landing/eval-stats";
+import { AEGIS_URL } from "../src/lib/landing/site";
 
 const INCIDENTS_YAML = resolve(__dirname, "../../backend/evals/scenarios/incidents.yaml");
 const RULES_JSON = resolve(__dirname, "../../backend/evals/results/rules.json");
@@ -77,5 +78,29 @@ describe("the eval snapshot", () => {
       ],
     };
     expect(snapshot(rules)).toMatchObject({ incidents: 2, incidents_caught: 1 });
+  });
+});
+
+describe("the AegisContext companion copy (D-306)", () => {
+  it("points at the plugin's repository", () => {
+    expect(AEGIS_URL).toBe("https://github.com/Mrinanka/aegiscontext");
+  });
+
+  it("has two pitch lines and three facts", () => {
+    expect(COMPANION.pitch).toHaveLength(2);
+    expect(COMPANION.facts).toHaveLength(3);
+  });
+
+  it("the install line names the same repository as the link", () => {
+    expect(COMPANION.install).toBe(
+      "/plugin install aegiscontext --marketplace Mrinanka/aegiscontext",
+    );
+    expect(AEGIS_URL.endsWith(`/${COMPANION.install.split("--marketplace ")[1]}`)).toBe(true);
+  });
+
+  it("the stat line carries the README's figures (135 of 138, 41 of 41), not 135/135", () => {
+    expect(COMPANION.stat).toContain("135 of 138");
+    expect(COMPANION.stat).toContain("41 of 41");
+    expect(COMPANION.stat).not.toContain("135/135");
   });
 });

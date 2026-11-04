@@ -5,6 +5,9 @@ export const SITE_URL = "https://blastproof.in";
 export const GITHUB_URL = "https://github.com/Mrinanka/blastproof";
 export const DOCS_URL = `${GITHUB_URL}/tree/HEAD/docs`;
 
+// The owner's Claude Code plugin; the companion section and the footer link to it (D-306).
+export const AEGIS_URL = "https://github.com/Mrinanka/aegiscontext";
+
 // "Watch the demo" points here until the demo video exists (then: "/demo.mp4" or its page).
 export const DEMO_HREF = "#how-it-works";
 
