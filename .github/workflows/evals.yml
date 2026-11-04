@@ -1,12 +1,11 @@
 # Live evals (backend plan §14, EVAL-09, OPS-02). Guarded by backend/tests/test_evals_workflow.py.
-# The full pipeline with the real models on the local Compose databases, nightly and on demand.
+# The full pipeline with the real models on the local Compose databases, on demand only (D-308:
+# about $1 a run with paid models, so no schedule).
 # Never on pull_request: it holds model and LangSmith keys, which a fork's code must never reach.
 # Pull requests run the rules-only eval in ci.yml instead (no keys, no models).
 name: Evals
 
 on:
-  schedule:
-    - cron: "17 3 * * *" # nightly; GitHub runs schedules only from the default branch
   workflow_dispatch:
 
 permissions:
@@ -27,11 +26,10 @@ env:
   LOCAL_COMPANY_WRITER_URL: postgresql://blastproof_writer:blastproof_writer@localhost:5433/company_main
   FAKE_NEON_ADMIN_URL: postgresql://company:company@localhost:5433/postgres
   # Model names, options and prices are repository variables, never code. Empty means the default.
-  # SUMMARY_MODEL_OPTIONS is a secret instead (below): it can hold a provider key, such as an
-  # OpenRouter api_key.
+  # SUMMARY_MODEL_OPTIONS and JUDGE_MODEL_OPTIONS are secrets instead (below): they can hold a
+  # provider key, such as an OpenRouter api_key.
   SUMMARY_MODEL: ${{ vars.SUMMARY_MODEL }}
   JUDGE_MODEL: ${{ vars.JUDGE_MODEL }}
-  JUDGE_MODEL_OPTIONS: ${{ vars.JUDGE_MODEL_OPTIONS }}
   LLM_PRICES: ${{ vars.LLM_PRICES }}
   LANGSMITH_PROJECT: blastproof-evals
 
@@ -83,6 +81,7 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           SUMMARY_MODEL_OPTIONS: ${{ secrets.SUMMARY_MODEL_OPTIONS }}
+          JUDGE_MODEL_OPTIONS: ${{ secrets.JUDGE_MODEL_OPTIONS }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
 
       - if: always()

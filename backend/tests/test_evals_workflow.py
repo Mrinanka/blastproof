@@ -13,15 +13,21 @@ import pytest
 from tests.test_ci_workflow import REPO_ROOT, load_yaml, pin_problems, run_order_problems, steps
 
 EVALS_PATH = REPO_ROOT / ".github" / "workflows" / "evals.yml"
-ALLOWED_SECRETS = {"GOOGLE_API_KEY", "GROQ_API_KEY", "LANGSMITH_API_KEY", "SUMMARY_MODEL_OPTIONS"}
+ALLOWED_SECRETS = {
+    "GOOGLE_API_KEY",
+    "GROQ_API_KEY",
+    "LANGSMITH_API_KEY",
+    "SUMMARY_MODEL_OPTIONS",
+    "JUDGE_MODEL_OPTIONS",
+}
 FORBIDDEN_TRIGGERS = {"pull_request", "pull_request_target", "push", "workflow_run"}
-# SUMMARY_MODEL_OPTIONS is not here: it can hold a provider key, so it is a secret.
+# The *_MODEL_OPTIONS are not here: they can hold a provider key, so they are secrets.
 MODEL_SETTINGS = {
     "SUMMARY_MODEL",
     "JUDGE_MODEL",
-    "JUDGE_MODEL_OPTIONS",
     "LLM_PRICES",
 }
+OPTION_SECRETS = ("SUMMARY_MODEL_OPTIONS", "JUDGE_MODEL_OPTIONS")
 RUN_ORDER = [
     "docker compose up",
     "demo_company/seed.py --target local",
@@ -36,8 +42,9 @@ def trigger_problems(workflow: dict[Any, Any]) -> list[str]:
     triggers = workflow[True]  # PyYAML reads the bare key `on` as the boolean True
     names = set(triggers) if isinstance(triggers, dict) else set(triggers)
     problems = [f"runs on {name}" for name in sorted(names & FORBIDDEN_TRIGGERS)]
-    if names != {"schedule", "workflow_dispatch"}:
-        problems.append(f"triggers are {sorted(names)}, not schedule and workflow_dispatch")
+    # On demand only (D-308): a paid live run costs about $1, so no schedule.
+    if names != {"workflow_dispatch"}:
+        problems.append(f"triggers are {sorted(names)}, not workflow_dispatch only")
     return problems
 
 
@@ -79,9 +86,9 @@ def evals(text: str) -> dict[Any, Any]:
     return load_yaml(text)
 
 
-def test_triggers_are_schedule_and_manual_only(evals: dict[Any, Any]) -> None:
+def test_it_runs_on_demand_only(evals: dict[Any, Any]) -> None:
     assert trigger_problems(evals) == []
-    assert evals[True]["schedule"][0]["cron"]
+    assert "schedule" not in evals[True]
 
 
 def test_the_token_is_read_only_and_checkout_keeps_no_credentials(evals: dict[Any, Any]) -> None:
@@ -109,13 +116,15 @@ def test_secrets_reach_only_the_eval_step(evals: dict[Any, Any]) -> None:
     assert "evals.run --mode live" in holders[0]["run"]
 
 
-def test_the_summary_options_come_from_a_secret_in_the_eval_step_only(
-    evals: dict[Any, Any],
+@pytest.mark.parametrize("name", OPTION_SECRETS)
+def test_the_model_options_come_from_a_secret_in_the_eval_step_only(
+    evals: dict[Any, Any], text: str, name: str
 ) -> None:
     # They can hold an api_key (OpenRouter), so never a variable and never workflow-wide.
-    assert "SUMMARY_MODEL_OPTIONS" not in evals["env"]
+    assert name not in evals["env"]
+    assert f"vars.{name}" not in text
     (step,) = [s for s in steps(evals) if "evals.run --mode live" in s.get("run", "")]
-    assert step["env"]["SUMMARY_MODEL_OPTIONS"] == "${{ secrets.SUMMARY_MODEL_OPTIONS }}"
+    assert step["env"][name] == "${{ secrets." + name + " }}"
 
 
 def test_it_runs_as_test_env_on_the_local_profile_with_fake_neon(evals: dict[Any, Any]) -> None:
@@ -179,6 +188,7 @@ def test_the_job_has_a_timeout(evals: dict[Any, Any]) -> None:
         ("on: {pull_request: {}, schedule: [{cron: '0 0 * * *'}]}", trigger_problems),
         ("on: {schedule: [{cron: '0 0 * * *'}]}", trigger_problems),
         ("on: {workflow_dispatch: {}, push: {}}", trigger_problems),
+        ("on: {workflow_dispatch: {}, schedule: [{cron: '0 0 * * *'}]}", trigger_problems),
         (
             "jobs: {b: {steps: [{run: 'echo ${{ secrets.NEON_API_KEY }}'}]}}",
             lambda t: secret_problems(t),
@@ -209,6 +219,7 @@ def test_the_job_has_a_timeout(evals: dict[Any, Any]) -> None:
         "pull-request-trigger",
         "no-manual-trigger",
         "push-trigger",
+        "schedule-trigger",
         "unlisted-secret",
         "workflow-wide-secret",
         "inline-secret",
