@@ -292,13 +292,13 @@ D-055). Tick a box only when its verification has passed.
 | [ ] | FE-18 | The decision bar shows only while the action is pending and `can_decide` is true; approve and reject are mutations that refresh the action, the queue and the badge on success. | FE §7, F7 | F7 | DW-F07 |
 | [x] | FE-19 | Reject opens a dialog requiring a reason of at least 10 characters (zod). | FE F7 | F7 | TEST-10; MVP-F04 |
 | [ ] | FE-20 | A 409 on approve or reject shows a toast naming who already decided. | FE §7, F7 | F7 | DW-F07; MVP-F04 |
-| [ ] | FE-21 | History lists the user's actions with filters for status, agent, table and date range stored in the URL, with server-side pagination of 25 rows. | FE §7, F8 | F8 | DW-F08; MVP-F05 |
+| [x] | FE-21 | History lists the user's actions with filters for status, agent, table and date range stored in the URL, with server-side pagination of 25 rows. | FE §7, F8 | F8 | DW-F08; MVP-F05 |
 | [x] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
 | [x] | FE-23 | Knowledge page: every signed-in user reads the source list (D-280); only admins see the controls that upload, delete and rescan. It lists sources with chunk counts, uploads a .md or .txt file up to 1 MB with optional tables (multipart through the BFF), deletes with a confirm dialog, and has a "Rescan schema" button. | FE §7, F10 | F10 | DW-F10 |
 | [x] | FE-24 | Agents page lists the user's agents (key prefix, active state); create shows the key once with a copy button and the setup lines exactly as returned by `POST /v1/agents`, plus a link to the README's hook steps; deactivate asks for confirmation. | FE §7, F11 | F11 | DW-F11; MVP-F07 |
 | [x] | FE-25 | Users page (admin only) lists users and roles and creates a user with an initial password. | FE §7, F11 | F11 | TEST-03 (backend) |
 | [x] | FE-26 | Rules page renders `/v1/policies` as a read-only table (name, conditions, outcome, reason). | FE §7, F11 | F11 | *component test* |
-| [ ] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
+| [x] | FE-27 | Every control has keyboard focus and labels; color contrast is readable; dark mode, page titles and a friendly 404 page exist; every page works at narrow (split-screen) width. | FE F12 | F12 | DW-F12 |
 | [x] | FE-28 | The landing page at `/` is static and server-rendered, needs no login and makes no API calls, with sections: hero (name, pitch, "Watch the demo", "View on GitHub", "Log in"), problem (incidents linked to sources), how it works in four steps, change-request screenshot, what makes it different, eval results, architecture diagram, security, an AegisContext companion mention (D-306), FAQ, footer. | FE F13 | F13 | DW-F13 |
 | [x] | FE-29 | The landing page has page metadata, an Open Graph image and a sitemap, and publishes only measured numbers. | FE F13 | F13 | DW-F13 |
 
@@ -408,12 +408,12 @@ D-055). Tick a box only when its verification has passed.
 | [x] | DW-F04 | Creating a pending action with `seed-demo-actions --add-pending` makes the badge change within 5 seconds. | FE F4 | F4 | Manual |
 | [x] | DW-F05 | Vitest tests pass for the badges and formatting helpers. | FE F5 | F5 | `npm test` |
 | [x] | DW-F06 | A pending action added with `seed-demo-actions --add-pending` appears without a page refresh. | FE F6 | F6 | Manual |
-| [ ] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |
-| [ ] | DW-F08 | Changing filters updates the URL and the back button restores the previous view. | FE F8 | F8 | Manual |
+| [x] | DW-F07 | Approve and reject work end to end against the local backend, and two browser windows approving the same action show the 409 message in the second. | FE F7 | F7 | Manual |
+| [x] | DW-F08 | Changing filters updates the URL and the back button restores the previous view. | FE F8 | F8 | Manual |
 | [x] | DW-F09 | Overview numbers match a manual SQL count on Blastproof's database. | FE F9 | F9 | Manual |
 | [x] | DW-F10 | A document uploaded with table `users` appears in "Knowledge used" of the next action touching `users` (checked with `seed-demo-actions --add-pending`, no Neon or real LLM). | FE F10 | F10 | Manual |
 | [x] | DW-F11 | A newly created key works in Claude Code by copy-pasting the shown commands. | FE F11 | F11 | Manual in Claude Code |
-| [ ] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
+| [x] | DW-F12 | Lighthouse accessibility on the change request page scores 90 or above. | FE F12 | F12 | Lighthouse |
 | [x] | DW-F13 | A logged-out visitor sees the landing page, "Log in" leads to `/login`, Lighthouse scores 90+ for performance, accessibility and SEO, and the LinkedIn link preview looks right. | FE F13 | F13 | Lighthouse + manual |
 
 ### Stage gates
