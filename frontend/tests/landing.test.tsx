@@ -7,10 +7,12 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import Home from "../src/app/page";
+import { NODES } from "../src/components/landing/architecture-geometry";
 import { plain } from "../src/components/landing/mono-text";
-import { FAQ, FLOW, INCIDENTS, REPLIT } from "../src/lib/landing/content";
-import { evalStats } from "../src/lib/landing/eval-stats";
-import { DEMO_HREF, GITHUB_URL, HEADLINE } from "../src/lib/landing/site";
+import { COMPANION, FAQ, FLOW, INCIDENTS, REPLIT } from "../src/lib/landing/content";
+import { formatDay } from "../src/lib/format";
+import { evalStats, liveStats } from "../src/lib/landing/eval-stats";
+import { AEGIS_URL, DEMO_HREF, GITHUB_URL, HEADLINE } from "../src/lib/landing/site";
 import { expectNoAxeViolations } from "./a11y";
 import { installDomStubs } from "./dom-stubs";
 
@@ -22,6 +24,7 @@ const SECTIONS = [
   "results",
   "architecture",
   "security",
+  "aegiscontext",
   "faq",
 ];
 
@@ -98,7 +101,7 @@ describe("landing page links", () => {
 
   it("the GitHub links go to the repository", () => {
     renderPage();
-    const links = screen.getAllByRole("link", { name: /GitHub/ });
+    const links = screen.getAllByRole("link", { name: /^(View on )?GitHub(?![A-Za-z])/ });
     expect(links.length).toBeGreaterThanOrEqual(2);
     for (const link of links) expect(link.getAttribute("href")).toBe(GITHUB_URL);
     expect(GITHUB_URL).toBe("https://github.com/Mrinanka/blastproof");
@@ -130,7 +133,7 @@ describe("landing page links", () => {
   it("every link that opens a new tab has rel noopener noreferrer", () => {
     const root = renderPage();
     const external = [...root.querySelectorAll('a[target="_blank"]')];
-    expect(external.length).toBeGreaterThanOrEqual(INCIDENTS.length + 3);
+    expect(external.length).toBeGreaterThanOrEqual(INCIDENTS.length + 5);
     for (const a of external) {
       expect(a.getAttribute("rel"), a.getAttribute("href")!).toBe("noopener noreferrer");
     }
@@ -174,18 +177,56 @@ describe("landing page content", () => {
     expect(results).toContain(`${s.caught}/${s.dangerous}`);
     expect(results).toContain(`${s.falseBlockPercent}%`);
     expect(results).toContain(`rules-only eval, ${s.total} scenarios`);
-    expect(results).not.toMatch(/\bms\b|latency of|p95/);
   });
 
-  it("the architecture has every node of the README diagram, and a text version", () => {
+  it("the server HTML shows the live run's numbers and names its models (D-309)", () => {
+    const html = renderToString(<Home />);
+    const results = text(
+      Object.assign(document.createElement("div"), { innerHTML: html }).querySelector(
+        "section#results",
+      )!,
+    );
+    const l = liveStats();
+    expect(results).toContain(`${l.factsEqual}/${l.factsChecked}`);
+    expect(results).toContain(`${l.readOverheadP95Ms.toFixed(1)} ms`);
+    expect(results).toContain(`${l.previewP50Seconds.toFixed(1)} s`);
+    expect(results).toContain(`${l.previewP95Seconds} s at p95`);
+    expect(results).toContain(`${l.summaryModel} summaries, ${l.judgeModel} judge`);
+    expect(results).toContain(`caught ${l.caught}/${l.dangerous}`);
+    expect(results).toContain(`held ${l.falseBlocks} of ${l.expectedAllow} safe ones`);
+  });
+
+  it("every number in the results section comes from one of the two snapshots (FE-29)", () => {
+    const html = renderToString(<Home />);
+    const results = text(
+      Object.assign(document.createElement("div"), { innerHTML: html }).querySelector(
+        "section#results",
+      )!,
+    );
+    const s = evalStats();
+    const l = liveStats();
+    const measured = [
+      ...[s.incidentsCaught, s.incidents, s.caught, s.dangerous, s.catchRatePercent, s.total],
+      ...[s.falseBlockPercent, s.falseBlocks, s.expectedAllow, l.factsEqual, l.factsChecked],
+      ...[l.readOverheadP95Ms, l.readsMeasured, l.previewP50Seconds, l.previewP95Seconds],
+      ...[l.previewed, l.total, l.caught, l.dangerous, l.falseBlocks, l.expectedAllow],
+    ];
+    const allowed = new Set(measured.flatMap((n) => [String(n), n.toFixed(1)]));
+    const rest = [formatDay(s.day), formatDay(l.day), l.summaryModel, l.judgeModel, "p95"].reduce(
+      (acc, part) => acc.replaceAll(part, ""),
+      results,
+    );
+    const numbers = rest.match(/\d+(?:\.\d+)?/g) ?? [];
+    expect(numbers.length).toBeGreaterThan(10);
+    for (const n of numbers) expect(allowed, n).toContain(n);
+  });
+
+  it("the architecture has all nine nodes of the diagram, and a text version", () => {
     const root = renderPage();
     const arch = root.querySelector("section#architecture")!;
-    const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
-    const mermaid = readme.slice(
-      readme.indexOf("```mermaid"),
-      readme.indexOf("```", readme.indexOf("```mermaid") + 3),
-    );
-    const labels = [...mermaid.matchAll(/\[\(?"([^"<]+)/g)].map((m) => m[1]!.trim());
+    // The README diagram is now an image (no Mermaid source to parse), so the nodes come from
+    // the geometry the landing diagram is drawn from.
+    const labels = NODES.map((node) => node.title);
     expect(labels.length).toBe(9);
     for (const label of labels) expect(text(arch), label).toContain(label);
     const list = within(arch as HTMLElement)
@@ -198,11 +239,109 @@ describe("landing page content", () => {
       ).toBe(true);
   });
 
+  it("draws the diagram in the server HTML: paths, animation, every card, no client code", () => {
+    const html = renderToString(<Home />);
+    const start = html.indexOf('id="architecture"');
+    const arch = html.slice(start, html.indexOf("</section>", start));
+    expect(arch).toContain("<path");
+    expect(arch).toContain("<animateMotion");
+    for (const node of NODES) expect(arch, node.title).toContain(node.title.replace("&", "&amp;"));
+    const source = readFileSync(
+      resolve(__dirname, "../src/components/landing/architecture.tsx"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/["']use client["']/);
+    expect(source).not.toMatch(/useEffect|getBoundingClientRect|offsetWidth/);
+  });
+
+  it("hides the diagram from assistive tech and groups the animation for reduced motion", () => {
+    const root = renderPage();
+    const arch = root.querySelector("section#architecture")!;
+    const diagram = arch.querySelector(".landing-arch")!;
+    expect(diagram.getAttribute("aria-hidden")).toBe("true");
+    const motion = diagram.querySelector("g.landing-arch-motion")!;
+    expect(motion).not.toBeNull();
+    // Every packet and glow lives in that one group, so a single rule can hide them.
+    expect(
+      diagram.querySelectorAll("animateMotion, animate, animateTransform").length,
+    ).toBeGreaterThan(0);
+    for (const el of diagram.querySelectorAll("animateMotion, animate, animateTransform")) {
+      expect(el.closest("g.landing-arch-motion"), el.outerHTML.slice(0, 60)).not.toBeNull();
+    }
+  });
+
+  it("hides the packets and glows under prefers-reduced-motion", () => {
+    const css = readFileSync(resolve(__dirname, "../src/app/globals.css"), "utf8");
+    const block = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(block.slice(0, block.indexOf("\n}\n"))).toMatch(
+      /\.landing-arch-motion\s*\{\s*display:\s*none/,
+    );
+    expect(css).not.toContain("landing-pulse");
+  });
+
   it("renders backticked words in monospace without the backticks", () => {
     const root = renderPage();
     const steps = text(root.querySelector("section#how-it-works")!);
     expect(steps).not.toContain("`");
     expect(steps).toContain(plain("`PreToolUse`"));
     expect(root.querySelector("section#different code")?.textContent).toBe("MCP");
+  });
+});
+
+describe("the AegisContext companion section", () => {
+  const section = (root: Element) => root.querySelector("section#aegiscontext")!;
+
+  it("sits between Security and the FAQ", () => {
+    const root = renderPage();
+    const ids = [...root.querySelectorAll("main > section")].map((s) => s.id);
+    const i = ids.indexOf("aegiscontext");
+    expect(ids[i - 1]).toBe("security");
+    expect(ids[i + 1]).toBe("faq");
+  });
+
+  it("shows the name, tag, pitch, facts, stat and install line", () => {
+    const body = text(section(renderPage()));
+    expect(body).toContain(COMPANION.title);
+    expect(body).toContain("AegisContext");
+    expect(body).toContain("Claude Code plugin");
+    expect(COMPANION.pitch).toHaveLength(2);
+    expect(COMPANION.facts).toHaveLength(3);
+    for (const line of [...COMPANION.pitch, ...COMPANION.facts]) expect(body).toContain(line);
+    expect(body).toContain("135 of 138 caught · 41 of 41 harmless samples left alone");
+    expect(body).toContain(COMPANION.statNote);
+    expect(section(renderPage()).querySelector("code")?.textContent).toBe(
+      "/plugin install aegiscontext --marketplace Mrinanka/aegiscontext",
+    );
+  });
+
+  it("links to the repository in a new tab, safely, with an accessible note", () => {
+    const link = within(section(renderPage()) as HTMLElement).getByRole("link", {
+      name: /AegisContext on GitHub/,
+    });
+    expect(link.getAttribute("href")).toBe(AEGIS_URL);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link.textContent).toContain("opens in a new tab");
+  });
+
+  it("is linked from the footer too", () => {
+    renderPage();
+    const footer = within(screen.getByRole("navigation", { name: "Footer" }));
+    const link = footer.getByRole("link", { name: /^AegisContext/ });
+    expect(link.getAttribute("href")).toBe(AEGIS_URL);
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("is in the server HTML (JavaScript off)", () => {
+    const html = renderToString(<Home />);
+    expect(html).toContain('id="aegiscontext"');
+    expect(html).toContain(COMPANION.install);
+  });
+
+  it("makes no strong claims and uses only the README's numbers", () => {
+    const body = text(section(renderPage()));
+    expect(body).not.toMatch(/secure|guarantee|bulletproof|zero-trust|100%/i);
+    const numbers = new Set(body.match(/\d+/g));
+    expect([...numbers].sort()).toEqual(["135", "138", "3", "41"].sort());
   });
 });

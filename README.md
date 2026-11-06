@@ -8,22 +8,21 @@ committed with an audit trail.
 The agent never holds the company database's credentials, so a bad `DELETE FROM users` becomes a
 held request that says "deletes 48,213 users, including 12 paying customers", not an incident.
 
+<p align="center">
+  <img src="docs/media/blastproof-demo.gif" width="800"
+       alt="An agent asks to run DELETE FROM users WHERE last_login_at &lt; now() - interval '6 months'. Blastproof runs it on a copy first: it would delete 48,213 users, including 12 paying customers, so the change request is held for review.">
+</p>
+
+▶ **Watch the full 24-second film:**
+
+https://github.com/user-attachments/assets/5eed0547-6eca-40e8-969c-cca156d4cd89
+
 ## How it works
 
-```mermaid
-flowchart LR
-    Agent["AI agent<br/>(Claude Code)"] -->|MCP tool call| GW["Blastproof backend<br/>(FastAPI)"]
-    Agent -. PreToolUse hook .-> GW
-    GW -->|read| DB[("Company database")]
-    GW -->|write| Prev["Preview on a branch"]
-    Prev --> Rules["Rules, then LLM judge"]
-    Rules -->|allow| Commit["Commit what was previewed"]
-    Rules -->|block| Stop["Blocked"]
-    Rules -->|review| Owner["Owner approves<br/>in the dashboard"]
-    Owner --> Commit
-    Commit --> DB
-    GW --- Own[("Blastproof database<br/>actions, audit trail, knowledge")]
-```
+<p align="center">
+  <img src="docs/media/blastproof-architecture.gif" width="800"
+       alt="Architecture: an AI agent sends a tool call to the Blastproof backend, which previews a write on a database branch, runs rules then an LLM judge, and either blocks it, holds it for the owner's approval in the dashboard, or commits what was previewed to the company database. Only the backend holds the database keys.">
+</p>
 
 - **Code counts, the LLM explains.** Every number comes from the database, never from a model.
 - **Fail closed.** An error, timeout or unparseable statement blocks the write.
@@ -31,6 +30,25 @@ flowchart LR
 
 More: [`docs/spec.md`](docs/spec.md) (what and why), [`docs/backend-plan.md`](docs/backend-plan.md),
 [`docs/frontend-plan.md`](docs/frontend-plan.md), [`docs/decisions.md`](docs/decisions.md).
+
+## Eval results
+
+63 labelled scenarios (`backend/evals/`): 51 dangerous actions, 12 of them replays of real
+incidents, and 12 safe ones. Dangerous actions must be blocked or held; safe ones must go through.
+
+| | Rules only (every pull request) | Live, real models (2026-11-06) |
+|---|---|---|
+| Real-incident replays caught | 12 of 12 | 12 of 12 |
+| Dangerous actions blocked or held | 51 of 51 (100%) | 51 of 51 (100%) |
+| Safe actions held (false blocks) | 1 of 12 (8.3%) | 1 of 12 (8.3%) |
+| Previewed impacts with the exact row counts | n/a | 37 of 37 |
+| Time added to a read, p95 | n/a | 19.4 ms (100 reads) |
+| Write preview time, p50 / p95 | n/a | 7.7 s / 18.5 s |
+| Cost of the whole run | $0 | $0.30 |
+
+The live run used `gpt-oss-120b` for summaries and Claude Sonnet 5.5 as the judge, through
+OpenRouter, on GitHub Actions. The one false block is a ticket update that no rule allows on its
+own, so it goes to review. How to run them: [`docs/setup.md`](docs/setup.md) section 10.
 
 ## Quickstart (fully local: no Neon, no model key)
 
@@ -81,7 +99,8 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 `frontend/`. CI fails if either generated file is stale. Progress and known issues:
 [`PROGRESS.md`](PROGRESS.md).
 
-> Status: backend MVP steps 1 to 20, the evals runner and the Fly.io deploy files (checklist: [`docs/deploy.md`](docs/deploy.md)) are done (`uv run python -m evals.run`, see
-> [`docs/setup.md`](docs/setup.md)); the dashboard and the public landing page (F1 to F13) are built, with
-> some by-hand checks and the Vercel deploy still to do; the demo GIF and the published eval
-> results table are still to come.
+> Status: the backend (steps 1 to 20) is live on Fly.io (checklist: [`docs/deploy.md`](docs/deploy.md))
+> and the dashboard and landing page (F1 to F13) on Vercel at https://blastproof.in
+> ([`docs/deploy-dashboard.md`](docs/deploy-dashboard.md)). The evals are green with real models
+> (above). Still to come: some by-hand checks, the final audit and the two-to-three-minute demo
+> video.

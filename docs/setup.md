@@ -150,12 +150,19 @@ rate, explanation accuracy and latency. Run it from `backend/`.
   set as a dataset named after the file's hash and runs three experiments: `rules-only`,
   `rules+judge` and `rules+judge-no-rag`. Every trace leaves through a client that redacts secrets,
   emails and phone numbers first (D-257); the backend and the CLI install it at startup.
-- **Nightly and by hand:** `.github/workflows/evals.yml` runs the live eval every night and on
-  "Run workflow". In the repository settings add the secrets for the providers you use
-  (`GOOGLE_API_KEY`, `GROQ_API_KEY`), `SUMMARY_MODEL_OPTIONS` (a secret, because it can hold an
-  OpenRouter `api_key`) and, optionally, `LANGSMITH_API_KEY`; and the variables `SUMMARY_MODEL`,
-  `JUDGE_MODEL`, `JUDGE_MODEL_OPTIONS` and `LLM_PRICES`. Trigger the workflow by hand before you change
-  `SUMMARY_MODEL` or `JUDGE_MODEL`. The results JSON is attached to the run.
+- **On GitHub, by hand:** `.github/workflows/evals.yml` runs the live eval when you press "Run
+  workflow" (or `gh workflow run evals.yml --ref develop`). It has no schedule, because a run with
+  paid models costs about $1 (D-308). In the repository settings add the secrets
+  `SUMMARY_MODEL_OPTIONS` and `JUDGE_MODEL_OPTIONS` (secrets, because they can hold an OpenRouter
+  `api_key`), the provider keys you use (`GOOGLE_API_KEY`, `GROQ_API_KEY`) and, optionally,
+  `LANGSMITH_API_KEY`; and the variables `SUMMARY_MODEL`, `JUDGE_MODEL` and `LLM_PRICES`. Use an
+  OpenRouter key with its own credit limit. Run the workflow before you change `SUMMARY_MODEL` or
+  `JUDGE_MODEL`. The results JSON is attached to the run.
+- **Publishing the numbers:** the landing page and the README show committed snapshots, never a
+  live file. After a rules-only run: `npm run sync:evals` in `frontend/`. After a green GitHub run:
+  `gh run download <run id> -n eval-results`, then `npm run sync:evals -- --live <path>/live.json`
+  (it refuses a run with an error, a missed incident or no model answer), and update the README's
+  results table by hand (D-309).
 
 ## 11. Troubleshooting
 

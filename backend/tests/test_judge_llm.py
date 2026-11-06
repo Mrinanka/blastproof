@@ -235,12 +235,19 @@ async def test_an_invented_number_withholds_the_reason_but_keeps_the_verdict() -
         "It changes 245,677 rows across 7 tables.",
         "Over the 1,000 row limit in the rules.",  # a rule threshold
         "No numbers here at all.",
+        "Deletes 48 213 users.",  # a narrow no-break space as the thousands separator
+        "It changes 245 677 rows.",
     ],
 )
 async def test_measured_numbers_are_allowed(reason: str) -> None:
     judge, _ = judge_with(FakeJudgeLlm(parsed=verdict(reason=reason)))
     result = await judge.assess(replit_context())
     assert result.reason_withheld is False, reason
+
+
+async def test_a_spaced_number_that_was_not_measured_withholds_the_reason() -> None:
+    judge, _ = judge_with(FakeJudgeLlm(parsed=verdict(reason="Deletes 48 214 users.")))
+    assert (await judge.assess(replit_context())).reason_withheld is True
 
 
 async def test_a_number_written_as_a_word_is_checked_too() -> None:

@@ -1,4 +1,5 @@
-import { DOCS_URL, GITHUB_URL, LOGIN_HREF, PITCH } from "@/lib/landing/site";
+import { COMPANION } from "@/lib/landing/content";
+import { AEGIS_URL, DOCS_URL, GITHUB_URL, LOGIN_HREF, PITCH } from "@/lib/landing/site";
 
 import { Wordmark } from "./wordmark";
 
@@ -22,6 +23,12 @@ export function Footer() {
             <li>
               <a href={DOCS_URL} {...external} className="rounded-sm hover:text-foreground">
                 Docs<span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </li>
+            <li>
+              <a href={AEGIS_URL} {...external} className="rounded-sm hover:text-foreground">
+                {COMPANION.footerLabel}
+                <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </li>
             <li>

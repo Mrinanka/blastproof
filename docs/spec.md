@@ -270,7 +270,7 @@ Evals prove Blastproof works: they measure how many dangerous actions it catches
 | Added latency        | Overhead on reads and writes                               | Load tests, p50 and p95                             |
 | Cost per action      | LLM spend per intercepted write                            | LangSmith token tracking                            |
 
-**Process:** incident replays and rule-only evals run in GitHub Actions on every pull request (no LLM cost); the full LLM eval runs nightly, on demand, and before any model change. A drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
+**Process:** incident replays and rule-only evals run in GitHub Actions on every pull request (no LLM cost); the full LLM eval runs on demand and before any model change (no schedule: it costs money, D-308). A drop in catch rate fails the build. Compare variants as LangSmith experiments, e.g. rules only vs rules plus judge, Claude judge vs Jev judge (including calibration), pgvector vs Qdrant for retrieval, or with and without RAG context, and record the before/after numbers for your resume.
 
 ## 15. Observability
 
@@ -371,7 +371,7 @@ The hardest problems are where the preview can differ from reality; each is a de
 
 The project is finished when a recruiter can understand it in 30 seconds and an engineer can verify it in 10 minutes.
 
-- [ ] Public GitHub repo with a README that opens with the pitch, a 30-second GIF of the "whoa" moment, the architecture diagram and the eval results table.
+- [ ] Public GitHub repo with a README that opens with the pitch, a short looping GIF of the "whoa" moment with a link to the full film (D-310), the architecture diagram and the eval results table.
 - [ ] Two-to-three-minute demo video.
 - [ ] Short local setup: `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; running the full demo against Neon additionally needs the Neon dev project (README).
 - [ ] Live deployed demo (optional, with a read-only public dashboard).

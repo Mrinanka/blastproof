@@ -35,7 +35,6 @@ The frontend needs only one new account; everything else is reused from the back
 
 - [ ] Node.js (current LTS, 24) and npm, which comes with it (D-061, D-062).
 - [ ] A browser with React Developer Tools and the TanStack Query devtools (installed as a package, shown in development only).
-- [ ] Playwright browsers, installed once with `npx playwright install` from `frontend/`, right after `@playwright/test` is added there, so the browsers match the pinned Playwright version.
 
 ## 3. Tech stack and libraries
 
@@ -53,7 +52,6 @@ A mainstream React stack with as few moving parts as possible: no global state l
 | Dates | date-fns | "3 minutes ago" and local time display |
 | Icons | lucide-react | Default icon set for shadcn/ui |
 | Unit tests | Vitest + React Testing Library | Components and helpers |
-| End-to-end tests | Playwright | Real browser against the real local backend |
 | Quality | ESLint + Prettier + `tsc --noEmit` | Run in CI |
 | Hosting | Vercel | Built by the makers of Next.js; free Hobby plan |
 
@@ -156,7 +154,6 @@ blastproof/
         format.ts            # dates, numbers, money
     public/                  # demo video, Open Graph image, screenshots
     tests/                   # Vitest unit tests
-    e2e/                     # Playwright tests
     .env.example
     package.json
 ```
@@ -258,17 +255,10 @@ The dashboard can approve changes to production data, so a stolen session is as 
 
 ## 12. Testing
 
-A few unit tests for the pieces with logic, and one end-to-end test for the flow that matters most. No snapshot tests and no mocking the whole backend.
+A few unit tests for the pieces with logic. No snapshot tests and no mocking the whole backend.
 
 - **Unit (Vitest + React Testing Library):** formatting helpers, status and risk badges, the reject dialog's validation, the proxy's header handling (cookie in, Authorization out, incoming cookies dropped, bad Origin rejected).
 - **Type safety:** `npm run typecheck` catches any mismatch with the generated API types.
-- **End-to-end (Playwright):** against the real local backend with demo data from the backend's `seed-demo-actions` command:
-  1. Log in as the first demo user.
-  2. Open the review queue and click the seeded pending action.
-  3. Check that the headline and impact numbers are shown.
-  4. Reject it with a reason.
-  5. Find it in History with status rejected and your name as the decider.
-  6. Log out, log in as the second demo user, and confirm the action is not in their queue and its URL shows "not found".
 - **Manual check each week:** run the full demo with Claude Code creating a real pending action, and review it in the dashboard.
 
 ## 13. Deployment and CI
@@ -291,7 +281,6 @@ Preview deployments use the same backend as production. That is acceptable for a
 
 - Install with `npm ci` (cached), then `lint`, `typecheck`, `test` (Vitest) and `build`.
 - **Contract check:** the backend writes its OpenAPI schema to a file with `export-openapi` (no server or database needed); the frontend regenerates `schema.d.ts` from it; the job fails if the file changed. This catches any backend change the frontend hasn't caught up with.
-- **End-to-end:** a separate workflow, run nightly or by hand, starts Postgres and the backend, runs `seed-demo-actions`, starts the dashboard and runs Playwright.
 - Protect `main` in GitHub so merging requires both the backend and frontend jobs to pass.
 
 ## 14. Schedule
@@ -313,7 +302,7 @@ The dashboard MVP is done when every box is ticked on the deployed Vercel site, 
 - [ ] History filters live in the URL and survive back and forward navigation.
 - [ ] Each user sees only their own agents' actions and manages their own agent keys; admins see everything and manage users and knowledge; members cannot see admin controls, and the backend refuses them anyway.
 - [ ] A new agent can be connected to Claude Code by copy-pasting the setup lines shown once.
-- [ ] Lint, typecheck, unit tests, build and the contract check pass in CI; the Playwright flow passes.
+- [ ] Lint, typecheck, unit tests, build and the contract check pass in CI.
 - [ ] Lighthouse accessibility score of 90 or above on the change request page.
 
 **Deferred:** rule editing in the UI, undo button, observe-mode toggle, Slack notifications, WebSockets or server-sent events, charts and trends, a

@@ -23,3 +23,6 @@ backend/.cache/
 
 # Eval run results (backend plan §14)
 backend/evals/results/
+
+# Promo video: kept out of this repo (to live in its own repo later)
+promo/
