@@ -371,7 +371,7 @@ The hardest problems are where the preview can differ from reality; each is a de
 
 The project is finished when a recruiter can understand it in 30 seconds and an engineer can verify it in 10 minutes.
 
-- [ ] Public GitHub repo with a README that opens with the pitch, a 30-second GIF of the "whoa" moment, the architecture diagram and the eval results table.
+- [ ] Public GitHub repo with a README that opens with the pitch, a short looping GIF of the "whoa" moment with a link to the full film (D-310), the architecture diagram and the eval results table.
 - [ ] Two-to-three-minute demo video.
 - [ ] Short local setup: `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; running the full demo against Neon additionally needs the Neon dev project (README).
 - [ ] Live deployed demo (optional, with a read-only public dashboard).

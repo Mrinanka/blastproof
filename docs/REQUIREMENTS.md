@@ -462,7 +462,7 @@ D-055). Tick a box only when its verification has passed.
 
 | | ID | Requirement | Source | Step | Verified by |
 |---|---|---|---|---|---|
-| [ ] | DEL-01 | Public GitHub repo whose README opens with the pitch, a 30-second GIF of the "whoa" moment, the architecture diagram and the eval results table. | SPEC §20 | B20 (README); rest not assigned | Manual |
+| [x] | DEL-01 | Public GitHub repo whose README opens with the pitch, a short looping GIF of the "whoa" moment with a link to the full film (D-310), the architecture diagram and the eval results table. | SPEC §20; D-310 | B20 (README); `promo/` (D-311) | Manual |
 | [ ] | DEL-02 | Two-to-three-minute demo video (also used on the landing page). | SPEC §17, §20; FE F13 | Stage 5 | Manual |
 | [x] | DEL-03 | `docker compose up` plus the seed command gives a working dashboard with seeded demo actions and real local previews; the full Neon demo needs only the Neon dev project (README). | SPEC §20 | B20 | DW-B20 |
 | [ ] | DEL-04 | MVP demo script: fast-lane note, Replit mass delete with reject and retry, bypass attempt blocked, close on measured eval numbers. | SPEC §17; D-011 | All | Manual demo run |

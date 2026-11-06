@@ -221,15 +221,12 @@ describe("landing page content", () => {
     for (const n of numbers) expect(allowed, n).toContain(n);
   });
 
-  it("the architecture has every node of the README diagram, and a text version", () => {
+  it("the architecture has all nine nodes of the diagram, and a text version", () => {
     const root = renderPage();
     const arch = root.querySelector("section#architecture")!;
-    const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
-    const mermaid = readme.slice(
-      readme.indexOf("```mermaid"),
-      readme.indexOf("```", readme.indexOf("```mermaid") + 3),
-    );
-    const labels = [...mermaid.matchAll(/\[\(?"([^"<]+)/g)].map((m) => m[1]!.trim());
+    // The README diagram is now an image (no Mermaid source to parse), so the nodes come from
+    // the geometry the landing diagram is drawn from.
+    const labels = NODES.map((node) => node.title);
     expect(labels.length).toBe(9);
     for (const label of labels) expect(text(arch), label).toContain(label);
     const list = within(arch as HTMLElement)
