@@ -20,22 +20,6 @@ held request that says "deletes 48,213 users, including 12 paying customers", no
        alt="Architecture: an AI agent sends a tool call to the Blastproof backend, which previews a write on a database branch, runs rules then an LLM judge, and either blocks it, holds it for the owner's approval in the dashboard, or commits what was previewed to the company database. Only the backend holds the database keys.">
 </p>
 
-<!-- 
-```mermaid
-flowchart LR
-    Agent["AI agent<br/>(Claude Code)"] -->|MCP tool call| GW["Blastproof backend<br/>(FastAPI)"]
-    Agent -. PreToolUse hook .-> GW
-    GW -->|read| DB[("Company database")]
-    GW -->|write| Prev["Preview on a branch"]
-    Prev --> Rules["Rules, then LLM judge"]
-    Rules -->|allow| Commit["Commit what was previewed"]
-    Rules -->|block| Stop["Blocked"]
-    Rules -->|review| Owner["Owner approves<br/>in the dashboard"]
-    Owner --> Commit
-    Commit --> DB
-    GW --- Own[("Blastproof database<br/>actions, audit trail, knowledge")]
-``` -->
-
 - **Code counts, the LLM explains.** Every number comes from the database, never from a model.
 - **Fail closed.** An error, timeout or unparseable statement blocks the write.
 - **The boundary is credential isolation.** Company credentials live only in the backend.
