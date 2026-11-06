@@ -15,6 +15,11 @@ held request that says "deletes 48,213 users, including 12 paying customers", no
 
 ## How it works
 
+<p align="center">
+  <img src="docs/media/blastproof-architecture.gif" width="800"
+       alt="Architecture: an AI agent sends a tool call to the Blastproof backend, which previews a write on a database branch, runs rules then an LLM judge, and either blocks it, holds it for the owner's approval in the dashboard, or commits what was previewed to the company database. Only the backend holds the database keys.">
+</p>
+
 ```mermaid
 flowchart LR
     Agent["AI agent<br/>(Claude Code)"] -->|MCP tool call| GW["Blastproof backend<br/>(FastAPI)"]
