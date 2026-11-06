@@ -8,6 +8,11 @@ committed with an audit trail.
 The agent never holds the company database's credentials, so a bad `DELETE FROM users` becomes a
 held request that says "deletes 48,213 users, including 12 paying customers", not an incident.
 
+<p align="center">
+  <img src="promo/media/blastproof-demo.gif" width="800"
+       alt="An agent asks to run DELETE FROM users WHERE last_login_at &lt; now() - interval '6 months'. Blastproof runs it on a copy first: it would delete 48,213 users, including 12 paying customers, so the change request is held for review.">
+</p>
+
 ## How it works
 
 ```mermaid
@@ -103,4 +108,5 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 > Status: the backend (steps 1 to 20) is live on Fly.io (checklist: [`docs/deploy.md`](docs/deploy.md))
 > and the dashboard and landing page (F1 to F13) on Vercel at https://blastproof.in
 > ([`docs/deploy-dashboard.md`](docs/deploy-dashboard.md)). The evals are green with real models
-> (above). Still to come: some by-hand checks, the final audit and the demo GIF.
+> (above). Still to come: some by-hand checks, the final audit and the two-to-three-minute demo
+> video. The launch film and the GIF above are made in [`promo/`](promo/README.md).
