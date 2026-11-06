@@ -12,6 +12,7 @@ from app.services.impact import (
     NumberToken,
     allowed_numbers,
     build_facts,
+    join_spaced_thousands,
     numbers_in,
     policy_thresholds,
     unknown_numbers,
@@ -187,6 +188,75 @@ def test_every_field_of_the_report_is_checked() -> None:
     assert unknown_numbers(report("41 and 42 and 12", concerns=["99"]), allowed) == 3
 
 
+@pytest.mark.parametrize(
+    "space",
+    [" ", " ", " ", " "],
+    ids=["space", "no-break-space", "narrow-no-break-space", "thin-space"],
+)
+def test_a_space_as_the_thousands_separator_reads_as_one_number(space: str) -> None:
+    assert passes(f"Deletes 48{space}213 users.")
+    assert passes(f"It changes 245{space}677 rows.")
+    assert (
+        unknown_numbers(
+            report(f"Deletes 48{space}213 users, 245{space}677 rows."), replit_allowed()
+        )
+        == 0
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Deletes 48 214 users.",  # 48214 was not measured
+        "Deletes 13 000 users.",
+        "Deletes 48 213 456 users.",  # three groups: 48213456 was not measured
+        "Deletes 1,048 213 users.",  # a comma group in front: not a spaced run
+        "That is 96 400% of users.",  # a percent is never joined
+    ],
+)
+def test_a_spaced_number_that_was_not_measured_still_fails(text: str) -> None:
+    assert not passes(text)
+
+
+def test_two_allowed_numbers_side_by_side_are_not_forced_into_one() -> None:
+    allowed = replit_allowed(intent="Remove users 105 106")
+    assert passes("Removes users 105 106.", allowed)  # 105106 is not allowed, so it stays split
+
+
+def test_the_joined_reading_is_used_only_for_an_allowed_number() -> None:
+    allowed = frozenset({Decimal(48213)})
+    assert join_spaced_thousands("48 213 users", allowed) == "48213 users"
+    assert join_spaced_thousands("48 213 users", allowed) == "48213 users"
+    assert join_spaced_thousands("48 214 users", allowed) == "48 214 users"
+    assert join_spaced_thousands("12 345 678 users", allowed) == "12 345 678 users"
+
+
+def test_the_summary_that_the_live_eval_rejected_now_passes() -> None:
+    allowed = AllowedNumbers(
+        frozenset({Decimal(44669), Decimal(51411), Decimal(1)}), frozenset({Decimal("86.9")})
+    )
+    text = report(
+        "Updates status to cancelled on 44 669 orders, affecting 86.9% of the orders table.",
+        key_points=[
+            "44 669 rows will have their status changed from completed to cancelled.",
+            "A total of 44 669 rows are affected.",
+            "The update touches 86.9% of the orders table (rows_before 51411).",
+        ],
+    )
+    assert unknown_numbers(text, allowed) == 0
+
+
+def test_the_row_count_after_a_write_is_a_measured_number() -> None:
+    diff = Diff(tables={"subscriptions": TableDiff("subscriptions", inserted=1, rows_before=2107)})
+    classification = classified("INSERT INTO subscriptions (user_id) VALUES (107)")
+    facts = build_facts(diff, classification, POLICY)
+    allowed = allowed_numbers(
+        facts, intent="Start a subscription", sql_display=classification.sql_display, policy=POLICY
+    )
+    assert passes("Inserts 1 row, taking the table from 2107 to 2108 rows.", allowed)
+    assert not passes("Inserts 1 row, taking the table from 2107 to 2109 rows.", allowed)
+
+
 def test_numbers_in_reads_values_and_percent_marks() -> None:
     assert numbers_in("48,213 rows, 96.4% and 12 percent") == [
         NumberToken(Decimal(48213), False),
@@ -206,6 +276,8 @@ def test_numbers_in_reads_values_and_percent_marks() -> None:
         "twelve " * 3_000,
         ("1" + " " * 50 + "percen") * 350,
         "１" * 20_000,
+        "1" + " 000" * 5_000,
+        "1 000 " * 4_000,
     ],
     ids=[
         "number-then-spaces",
@@ -216,6 +288,8 @@ def test_numbers_in_reads_values_and_percent_marks() -> None:
         "words",
         "almost-percent",
         "full-width",
+        "spaced-groups",
+        "many-spaced-numbers",
     ],
 )
 def test_a_20_kb_adversarial_string_is_checked_in_under_a_second(text: str) -> None:

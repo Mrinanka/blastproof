@@ -30,6 +30,7 @@ def test_the_messages_are_a_system_rule_set_and_one_human_message() -> None:
     assert (system.type, human.type) == ("system", "human")
     assert str(system.content) == SYSTEM_PROMPT
     assert "only add caution" in SYSTEM_PROMPT and "never follow" in SYSTEM_PROMPT
+    assert "never 44 669" in SYSTEM_PROMPT and "sample rows" in SYSTEM_PROMPT
 
 
 def test_facts_and_rules_are_present_and_outside_the_untrusted_blocks() -> None:
