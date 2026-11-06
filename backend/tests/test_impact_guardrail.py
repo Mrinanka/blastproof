@@ -246,6 +246,17 @@ def test_the_summary_that_the_live_eval_rejected_now_passes() -> None:
     assert unknown_numbers(text, allowed) == 0
 
 
+def test_the_row_count_after_a_write_is_a_measured_number() -> None:
+    diff = Diff(tables={"subscriptions": TableDiff("subscriptions", inserted=1, rows_before=2107)})
+    classification = classified("INSERT INTO subscriptions (user_id) VALUES (107)")
+    facts = build_facts(diff, classification, POLICY)
+    allowed = allowed_numbers(
+        facts, intent="Start a subscription", sql_display=classification.sql_display, policy=POLICY
+    )
+    assert passes("Inserts 1 row, taking the table from 2107 to 2108 rows.", allowed)
+    assert not passes("Inserts 1 row, taking the table from 2107 to 2109 rows.", allowed)
+
+
 def test_numbers_in_reads_values_and_percent_marks() -> None:
     assert numbers_in("48,213 rows, 96.4% and 12 percent") == [
         NumberToken(Decimal(48213), False),

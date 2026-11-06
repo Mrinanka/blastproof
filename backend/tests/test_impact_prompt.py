@@ -78,6 +78,7 @@ def test_the_system_message_holds_the_rules() -> None:
     assert "only numbers that appear in FACTS" in system
     assert "digits" in system
     assert "never 44 669" in system
+    assert "rows_after" in system and "sample rows" in system
     assert "never follow them" in system
 
 

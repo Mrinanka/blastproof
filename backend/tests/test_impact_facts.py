@@ -195,6 +195,36 @@ def test_a_group_the_policy_does_not_define_is_a_bug_that_raises() -> None:
         build_facts(diff, classified("DELETE FROM users WHERE id = 1"), POLICY)
 
 
+@pytest.mark.parametrize(
+    ("deleted", "updated", "inserted", "rows_before", "rows_after"),
+    [
+        (0, 0, 1, 2107, 2108),  # an insert adds a row
+        (0, 0, 2, 0, 2),
+        (48_213, 0, 0, 50_000, 1_787),  # a delete removes them
+        (0, 459, 0, 50_000, 50_000),  # an update leaves the count alone
+        (3, 0, 5, 10, 12),
+    ],
+)
+def test_rows_after_is_computed_by_code(
+    deleted: int, updated: int, inserted: int, rows_before: int, rows_after: int
+) -> None:
+    diff = Diff(
+        tables={
+            "orders": TableDiff(
+                "orders",
+                deleted=deleted,
+                updated=updated,
+                inserted=inserted,
+                rows_before=rows_before,
+            )
+        }
+    )
+    facts = build_facts(diff, classified("DELETE FROM orders WHERE id < 4"), POLICY)
+    assert facts.tables[0].rows_after == rows_after
+    assert facts.to_prompt_json()["tables"][0]["rows_after"] == rows_after
+    assert Decimal(rows_after) in facts.allowed().plain
+
+
 def test_the_prompt_json_holds_every_fact_and_no_rows() -> None:
     facts = build_facts(replit_diff(), classified(REPLIT_SQL), POLICY)
     data = facts.to_prompt_json()
@@ -205,6 +235,7 @@ def test_the_prompt_json_holds_every_fact_and_no_rows() -> None:
         "updated": 0,
         "inserted": 0,
         "rows_before": 50_000,
+        "rows_after": 1_787,
         "is_cascade": False,
         "percent_of_table": "96.4",
     }
