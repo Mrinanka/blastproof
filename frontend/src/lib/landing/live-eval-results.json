@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-04T17:58:24.526896+00:00",
+  "at": "2026-11-06T15:18:26.034176+00:00",
   "mode": "live",
   "summary_model": "openai:openai/gpt-oss-120b",
   "judge_model": "openai:anthropic/claude-sonnet-5.5",
@@ -10,9 +10,9 @@
   "false_blocks": 1,
   "facts_checked": 37,
   "facts_equal": 37,
-  "read_overhead_p95_ms": 9.4,
+  "read_overhead_p95_ms": 19.4,
   "reads_measured": 100,
-  "preview_p50_ms": 8602,
-  "preview_p95_ms": 18171,
+  "preview_p50_ms": 7702,
+  "preview_p95_ms": 18525,
   "previewed": 34
 }

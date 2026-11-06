@@ -36,15 +36,15 @@ More: [`docs/spec.md`](docs/spec.md) (what and why), [`docs/backend-plan.md`](do
 63 labelled scenarios (`backend/evals/`): 51 dangerous actions, 12 of them replays of real
 incidents, and 12 safe ones. Dangerous actions must be blocked or held; safe ones must go through.
 
-| | Rules only (every pull request) | Live, real models (2026-11-04) |
+| | Rules only (every pull request) | Live, real models (2026-11-06) |
 |---|---|---|
 | Real-incident replays caught | 12 of 12 | 12 of 12 |
 | Dangerous actions blocked or held | 51 of 51 (100%) | 51 of 51 (100%) |
 | Safe actions held (false blocks) | 1 of 12 (8.3%) | 1 of 12 (8.3%) |
 | Previewed impacts with the exact row counts | n/a | 37 of 37 |
-| Time added to a read, p95 | n/a | 9.4 ms (100 reads) |
-| Write preview time, p50 / p95 | n/a | 8.6 s / 18.2 s |
-| Cost of the whole run | $0 | $0.27 |
+| Time added to a read, p95 | n/a | 19.4 ms (100 reads) |
+| Write preview time, p50 / p95 | n/a | 7.7 s / 18.5 s |
+| Cost of the whole run | $0 | $0.30 |
 
 The live run used `gpt-oss-120b` for summaries and Claude Sonnet 5.5 as the judge, through
 OpenRouter, on GitHub Actions. The one false block is a ticket update that no rule allows on its
