@@ -9,7 +9,7 @@ The agent never holds the company database's credentials, so a bad `DELETE FROM 
 held request that says "deletes 48,213 users, including 12 paying customers", not an incident.
 
 <p align="center">
-  <img src="promo/media/blastproof-demo.gif" width="800"
+  <img src="docs/media/blastproof-demo.gif" width="800"
        alt="An agent asks to run DELETE FROM users WHERE last_login_at &lt; now() - interval '6 months'. Blastproof runs it on a copy first: it would delete 48,213 users, including 12 paying customers, so the change request is held for review.">
 </p>
 
