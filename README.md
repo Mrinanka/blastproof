@@ -13,6 +13,10 @@ held request that says "deletes 48,213 users, including 12 paying customers", no
        alt="An agent asks to run DELETE FROM users WHERE last_login_at &lt; now() - interval '6 months'. Blastproof runs it on a copy first: it would delete 48,213 users, including 12 paying customers, so the change request is held for review.">
 </p>
 
+▶ **Watch the full 24-second film:**
+
+https://github.com/user-attachments/assets/5eed0547-6eca-40e8-969c-cca156d4cd89
+
 ## How it works
 
 <p align="center">
