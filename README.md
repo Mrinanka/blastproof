@@ -103,4 +103,4 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 > and the dashboard and landing page (F1 to F13) on Vercel at https://blastproof.in
 > ([`docs/deploy-dashboard.md`](docs/deploy-dashboard.md)). The evals are green with real models
 > (above). Still to come: some by-hand checks, the final audit and the two-to-three-minute demo
-> video. The launch film and the GIF above are made in [`promo/`](promo/README.md).
+> video.
