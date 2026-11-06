@@ -174,7 +174,7 @@ read:   received → executed | failed
 | 3.1 | P2 `preview_rows` plus P3 | BE §5, 10, 16 | Now |
 | 3.2 | `derived_groups: { paying: "plan in ('pro','enterprise')" }` in `rules.yaml`, counted in code | BE step 9, 12 | Now |
 | 3.3 | `actions` gains: `intent`, `sql_display`, `pinned_sql`, `policy_reason`, `reviewer_note`, `matched_rules` (jsonb), `judge` (jsonb: provider, model, result), `impact_report` (jsonb), `preview_ms`, `total_ms`, `llm_input_tokens`, `llm_output_tokens`, `llm_cost_usd` (tokens from LangChain `usage_metadata` × a price table in config: code counts), `retry_of`, `expires_at` | BE §5 | Now |
-| 3.4 | `seed-demo-actions` runs the **real graph** with `FakeNeonClient` + fake LLM up to `interrupt()`, so seeded actions are resumable and the Playwright test exercises the real path | BE step 20 (pulled forward to Stage 3) | Now |
+| 3.4 | `seed-demo-actions` runs the **real graph** with `FakeNeonClient` + fake LLM up to `interrupt()`, so seeded actions are resumable | BE step 20 (pulled forward to Stage 3) | Now |
 | 3.5 | Step 14 includes a stub commit node; step 15's restart check runs after step 16 | BE step 14–16 | Now |
 | 3.6 | Backend config `PUBLIC_BASE_URL`; `POST /v1/agents` returns `mcp_url` and the ready-made setup snippets; hook files installed by copying `claude_hook/` (documented) | BE §6, §11; FE F11 | Step 19 |
 | 3.7 | F10 "Done when" becomes deterministic: an uploaded doc tagged `users` appears in the action detail's "knowledge used" list for the next users action | FE F10; `ActionDetail.knowledge_used` | Now |
