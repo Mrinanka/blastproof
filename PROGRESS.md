@@ -52,6 +52,12 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Also fixed here: `PgVectorStore.search` checks the vector length itself (the flaky pgvector dimension test from step 11; known issue removed), and `test_the_log_names_the_field_and_keys_and_holds_no_value` configures logging itself (it failed when run alone or early).
 - Branched from `feat/actions-read-api`, not `develop`: `develop` lacks the docs from steps 6 to 13 and the pull-forward that these edits build on.
 
+### Fly on the OpenRouter models, DW-F07 and DW-F08 by hand, 2026-11-05
+- Fly: the five model secrets were replaced in one `fly secrets import` (owner) with the D-308 models and a prod-only OpenRouter key; `deploy-check` passes 9 of 9. A held write ("Downgrade customer 105 from pro to free") showed the model headline and a judge risk level ("Low risk"), so both models answer in production. `GROQ_API_KEY` is now unused on Fly (remove with `fly secrets unset`).
+- **DW-F07 passed (owner, deployed site):** reject worked; approve in one window, and the second window dropped its Approve button on the next poll, so the 409 toast was not seen by hand (the click never got through). FE-20 (the toast) stays covered by the automated tests only and is left open for the final audit. The approve really ran on the deployed demo database: re-seed it and run `rebase_dates` before the demo.
+- **F12 leftovers passed (owner, deployed site):** Lighthouse in light mode 100; every page at about 700 px; no CSP errors in the console in dark mode; `/nope` and `/dashboard/nope` (signed in) show the 404 page ("We could not find that page."). Ticked: FE-27, DW-F12; F12 is done.
+- **DW-F08 passed (owner, deployed site):** a filter change updates the URL and Back restores the view. Ticked: DW-F07, DW-F08, FE-21; F7 and F8 are done. CONV-12 stays open (code review, final audit).
+
 ### Live eval numbers published, 2026-11-04, D-309
 - Landing page: a "With real models" row in Results (37/37 exact previews, 9.4 ms read overhead at p95, 8.6 s median preview) from the new `live-eval-results.json`; the source line names both runs and the models. `sync-eval-results.mjs` gained `--live` (refuses a non-green run). The rules-only snapshot was refreshed (same numbers, 2026-11-04), so the local `equals rules.json` test passes again. README: an "Eval results" table and a current status line; `docs/setup.md` §10 says how to publish new numbers.
 - Tests: new cases in `landing-content.test.ts` (live snapshot, model name, the script's refusals) and `landing.test.tsx` (live numbers in the server HTML; every number in the section comes from a snapshot). 740 Vitest pass; lint, typecheck, Prettier and `npm run build` clean (`/` still static). Mutation checks: an unmeasured number on the page and a dropped missed-incident refusal each turned a test red.
@@ -184,7 +190,6 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - **By hand so far (DW-F12):** Lighthouse in dark mode on the change request page, 2026-10-30 (owner): Accessibility 100, Best Practices 100, SEO 100, Performance 74 (TBT 1,550 ms; not part of F12). **Still owed:** the same run in light mode, the 700 px pass, the CSP console check and the 404 curls.
 - **Original list (DW-F12):** Lighthouse accessibility on a seeded change request page in light and dark (target 90 or more); each page at about 700 px; no CSP errors in the console with dark mode on; `curl -I` on `/dashboard/nope` (with the cookie) and `/nope` returns 404. FE-27 and DW-F12 are ticked after this.
 - Parked by the owner (2026-10-30), so FE-27 and DW-F12 were not ticked: Lighthouse in light mode, the 700 px pass, the CSP console check in dark mode, and `curl -I /dashboard/nope` with a session cookie.
-- **By hand (owner, 2026-11-06): all four parked checks passed.** No scores were given to me, so none are recorded here. Ticked: FE-27, DW-F12. MVP-F09 stays for the final audit.
 - Known issues: axe in jsdom cannot see layout, so only the contrast test and Lighthouse cover color; the narrow-width check is by hand only; the React 19 "script tag" warning from next-themes was seen in jsdom client renders and not yet checked in a browser.
 
 ### F11, built 2026-10-29, D-283 to D-285
@@ -223,7 +228,6 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Found while building: typecheck caught `UserRef.display_name` (I had written `name`, and the untyped fixtures agreed); the fixtures are now typed against the schema.
 - Fixed after the owner's browser screenshots (2026-10-29): the Summary column did not wrap (shadcn cells are `whitespace-nowrap`), so Tables, Risk and Decided by fell off screen; the page itself scrolled sideways because `SidebarInset` had no `min-w-0` (F4 layout, affects every page); the Status and Agent controls were 28 px against 32 px inputs, so the labels did not line up; the agent select is capped at `w-56`; the collapsed sidebar's "Blastproof" ran under the trigger (F4, now hidden in icon mode). Also the effect that clamps the page uses `useEffectEvent` (no lint suppression) and the subtitle covers admins. 4 new tests (2 in `history.test.tsx`, 2 source rules); 381 Vitest pass (`--maxWorkers=1`: with the dev servers and a browser open, 2 workers ran out of memory); lint, typecheck, `npm run build` and prettier on the changed files clean; 5 more mutation checks red.
 - Requirements: none ticked yet. FE-21, DW-F08 and CONV-12 wait on DW-F08 by hand; MVP-F05 is the final audit; SEC-27, CONV-15 and ARCH-22 stay open to F11.
-- **By hand (owner, 2026-11-06): DW-F08 passed** (filters update the URL, the back button restores the previous view). No notes or scores were given to me. Ticked: FE-21, CONV-12, DW-F08. MVP-F05 stays for the final audit.
 
 ### F7, built 2026-10-29, D-271
 - New (`frontend/`): `hooks/use-action.ts`, `hooks/use-decision.ts`, `components/change-request/{change-request,sections,impact-numbers,decision-bar,reject-dialog}.tsx`; changed `app/dashboard/actions/[id]/page.tsx` (placeholder replaced) and `components/actions/audit-timeline.tsx` (status-named events use the status label). No new dependency; backend and `schema.d.ts` untouched.
@@ -231,7 +235,6 @@ Spike: Claude Code hook done 2026-10-25 on `spike/claude-hook`, decisions D-113 
 - Mutation checks: 11 guards removed (`can_decide`, status check, invalidation, trim, min 10, max 500, approve 409 toast, reject 409 toast, final-status stop, 404 stop, pending disable), each turned a test red.
 - Found while reviewing: a fast double click sent two approves (mutation pending flag lands a tick late; now an in-flight flag), and a 409 on reject was lost when the refresh hid the dialog (now also a toast).
 - Requirements ticked: FE-16, FE-17, FE-19, TEST-10. Left open: DW-F07 (manual, not run), FE-18 and FE-20 (wait on DW-F07), FE-15 (final audit MVP-F03), SEC-27 and CONV-15 (to F11).
-- **By hand (owner, 2026-11-06): DW-F07 passed** (approve, reject, and the 409 toast in a second window). Ticked: FE-18, FE-20, DW-F07. MVP-F03 and MVP-F04 stay for the final audit. Approving a seeded action commits to local `company_main`; re-seed with `demo_company/seed.py --target local` if the local data is needed again.
 
 ### F6, built 2026-10-29, D-270
 - New (`frontend/`): `hooks/use-actions.ts`, `components/review/review-queue.tsx`, placeholder `app/dashboard/actions/[id]/page.tsx`; changed `app/dashboard/review/page.tsx`. No new dependency; backend untouched.
@@ -916,15 +919,15 @@ created at deploy time straight into Fly.io secrets (D-058).
 - [x] Backend deployed to Fly.io (backend plan section 15)
   - Built 2026-10-28 (D-261 to D-264), not yet deployed: `backend/Dockerfile`, `.dockerignore`, `fly.toml`, `deploy.yml`, `image.yml`, `docker/image-smoke.sh`, `deploy/neon/blastproof-app.sql`, `deploy-check`, `docs/deploy.md`, a Dependabot `docker` entry. Fast tier green; `--integration` run for `test_neon_app_sql.py` only. The local `docker build` and `docker/image-smoke.sh` pass (7 checks, 2026-10-28). Deployed 2026-10-28: https://blastproof.fly.dev, one machine in `iad`, 1 GB (D-266, D-267); `deploy-check` 9 of 9; bootstrap run; Claude Code workspace `check` clean; read, hook block, held-and-rejected delete and a 48 s long poll all worked live (D-268). Still open: the `release` branch with protection, the `production` environment and `FLY_API_TOKEN` (OPS-12 closes when the first Deploy run is green), a direct `psql` hook check, and the old admin `blastproof@gmail.com` whose password is unknown (deactivate or ignore). OPS-12 stays open until the first push to `release` goes green.
 - [x] F6. Review queue
-- [x] F7. Change request page (DW-F07 by hand passed, owner, 2026-11-06)
-- [x] F8. History (DW-F08 by hand passed, owner, 2026-11-06)
+- [x] F7. Change request page (DW-F07 passed by hand on the deployed site, owner, 2026-11-05)
+- [x] F8. History (DW-F08 passed by hand on the deployed site, owner, 2026-11-05)
 - [x] F9. Overview
 - [x] GATE AUDIT: Gate 2, evals green and backend deployed (live eval green 2026-11-04, run 41882106827, D-308; audit done, owner, 2026-11-06)
 
 ## Stage 5: complete and ship
 - [x] F10. Knowledge
 - [x] F11. Agents, users and rules
-- [x] F12. Polish (dark-mode Lighthouse 100; light mode, 700 px, CSP console and 404 curl checks passed, owner, 2026-11-06)
+- [x] F12. Polish (DW-F12 passed by hand, owner, 2026-11-05: Lighthouse 100 in light and dark, 700 px, no CSP errors in dark mode, both 404s)
 - [x] F13. Landing page (Lighthouse 100/100/100/100 on the production build; LinkedIn preview checked on `https://blastproof.in`, owner, 2026-10-31)
 - [x] F13.1. AegisContext companion section (D-306): built and checked by me; checked by hand by the owner, 2026-11-04
 - [x] F13.2. Architecture diagram redesign (D-307): built and checked by me in headless Chrome; the owner's by-hand look passed, 2026-11-06

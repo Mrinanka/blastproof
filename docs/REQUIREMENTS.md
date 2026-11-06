@@ -290,7 +290,7 @@ D-055). Tick a box only when its verification has passed.
 | [x] | FE-17 | The change request page refreshes every 5 s while pending and shows "not found" for an action that isn't the user's. | FE §7 | F7 | TEST-10 |
 | [x] | FE-18 | The decision bar shows only while the action is pending and `can_decide` is true; approve and reject are mutations that refresh the action, the queue and the badge on success. | FE §7, F7 | F7 | DW-F07 |
 | [x] | FE-19 | Reject opens a dialog requiring a reason of at least 10 characters (zod). | FE F7 | F7 | TEST-10; MVP-F04 |
-| [x] | FE-20 | A 409 on approve or reject shows a toast naming who already decided. | FE §7, F7 | F7 | DW-F07; MVP-F04 |
+| [ ] | FE-20 | A 409 on approve or reject shows a toast naming who already decided. | FE §7, F7 | F7 | DW-F07; MVP-F04 |
 | [x] | FE-21 | History lists the user's actions with filters for status, agent, table and date range stored in the URL, with server-side pagination of 25 rows. | FE §7, F8 | F8 | DW-F08; MVP-F05 |
 | [x] | FE-22 | Overview shows count cards (pending reviews, decisions today, blocked today, average preview time, LLM cost today; "today" is the UTC day, labelled on the cards) and the 10 latest actions, refreshing every 15 seconds. | FE §7, F9; SPEC §12; D-051 | F9 | DW-F09 |
 | [x] | FE-23 | Knowledge page: every signed-in user reads the source list (D-280); only admins see the controls that upload, delete and rescan. It lists sources with chunk counts, uploads a .md or .txt file up to 1 MB with optional tables (multipart through the BFF), deletes with a confirm dialog, and has a "Rescan schema" button. | FE §7, F10 | F10 | DW-F10 |
