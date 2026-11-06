@@ -85,8 +85,8 @@ BE §5 data model has no agent-to-system or agent-to-tool mapping.
 ### 1.8 [Med] Users have no name
 
 - BE §5 `users` has id, email, password_hash, role, and no name.
-- These all need a name: BE §6 `/auth/me` returns one, the FE §12 Playwright test checks "your
-  name as the decider", and the 409 response "names who decided".
+- These all need a name: BE §6 `/auth/me` returns one, the dashboard shows "your name as the decider",
+  and the 409 response "names who decided".
 - BE §5 also says to avoid exposing email.
 
 ### 1.9 [Med] Status vocabulary
@@ -242,7 +242,7 @@ contextvar, or reading the request from `Context`?
   - judge provider;
   - the structured impact report fields.
 
-### 3.4 [High] FE F7, the FE §12 Playwright test and BE step 19 approve seeded actions
+### 3.4 [High] FE F7 and BE step 19 approve seeded actions
 
 - `seed-demo-actions` (BE step 20) creates rows "without Neon or an LLM", so no LangGraph thread
   exists.
@@ -423,7 +423,7 @@ clear fail-closed "busy" response.
 
 ### 5.9 [Med] Test company database
 
-CI and the Playwright workflow (FE §13) need a local company database in Compose and a defined Neon
+CI (FE §13) needs a local company database in Compose and a defined Neon
 fake. Backend startup must not call Neon, or download models, when `APP_ENV=test`.
 
 ### 5.10 [Low] Operations

@@ -622,7 +622,7 @@ Locally you run two Postgres containers and the FastAPI app; in production the a
 
 | Environment | Company database | Shadow runs | Who uses it |
 | --- | --- | --- | --- |
-| test / CI | `company-db` container (`company_main`, cloned from the never-connected `company_template`) | `FakeNeonClient` (template clone) | pytest, evals, `seed-demo-actions`, Playwright |
+| test / CI | `company-db` container (`company_main`, cloned from the never-connected `company_template`) | `FakeNeonClient` (template clone) | pytest, evals, `seed-demo-actions` |
 | local dev | Neon `blastproof-company-dev` | Neon branches | you, running Claude Code against your local backend |
 | production demo | Neon `blastproof-company` | Neon branches | only the deployed backend (credentials only in Fly.io secrets) |
 
