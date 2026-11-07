@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability Report
+    url: https://github.com/Mrinanka/blastproof/blob/develop/SECURITY.md
+    about: Please report security vulnerabilities privately.
+  - name: Documentation & Specifications
+    url: https://github.com/Mrinanka/blastproof/tree/develop/docs
+    about: Check project documentation, plans, and architectural specifications.
