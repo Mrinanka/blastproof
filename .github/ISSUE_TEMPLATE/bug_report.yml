@@ -1,0 +1,53 @@
+name: Bug Report
+description: Report a bug or unintended behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue!
+        If you are reporting a security vulnerability, please do NOT file a public issue. See our [Security Policy](https://github.com/Mrinanka/blastproof/blob/develop/SECURITY.md) instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Run command '...'
+        2. Call API / agent action '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear description of what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Information
+      description: Operating system, Python version, Node version, Docker version, etc.
+      value: |
+        - OS: [e.g. Ubuntu 22.04, macOS 14]
+        - Python version: [e.g. 3.13]
+        - Claude Code version (if applicable): [e.g. v2.1.295]
+        - Blastproof version/commit: [e.g. v1.0.0 or commit hash]
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Output
+      description: Please copy and paste any relevant logs or terminal output here (ensure no credentials or secrets are included).
+      render: shell

@@ -104,3 +104,14 @@ After changing a route: `uv run python -m app.cli export-openapi`, then `npm run
 > ([`docs/deploy-dashboard.md`](docs/deploy-dashboard.md)). The evals are green with real models
 > (above). Still to come: some by-hand checks, the final audit and the two-to-three-minute demo
 > video.
+
+## Community & Contributing
+
+- [Contributing Guide](CONTRIBUTING.md): Setup instructions, workflow, and testing.
+- [Code of Conduct](CODE_OF_CONDUCT.md): Community standards and pledge.
+- [Security Policy](SECURITY.md): How to securely disclose vulnerabilities.
+
+## License
+
+Blastproof is open-source software licensed under the [Apache License, Version 2.0](LICENSE).
+
