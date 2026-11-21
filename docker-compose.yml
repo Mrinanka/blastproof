@@ -3,7 +3,7 @@ services:
   blastproof-db:
     # Pinned to an exact build (the multi-arch index digest), so the image cannot change underneath
     # us. Dependabot proposes digest bumps weekly (.github/dependabot.yml, D-074).
-    image: pgvector/pgvector:pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+    image: pgvector/pgvector:pg18@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
     environment:
       # Superuser used only by the init scripts. The app connects as blastproof_app and
       # migrations as blastproof_owner. Dev-only values.
